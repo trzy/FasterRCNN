@@ -1,5 +1,5 @@
 #
-# VGG16
+# FasterRCNN
 # utils.py
 # Copyright 2020-2021 Bart Trzynadlowski
 #
