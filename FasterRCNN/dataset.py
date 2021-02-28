@@ -4,7 +4,6 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 class VOC:
-
   def __init__(self, dataset_dir):
     self.index_to_class_name = self._get_index_to_class_name(dataset_dir)
     train_image_paths = self._get_image_paths(dataset_dir, dataset = "train")
@@ -14,7 +13,6 @@ class VOC:
     print(descriptions_per_val_image)
 
   class Box:
-
     def __init__(self, xmin, ymin, xmax, ymax):
       self.xmin = xmin
       self.xmax = xmax
@@ -28,7 +26,6 @@ class VOC:
       return repr(self)
 
   class ImageDescription:
-
     def __init__(self,name, width, height, boxes_by_class_name):
       self.name = name
       self.width = width
