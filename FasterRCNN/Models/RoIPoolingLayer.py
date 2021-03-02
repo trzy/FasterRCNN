@@ -7,8 +7,8 @@ class RoIPoolingLayer(Layer):
   """
   Input shape:
     Two tensors [x_map, x_roi] each with shape:
-      x_map: (samples, height, width, channels)
-      x_roi: (samples, num_rois, 4), where ROIs have the ordering (x, y, width, height)
+      x_map: (samples, height, width, channels), representing the feature maps for this batch
+      x_roi: (samples, num_rois, 4), where RoIs have the ordering (x, y, width, height)
   Output shape:
     (samples, num_rois, pool_size, pool_size, channels)
   """
@@ -45,6 +45,12 @@ class RoIPoolingLayer(Layer):
     # will be evaluated when it is known. See: https://github.com/tensorflow/tensorflow/issues/31991
     batch_size = tf.shape(x_map)[0]
 
-    print((batch_size, self.num_rois, self.pool_size, self.pool_size, self._num_channels))
+    #print((batch_size, self.num_rois, self.pool_size, self.pool_size, self._num_channels))
     return tf.ones(dtype = tf.float32, shape = (batch_size, self.num_rois, self.pool_size, self.pool_size, self._num_channels))
 
+  @staticmethod
+  def _compute_pooled_roi(feature_map, roi, pool_size):
+    """
+    Creates a TensorFlow operation that pools a single RoI for a single feature map.
+    """
+    pass
