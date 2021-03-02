@@ -173,12 +173,15 @@ if __name__ == "__main__":
 
 
 
+  # Verify that ROI pooling works with multiple channels
   print(cells)
   print(cells[0,0,0], cells[0,1,0])
   print(cells[1,0,0], cells[1,1,0])
 
   print(cells[0,0,1], cells[0,1,1])
   print(cells[1,0,1], cells[1,1,1])
+
+
   #cells = tf.map_fn(y_range,
   #  lambda y: tf.map_fn(x_range,
   #    lambda x: compute_dest_cell_range_in_src_map(dest_y_start = y, dest_x_start = x, src_y_step = y_step, src_x_step = x_step, src_height = region_height, src_width = region_width, pool_size = pool_size)
@@ -191,11 +194,72 @@ if __name__ == "__main__":
   x = tf.constant([1,2,3])
   y = tf.constant([4,5,6])
   #c = tf.stack([x, y], axis=1)
-  c=tf.constant([x,y])
+  #c=tf.constant([x,y])
   #c = tf.constant([[1,2,3],[4,5,6]])
-  print(c)
+  c=[x,y]
+  #print(c)
   z=tf.map_fn(
     fn = lambda x: x[0] + x[1],
-    elems = c
+    elems = c,
+    fn_output_signature=tf.int32
   )
   print(z)
+
+
+  print("-----------------------------")
+
+  # Build a model to test just the RoI layer using the Keras functional API
+  input_map = Input(shape = (9,8,1))
+  input_rois = Input(shape = (4,4), dtype = tf.int32)
+  output_roi_pool = RoIPoolingLayer(pool_size = 2, num_rois = 4)([input_map, input_rois])
+  roi_model = Model([input_map, input_rois], output_roi_pool)
+  roi_model.summary()
+
+  # Run the model on a test input
+  #test_input_map = np.array([1,2,3,4]).reshape((1,4,1))
+  #test_input_rois = np.array([5,6,7,8]).reshape((1,4,1))
+  test_input_map = np.array([
+    [ 1, 2, 3, 4, 5, 6, 7, 8 ],
+    [ 2, 3, 4, 5, 6, 7, 8, 9 ],
+    [ 3, 4, 5, 6, 7, 8, 9, 1 ],
+    [ 4, 5, 6, 7, 8, 9, 1, 2 ],
+    [ 5, 6, 7, 8, 9, 1, 2, 3 ],
+    [ 6, 7, 8, 9, 1, 2, 3, 4 ],
+    [ 7, 8, 9, 1, 2, 3, 4, 5 ],
+    [ 8, 10, 1, 2, 3, 4, 11, 6 ],
+    [ 9, 1, 2, 3, 4, 5, 6, 7 ],
+  ], dtype=np.float).reshape((9,8,1)) # 1-channel for now
+  test_input_rois = np.array([
+    [ 3, 0, 5, 7 ],
+    [ 3, 0, 5, 7 ],
+    [ 3, 0, 5, 7 ],
+    [ 3, 0, 5, 7 ]
+  ], dtype=np.int)
+
+
+  x_maps = np.array([ test_input_map, 2*test_input_map ])
+  x_rois = np.array([ test_input_rois, test_input_rois ])
+
+  x = [ x_maps, x_rois ]
+  y = roi_model.predict(x = x)
+  print(y.shape)
+  print(y)
+
+
+
+
+  def sum(inputs):
+    def curried_f1(x):
+      print("x=",x)
+      return x[0]+x[1]#return _f1(x[0], x[1])
+    return tf.map_fn(curried_f1, inputs, fn_output_signature=tf.int32)
+
+  def _f1(x, y):
+    def curried_f2(y):
+      return RoIPoolingLayer._f2(x, y)
+    return tf.map_fn(curried_f2, y)
+
+  def _f2(x, y):
+    return x+y
+
+  #print(sum(x))
