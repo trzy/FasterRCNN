@@ -36,10 +36,6 @@ class RoIPoolingLayer(Layer):
     num_channels = map_shape[3]
     return (num_samples, self.num_rois, self.pool_size, self.pool_size, num_channels)
 
-  def build(self, input_shape):
-   #  assert len(input_shape) == 2 and len(input_shape[0]) == 4 and len(input_shape[1]) == 3
-    self._num_channels = input_shape[0][3]
-
   def call(self, inputs):
     #
     # Unused here but useful to know:
