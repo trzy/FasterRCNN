@@ -41,19 +41,16 @@ class RoIPoolingLayer(Layer):
     self._num_channels = input_shape[0][3]
 
   def call(self, inputs):
-#    x_map = inputs[0]
-#    x_roi = inputs[1]
-#
-#    # When defining model, x_map.shape[0] will be None because we don't have a batch size.
-#    # Using tf.shape() creates a dynamic scalar tensor that points to the batch size, and
-#    # will be evaluated when it is known. See: https://github.com/tensorflow/tensorflow/issues/31991
-#    batch_size = tf.shape(x_map)[0]
-#
-#
-#    #print((batch_size, self.num_rois, self.pool_size, self.pool_size, self._num_channels))
-#    return tf.ones(dtype = tf.float32, shape = (batch_size, self.num_rois, self.pool_size, self.pool_size, self._num_channels))
-
-  #TODO: save the note about tf.shape(x_map)[0]
+    #
+    # Unused here but useful to know:
+    #
+    # When defining model, x_map.shape[0] will be None because we don't have a batch size.
+    # Using tf.shape() creates a dynamic scalar tensor that points to the batch size, and
+    # will be evaluated when it is known. See: https://github.com/tensorflow/tensorflow/issues/31991
+    #
+    #   x_map = inputs[0]
+    #   batch_size = tf.shape(x_map)[0]
+    #
 
     #
     # Inputs are a list, [ x_maps, x_rois ], where x_maps and x_rois must have
