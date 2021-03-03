@@ -1,3 +1,7 @@
+#
+# Explanation of RoI pooling: https://towardsdatascience.com/understanding-region-of-interest-part-1-roi-pooling-e4f5dd65bb44
+#
+
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras
@@ -149,7 +153,7 @@ class RoIPoolingLayer(Layer):
     )
 
     # Extract this cell from the region and return the max
-    y_size = y_end - y_start
-    x_size = x_end - x_start
+    y_size = tf.math.maximum(y_end - y_start, 1)  # if RoI is smaller than pool area, y_end - y_start can be less than 1 (0); we want to sample at least one cell
+    x_size = tf.math.maximum(x_end - x_start, 1)
     pool_cell = tf.slice(region_of_interest, [y_start, x_start, 0], [y_size, x_size, num_channels])
     return tf.math.reduce_max(pool_cell, axis=(1,0))  # keep channels independent
