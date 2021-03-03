@@ -19,20 +19,22 @@ if __name__ == "__main__":
   options = parser.parse_args()
 
   from .models import vgg16
+  from .models import region_proposal_network
 
   from tensorflow.keras import Model
   from tensorflow.keras import Input
 
 
   conv_model = vgg16.conv_layers(input_shape=(600,800,3))
+  classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0], anchors_per_location = 9)
 
-  model = Model([conv_model.input], conv_model.outputs)
+  model = Model([conv_model.input], [classifier_output, regression_output])
   model.summary()
 
   print(conv_model.input)
 
-  print("Loading VOC dataset...")
-  voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
+  #print("Loading VOC dataset...")
+  #voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
 
   #print(voc.get_boxes_per_image_path(dataset = "val"))
   
