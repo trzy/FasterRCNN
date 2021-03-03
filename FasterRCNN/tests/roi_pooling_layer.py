@@ -3,7 +3,7 @@
 # a pool size of 3x3
 #
 
-from ..Models.RoIPoolingLayer import RoIPoolingLayer
+from ..models.roi_pooling_layer import RoIPoolingLayer
 
 import numpy as np
 import tensorflow as tf

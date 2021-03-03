@@ -18,7 +18,7 @@ if __name__ == "__main__":
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")
   options = parser.parse_args()
 
-  from .Models import vgg16
+  from .models import vgg16
 
   from tensorflow.keras import Model
   from tensorflow.keras import Input
