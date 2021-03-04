@@ -14,6 +14,8 @@ import tensorflow as tf
 import tensorflow.keras
 import time
 
+# test image:
+# 2010_004041.jpg
 if __name__ == "__main__":
   parser = argparse.ArgumentParser("FasterRCNN")
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")
@@ -35,17 +37,18 @@ if __name__ == "__main__":
 
 
   conv_model = vgg16.conv_layers(input_shape=(709,600,3))
-  classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0], anchors_per_location = 9)
+  classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
 
   model = Model([conv_model.input], [classifier_output, regression_output])
   model.summary()
 
-  print(conv_model.input)
+  z = region_proposal_network.compute_all_anchor_boxes(image_input_map = model.input, anchor_map = classifier_output)
+  print(z.shape)
+  for i in range(9):
+    y = z[0, 0, i*4 + 0]
+    x = z[0, 0, i*4 + 1]
+    h = z[0, 0, i*4 + 2]
+    w = z[0, 0, i*4 + 3]
+    print("(%f, %f) (%f, %f) %f" % (x, y, w, h, w*h))
 
-  print( region_proposal_network.convert_anchor_coordinate_from_rpn_layer_to_image_space(y = 100, x = 100, image_input_map = conv_model.input, anchor_map = classifier_output) )
-
-  #print("Loading VOC dataset...")
-  #voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
-
-  #print(voc.get_boxes_per_image_path(dataset = "val"))
   
