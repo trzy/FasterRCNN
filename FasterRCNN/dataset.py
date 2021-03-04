@@ -37,18 +37,18 @@ class VOC:
     """
     assert dataset == "train" or dataset == "val"
     # For each image, get the values from boxes_by_class_name and join them into a single list
-    boxes_per_image_path = { path: list(itertools.chain.from_iterable(image_description.boxes_by_class_name.values())) for path, image_description in self._descriptions_per_image_path[dataset].items() }
+    boxes_per_image_path = { path: image_description.get_boxes() for path, image_description in self._descriptions_per_image_path[dataset].items() }
     return boxes_per_image_path
 
   class Box:
-    def __init__(self, xmin, ymin, xmax, ymax):
-      self.xmin = xmin
-      self.xmax = xmax
-      self.ymin = ymin
-      self.ymax = ymax
+    def __init__(self, x_min, y_min, x_max, y_max):
+      self.x_min = x_min
+      self.x_max = x_max
+      self.y_min = y_min
+      self.y_max = y_max
 
     def __repr__(self):
-      return "[x=%d, y=%d, width=%d, height=%d]" % (self.xmin, self.ymin, self.xmax - self.xmin + 1, self.ymax - self.ymin + 1)
+      return "[x=%d, y=%d, width=%d, height=%d]" % (self.x_min, self.y_min, self.x_max - self.x_min + 1, self.y_max - self.y_min + 1)
 
     def __str__(self):
       return repr(self)
@@ -61,6 +61,12 @@ class VOC:
       self.width = width
       self.height = height
       self.boxes_by_class_name = boxes_by_class_name
+
+    def get_boxes(self):
+      """
+      Returns a list of all object bounding boxes regardless.
+      """
+      return list(itertools.chain.from_iterable(self.boxes_by_class_name.values()))
 
     def __repr__(self):
       return "[name=%s, (%d, %d), boxes=%s]" % (self.name, self.width, self.height, self.boxes_by_class_name)
@@ -130,15 +136,15 @@ class VOC:
       assert len(bndbox.findall("ymin")) == 1
       assert len(bndbox.findall("xmax")) == 1
       assert len(bndbox.findall("ymax")) == 1
-      original_xmin = int(bndbox.find("xmin").text)
-      original_ymin = int(bndbox.find("ymin").text)
-      original_xmax = int(bndbox.find("xmax").text)
-      original_ymax = int(bndbox.find("ymax").text)
-      xmin = original_xmin * scale_factor
-      ymin = original_ymin * scale_factor
-      xmax = original_xmax * scale_factor
-      ymax = original_ymax * scale_factor
-      #print("width: %d -> %d\theight: %d -> %d\txmin: %d -> %d\tymin: %d -> %d" % (original_width, width, original_height, height, original_xmin, xmin, original_ymin, ymin))
-      box = VOC.Box(xmin = xmin, ymin = ymin, xmax = xmax, ymax = ymax)
+      original_x_min = int(bndbox.find("xmin").text)
+      original_y_min = int(bndbox.find("ymin").text)
+      original_x_max = int(bndbox.find("xmax").text)
+      original_y_max = int(bndbox.find("ymax").text)
+      x_min = original_x_min * scale_factor
+      y_min = original_y_min * scale_factor
+      x_max = original_x_max * scale_factor
+      y_max = original_y_max * scale_factor
+      #print("width: %d -> %d\theight: %d -> %d\tx_min: %d -> %d\ty_min: %d -> %d" % (original_width, width, original_height, height, original_x_min, x_min, original_y_min, y_min))
+      box = VOC.Box(x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max)
       boxes_by_class_name[class_name].append(box)
     return VOC.ImageDescription(name = basename, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
