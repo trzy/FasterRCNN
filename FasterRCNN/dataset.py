@@ -11,12 +11,24 @@ class VOC:
   dimension is equal to `scale`.
   """
   def __init__(self, dataset_dir, scale = None):
+    self._dataset_dir = dataset_dir
     self.index_to_class_name = self._get_index_to_class_name(dataset_dir)
     train_image_paths = self._get_image_paths(dataset_dir, dataset = "train")
     val_image_paths = self._get_image_paths(dataset_dir, dataset = "val")
     self._descriptions_per_image_path = {}
     self._descriptions_per_image_path["train"] = { image_path: self._get_image_description(dataset_dir, image_path = image_path, scale = scale) for image_path in train_image_paths }
-    self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(dataset_dir, image_path = image_path, scale = scale) for image_path in train_image_paths }
+    self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(dataset_dir, image_path = image_path, scale = scale) for image_path in val_image_paths }
+
+  def get_full_path(self, filename):
+    return os.path.join(self._dataset_dir, "JPEGImages", filename)
+
+  def get_image_description(self, path):
+    # Image names are unique, so we don't need to specify the dataset
+    if path in self._descriptions_per_image_path["train"]:
+      return self._descriptions_per_image_path["train"][path]
+    if path in self._descriptions_per_image_path["val"]:
+      return self._descriptions_per_image_path["val"][path]
+    raise Exception("Image path not found: %s" % path)
 
   def get_boxes_per_image_path(self, dataset):
     """
@@ -126,7 +138,7 @@ class VOC:
       ymin = original_ymin * scale_factor
       xmax = original_xmax * scale_factor
       ymax = original_ymax * scale_factor
-      print("width: %d -> %d\theight: %d -> %d\txmin: %d -> %d\tymin: %d -> %d" % (original_width, width, original_height, height, original_xmin, xmin, original_ymin, ymin))
+      #print("width: %d -> %d\theight: %d -> %d\txmin: %d -> %d\tymin: %d -> %d" % (original_width, width, original_height, height, original_xmin, xmin, original_ymin, ymin))
       box = VOC.Box(xmin = xmin, ymin = ymin, xmax = xmax, ymax = ymax)
       boxes_by_class_name[class_name].append(box)
     return VOC.ImageDescription(name = basename, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
