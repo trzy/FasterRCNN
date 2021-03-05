@@ -25,9 +25,6 @@ if __name__ == "__main__":
   print("Loading VOC dataset...")
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
 
-  if options.show_image:
-    visualization.show_annotated_image(voc = voc, filename = options.show_image)
-
   
   from .models import vgg16
   from .models import region_proposal_network
@@ -36,7 +33,7 @@ if __name__ == "__main__":
   from tensorflow.keras import Input
 
 
-  conv_model = vgg16.conv_layers(input_shape=(709,600,3))
+  conv_model = vgg16.conv_layers(input_shape = (709,600,3))
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
 
   model = Model([conv_model.input], [classifier_output, regression_output])
@@ -51,4 +48,12 @@ if __name__ == "__main__":
     w = z[0, 0, i*4 + 3]
     print("(%f, %f) (%f, %f) %f" % (x, y, w, h, w*h))
 
-  
+  if options.show_image:
+    info = voc.get_image_description(path = voc.get_full_path(options.show_image))
+
+    # Need to build the model for this image size in order to be able to visualize boxes correctly
+    conv_model = vgg16.conv_layers(input_shape = (info.height,info.width,3))
+    classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
+    model = Model([conv_model.input], [classifier_output, regression_output])
+    
+    visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
