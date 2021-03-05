@@ -76,7 +76,7 @@ def compute_all_anchor_boxes(image_input_map, anchor_map):
   # x_aspect * x = y  ->  x = sqrt(area / x_aspect)
   #                       y = x_aspect * sqrt(area / x_aspect)
   #
-  areas = [ 128, 256, 512 ]       # pixels^2
+  areas = [ 128*128, 256*256, 512*512 ]   # pixels
   x_aspects = [ 1.0, 0.5, 2.0 ]   # x:1 ratio
 
   # Generate all 9 combinations of area and aspect ratio
