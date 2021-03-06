@@ -28,6 +28,23 @@ def layers(input_map):
 
   return [ classifier, regressor ]
 
+def _compute_anchor_sizes():
+  #
+  # Anchor scales and aspect ratios.
+  #
+  # x * y = area          x * (x_aspect * x) = x_aspect * x^2 = area
+  # x_aspect * x = y  ->  x = sqrt(area / x_aspect)
+  #                       y = x_aspect * sqrt(area / x_aspect)
+  #
+  areas = [ 128*128, 256*256, 512*512 ]   # pixels
+  x_aspects = [ 1.0, 0.5, 2.0 ]   # x:1 ratio
+
+  # Generate all 9 combinations of area and aspect ratio
+  widths = [ int(sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
+  heights = [ int(x_aspects[j] * sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
+
+  return heights, widths
+
 def convert_anchor_coordinate_from_rpn_layer_to_image_space(y, x, image_input_map, anchor_map):
   """
   Returns (y, x) converted from the coordinate space of an anchor map (the
@@ -72,19 +89,8 @@ def compute_all_anchor_boxes(image_input_map, anchor_map):
   # Convert to input image space
   anchor_center_y, anchor_center_x = convert_anchor_coordinate_from_rpn_layer_to_image_space(y = anchor_center_y, x = anchor_center_x, image_input_map = image_input_map, anchor_map = anchor_map)
 
-  #
-  # Anchor scales and aspect ratios.
-  #
-  # x * y = area          x * (x_aspect * x) = x_aspect * x^2 = area
-  # x_aspect * x = y  ->  x = sqrt(area / x_aspect)
-  #                       y = x_aspect * sqrt(area / x_aspect)
-  #
-  areas = [ 128*128, 256*256, 512*512 ]   # pixels
-  x_aspects = [ 1.0, 0.5, 2.0 ]   # x:1 ratio
-
-  # Generate all 9 combinations of area and aspect ratio
-  widths = [ int(sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
-  heights = [ int(x_aspects[j] * sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
+  # All possible anchor sizes
+  heights, widths = _compute_anchor_sizes()
 
   #
   # Create the anchor boxes matrix: (height, width, k*4) where the last axis is
@@ -111,3 +117,16 @@ def compute_all_anchor_boxes(image_input_map, anchor_map):
   anchor_boxes_valid = np.stack(valid_matrices, axis = 2) # k values stacked along third dimension
 
   return anchor_boxes, anchor_boxes_valid
+
+def compute_ground_truth_boxes(ground_truth_object_boxes, anchor_boxes, anchor_boxes_valid):
+  assert anchor_boxes.shape[0] == anchor_boxes_valid.shape[0]       # height
+  assert anchor_boxes.shape[1] == anchor_boxes_valid.shape[1]       # width
+  assert anchor_boxes.shape[2] == anchor_boxes_valid.shape[2] * 4   # k*4
+  assert anchor_boxes_valid.shape[2] == 9                           # k=9
+
+  for y in range(anchor_boxes.shape[0]):
+    for x in range(anchor_boxes.shape[1]):
+      for k in range(anchor_boxes_valid.shape[2]):
+        pass
+  
+
