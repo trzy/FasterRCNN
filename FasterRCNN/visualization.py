@@ -40,7 +40,7 @@ def _draw_ground_truth_boxes(image, boxes):
 
 def _draw_anchor_box_intersections(image, draw_anchor_points, image_input_map, anchor_map, ground_truth_boxes):
   ctx = ImageDraw.Draw(image, mode = "RGBA")
-  anchor_boxes = region_proposal_network.compute_all_anchor_boxes(image_input_map = image_input_map, anchor_map = anchor_map)
+  anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(image_input_map = image_input_map, anchor_map = anchor_map)
   for y in range(anchor_boxes.shape[0]):
     for x in range(anchor_boxes.shape[1]):
       anchors_per_location = int(anchor_boxes.shape[2] / 4)

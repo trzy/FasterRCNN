@@ -58,6 +58,9 @@ def compute_all_anchor_boxes(image_input_map, anchor_map):
     output[0, 0, 4] = anchor map position (0,0), second anchor center_y
     ...
   """
+  image_height = image_input_map.shape[1]
+  image_width = image_input_map.shape[2]
+
   anchors_per_location = 9  # this is k
   anchor_map_height = anchor_map.shape[1]
   anchor_map_width = anchor_map.shape[2]
@@ -83,12 +86,28 @@ def compute_all_anchor_boxes(image_input_map, anchor_map):
   widths = [ int(sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
   heights = [ int(x_aspects[j] * sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
 
-  # Create (height, width, k*4) matrix where the last axis is a repeating series of (center_y, center_x, height, width)
-  matrices = []
+  #
+  # Create the anchor boxes matrix: (height, width, k*4) where the last axis is
+  # a repeating series of (center_y, center_x, height, width). 
+  #
+  # Also construct a corresponding matrix indicating box validity: 
+  # (height, width, k), where each element is a bool indicating whether or not
+  # the anchor box is valid (within the image boundaries).
+  #
+  box_matrices = []
+  valid_matrices = []
   for i in range(anchors_per_location):
     width_matrix = np.ones((anchor_map_height, anchor_map_width)) * widths[i]
     height_matrix = np.ones((anchor_map_height, anchor_map_width)) * heights[i]
-    matrices += [ anchor_center_y, anchor_center_x, height_matrix, width_matrix ]
-  anchor_boxes = np.stack(matrices, axis = 2) # stack all k*4 values along third dimension
+    box_matrices += [ anchor_center_y, anchor_center_x, height_matrix, width_matrix ]
 
-  return anchor_boxes
+    # Construct a bool matrix indicating whether the anchor is valid by testing
+    # it against image boundaries. Note that multiplication is equivalent to an
+    # AND function.
+    in_bounds = np.where(anchor_center_y - 0.5 * heights[i] >= 0, True, False) * np.where(anchor_center_x - 0.5 * widths[i] >= 0, True, False) * np.where(anchor_center_y + 0.5 * heights[i] < image_height, True, False) * np.where(anchor_center_x + 0.5 * widths[i] < image_width, True, False)
+    valid_matrices.append(in_bounds)
+
+  anchor_boxes = np.stack(box_matrices, axis = 2)         # stack all k*4 values along third dimension
+  anchor_boxes_valid = np.stack(valid_matrices, axis = 2) # k values stacked along third dimension
+
+  return anchor_boxes, anchor_boxes_valid

@@ -39,7 +39,7 @@ if __name__ == "__main__":
   model = Model([conv_model.input], [classifier_output, regression_output])
   model.summary()
 
-  z = region_proposal_network.compute_all_anchor_boxes(image_input_map = model.input, anchor_map = classifier_output)
+  z, _ = region_proposal_network.compute_all_anchor_boxes(image_input_map = model.input, anchor_map = classifier_output)
   print(z.shape)
   for i in range(9):
     y = z[0, 0, i*4 + 0]
