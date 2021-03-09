@@ -1,3 +1,5 @@
+from .intersection_over_union import intersection_over_union
+
 import itertools
 from math import sqrt
 import numpy as np
@@ -11,7 +13,7 @@ from tensorflow.keras.layers import Dense
 def layers(input_map):
   assert len(input_map.shape) == 4
   anchors_per_location = 9
-  
+
   # We can infer the total number of anchors from the input map size
   height = input_map.shape[1]
   width = input_map.shape[2]
@@ -22,7 +24,7 @@ def layers(input_map):
 
   # Classification layer: predicts whether there is an object at the anchor or not. We use a sigmoid function, where > 0.5 is indicates a positive result.
   classifier = Conv2D(name = "rpn_class", kernel_size = (1,1), strides = 1, filters = anchors_per_location, padding = "same", activation = "sigmoid", kernel_initializer = "uniform")(anchors)
-  
+
   # Regress
   regressor = Conv2D(name = "rpn_boxes", kernel_size = (1,1), strides = 1, filters = 4 * anchors_per_location, padding = "same", activation = "linear", kernel_initializer = "zero")(anchors)
 
@@ -94,9 +96,9 @@ def compute_all_anchor_boxes(image_input_map, anchor_map):
 
   #
   # Create the anchor boxes matrix: (height, width, k*4) where the last axis is
-  # a repeating series of (center_y, center_x, height, width). 
+  # a repeating series of (center_y, center_x, height, width).
   #
-  # Also construct a corresponding matrix indicating box validity: 
+  # Also construct a corresponding matrix indicating box validity:
   # (height, width, k), where each element is a bool indicating whether or not
   # the anchor box is valid (within the image boundaries).
   #
@@ -124,9 +126,33 @@ def compute_ground_truth_boxes(ground_truth_object_boxes, anchor_boxes, anchor_b
   assert anchor_boxes.shape[2] == anchor_boxes_valid.shape[2] * 4   # k*4
   assert anchor_boxes_valid.shape[2] == 9                           # k=9
 
+  #TODO: make sure every GT box has at least one anchor associated with it
+
+
   for y in range(anchor_boxes.shape[0]):
     for x in range(anchor_boxes.shape[1]):
       for k in range(anchor_boxes_valid.shape[2]):
-        pass
-  
+
+        if not anchor_boxes_valid[y,x,k]:
+          continue  # ignore boxes that aren't even valid
+
+        anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
+        anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
+
+        # Test against every ground truth box: any anchor that meets an IoU
+        # threshold will be labeled as "object" (and regressed box values
+        # generated to match the bounding box), those below a second IoU
+        # threshold against all ground truth boxes will be labeled as "not
+        # object". Anything in between will be unused.
+        num_boxes_positive = 0
+        num_boxes_negative = 0
+        for box in ground_truth_object_boxes:
+          object_box_coords = (box.y_min, box.x_min, box.y_max, box.x_max)
+          intersection_over_union(box1 = anchor_box_coords, box2 = object_box_coords)
+
+          #TODO: what to do for anchor that overlaps multiple ground truth boxes?
+          pass
+
+
+
 

@@ -17,17 +17,18 @@ def show_annotated_image(voc, filename, draw_anchor_points = True, draw_anchor_i
   info = voc.get_image_description(path = filepath)
   data = imageio.imread(filepath, pilmode = "RGB")
   image = Image.fromarray(data, mode = "RGB")
-  
+  boxes = info.get_boxes()
+
   # Because we loaded it ourselves, we are responsible for rescaling it
   image = image.resize((info.width, info.height), resample = Image.BILINEAR)
-  
+
   # Draw ground truth boxes
-  _draw_ground_truth_boxes(image = image, boxes = info.get_boxes())
-  
+  _draw_ground_truth_boxes(image = image, boxes = boxes)
+
   # Draw anchor boxes and intersection areas, if requested
   if draw_anchor_intersections or draw_anchor_points:
-    _draw_anchor_box_intersections(image = image, draw_anchor_points = draw_anchor_points, image_input_map = image_input_map, anchor_map = anchor_map, ground_truth_boxes = info.get_boxes())
-  
+    _draw_anchor_box_intersections(image = image, ground_truth_boxes = boxes, draw_anchor_points = draw_anchor_points, image_input_map = image_input_map, anchor_map = anchor_map)
+
   # Display image
   image.show()
 
@@ -38,9 +39,13 @@ def _draw_ground_truth_boxes(image, boxes):
     draw_rectangle(ctx, x_min = box.x_min, y_min = box.y_min, x_max = box.x_max, y_max = box.y_max, color = (0, 255, 0, 255))
     print("box=%s" % str(box))
 
-def _draw_anchor_box_intersections(image, draw_anchor_points, image_input_map, anchor_map, ground_truth_boxes):
+def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points, image_input_map, anchor_map):
   ctx = ImageDraw.Draw(image, mode = "RGBA")
+
   anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(image_input_map = image_input_map, anchor_map = anchor_map)
+
+  region_proposal_network.compute_ground_truth_boxes(ground_truth_object_boxes = ground_truth_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+
   for y in range(anchor_boxes.shape[0]):
     for x in range(anchor_boxes.shape[1]):
       anchors_per_location = int(anchor_boxes.shape[2] / 4)
@@ -60,7 +65,7 @@ def _draw_anchor_box_intersections(image, draw_anchor_points, image_input_map, a
         # Draw anchor center pos
         if draw_anchor_points:
           size = 1
-          draw_filled_rectangle(ctx, y_min = center_y - size, x_min = center_x - size, y_max = center_y + size, x_max = center_x + size, color = (255, 0, 0, 255)) 
+          draw_filled_rectangle(ctx, y_min = center_y - size, x_min = center_x - size, y_max = center_y + size, x_max = center_x + size, color = (255, 0, 0, 255))
 
         # Does it intersect with any ground truth box?
         for box in ground_truth_boxes:
@@ -72,7 +77,7 @@ def _draw_anchor_box_intersections(image, draw_anchor_points, image_input_map, a
             # Render intersection area
             intersection_box = intersection_over_union.intersection(box1 = box1, box2 = box2)
             draw_filled_rectangle(ctx, y_min = intersection_box[0], x_min = intersection_box[1], y_max = intersection_box[2], x_max = intersection_box[3], color = (255, 0, 0, 64))
-            
+
             # Draw the anchor box outline
             draw_rectangle(ctx, x_min = anchor_x_min, y_min = anchor_y_min, x_max = anchor_x_max, y_max = anchor_y_max, color = (255, 0, 0, 255))
 
