@@ -2,6 +2,7 @@ from .intersection_over_union import intersection_over_union
 
 import itertools
 from math import sqrt
+from math import log
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras
@@ -128,6 +129,9 @@ def compute_ground_truth_boxes(ground_truth_object_boxes, anchor_boxes, anchor_b
 
   #TODO: make sure every GT box has at least one anchor associated with it
 
+  #TODO: are numpy arrays faster?
+  best_iou_by_box = [ -1.0 ] * len(ground_truth_object_boxes)                             # array of same size, corresponding exactly to ground truth box array
+  best_regression_by_box = [ (0.0, 0.0, 0.0, 0.0, 0.0, 0.0) ] * len(ground_truth_boxes)   # array of (ty, tx, th, tw) by ground truth box
 
   for y in range(anchor_boxes.shape[0]):
     for x in range(anchor_boxes.shape[1]):
@@ -139,18 +143,42 @@ def compute_ground_truth_boxes(ground_truth_object_boxes, anchor_boxes, anchor_b
         anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
         anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
 
+        #
         # Test against every ground truth box: any anchor that meets an IoU
         # threshold will be labeled as "object" (and regressed box values
         # generated to match the bounding box), those below a second IoU
         # threshold against all ground truth boxes will be labeled as "not
         # object". Anything in between will be unused.
+        #
+        # Multiple anchors can sufficiently intersect with a single ground
+        # truth box. If an anchor intersects more than one ground truth box
+        # (highly unlikely), it will simply be assigned to the one with which
+        # it had the highest overlap.
+        #
+        
         num_boxes_positive = 0
         num_boxes_negative = 0
-        for box in ground_truth_object_boxes:
+        
+        for box_idx in range(len(ground_truth_boxes)):
+          box = ground_truth_boxes[box_idx]
           object_box_coords = (box.y_min, box.x_min, box.y_max, box.x_max)
-          intersection_over_union(box1 = anchor_box_coords, box2 = object_box_coords)
+          iou = intersection_over_union(box1 = anchor_box_coords, box2 = object_box_coords)
 
-          #TODO: what to do for anchor that overlaps multiple ground truth boxes?
+          if iou > best_iou_by_box[box_idx]:
+            center_x = 0.5 * (box.x_min + box.x_max)
+            center_y = 0.5 * (box.y_min + box.y_max)
+            width = box.x_max - box.x_min
+            height = box.y_max - box.y_min
+
+            tx = (center_x - anchor_center_x) / anchor_width
+            ty = (center_y - anchor_center_y) / anchor_height
+            tw = log(width / anchor_width)
+            th = log(height / anchor_height)
+
+            best_iou_by_box[box_idx] = iou
+            best_regression_by_box[box_idx] = (ty, tx, th, tw)
+          
+            #TODO: what to do for anchor that overlaps multiple ground truth boxes?
           pass
 
 
