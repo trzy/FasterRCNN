@@ -44,7 +44,7 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
 
   anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(image_input_map = image_input_map, anchor_map = anchor_map)
 
-  region_proposal_network.compute_ground_truth_boxes(ground_truth_object_boxes = ground_truth_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+  ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = ground_truth_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
 
   for y in range(anchor_boxes.shape[0]):
     for x in range(anchor_boxes.shape[1]):
@@ -65,21 +65,39 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
         # Draw anchor center pos
         if draw_anchor_points:
           size = 1
-          draw_filled_rectangle(ctx, y_min = center_y - size, x_min = center_x - size, y_max = center_y + size, x_max = center_x + size, color = (255, 0, 0, 255))
+          any_positive = True in [ ground_truth_regressions[y,x,k,0] > 0 for k in range(ground_truth_regressions.shape[2]) ]
+          color = (0, 255, 0, 255) if any_positive else (255, 0, 0, 255)
+          draw_filled_rectangle(ctx, y_min = center_y - size, x_min = center_x - size, y_max = center_y + size, x_max = center_x + size, color = color)
 
-        # Does it intersect with any ground truth box?
-        for box in ground_truth_boxes:
-          box1 = (anchor_y_min, anchor_x_min, anchor_y_max, anchor_x_max)
-          box2 = (box.y_min, box.x_min, box.y_max, box.x_max)
+        ## Does it intersect with any ground truth box?
+        #for box in ground_truth_boxes:
+        #  box1 = (anchor_y_min, anchor_x_min, anchor_y_max, anchor_x_max)
+        #  box2 = (box.y_min, box.x_min, box.y_max, box.x_max)
 
-          iou = intersection_over_union.intersection_over_union(box1 = box1, box2 = box2)
-          if iou > 0.7:
-            # Render intersection area
-            intersection_box = intersection_over_union.intersection(box1 = box1, box2 = box2)
-            draw_filled_rectangle(ctx, y_min = intersection_box[0], x_min = intersection_box[1], y_max = intersection_box[2], x_max = intersection_box[3], color = (255, 0, 0, 64))
+        #  iou = intersection_over_union.intersection_over_union(box1 = box1, box2 = box2)
+        #  if iou > 0.7:
+        #    # Render intersection area
+        #    intersection_box = intersection_over_union.intersection(box1 = box1, box2 = box2)
+        #    draw_filled_rectangle(ctx, y_min = intersection_box[0], x_min = intersection_box[1], y_max = intersection_box[2], x_max = intersection_box[3], color = (255, 0, 0, 64))
 
-            # Draw the anchor box outline
-            draw_rectangle(ctx, x_min = anchor_x_min, y_min = anchor_y_min, x_max = anchor_x_max, y_max = anchor_y_max, color = (255, 0, 0, 255))
+        #    # Draw the anchor box outline
+        #    draw_rectangle(ctx, x_min = anchor_x_min, y_min = anchor_y_min, x_max = anchor_x_max, y_max = anchor_y_max, color = (255, 0, 0, 255))
 
-          #if center_y < box.y_max and center_y > box.y_min and center_x < box.x_max and center_x > box.x_min:
-          #  print("iou=%f" % iou)
+  # Draw all anchor boxes labeled as object in yellow
+  for i in range(len(positive_anchors)):
+    y = positive_anchors[i][0]
+    x = positive_anchors[i][1]
+    k = positive_anchors[i][2]
+
+    # Extract box and draw
+    box = anchor_boxes[y, x, k * 4 : k * 4 + 4]
+    center_y = box[0]
+    center_x = box[1]
+    height = box[2]
+    width = box[3]
+    anchor_y_min = center_y - 0.5 * height
+    anchor_x_min = center_x - 0.5 * width
+    anchor_y_max = center_y + 0.5 * height
+    anchor_x_max = center_x + 0.5 * width
+    
+    draw_rectangle(ctx, x_min = anchor_x_min, y_min = anchor_y_min, x_max = anchor_x_max, y_max = anchor_y_max, color = (255, 255, 0, 255))

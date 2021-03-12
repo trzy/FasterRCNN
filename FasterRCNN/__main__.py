@@ -14,8 +14,9 @@ import tensorflow as tf
 import tensorflow.keras
 import time
 
-# test image:
+# good test images:
 # 2010_004041.jpg
+# 2010_005080.jpg
 if __name__ == "__main__":
   parser = argparse.ArgumentParser("FasterRCNN")
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")
