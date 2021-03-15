@@ -44,3 +44,9 @@ if __name__ == "__main__":
     print(classifier_output.shape, model.input.shape)
     
     visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
+
+  train_data = voc.train_data()
+  for i in range(voc.num_samples["train"]):
+    image_path, (ground_truth_regressions, positive_anchors, negative_anchors) = next(train_data)
+    print(len(positive_anchors))
+

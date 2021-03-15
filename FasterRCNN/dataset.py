@@ -1,7 +1,10 @@
+from .models import region_proposal_network
+
 from collections import defaultdict
 import itertools
 import os
 from pathlib import Path
+import random
 import xml.etree.ElementTree as ET
 
 class VOC:
@@ -15,6 +18,7 @@ class VOC:
     self.index_to_class_name = self._get_index_to_class_name(dataset_dir)
     train_image_paths = self._get_image_paths(dataset_dir, dataset = "train")
     val_image_paths = self._get_image_paths(dataset_dir, dataset = "val")
+    self.num_samples = { "train": len(train_image_paths), "val": len(val_image_paths) }
     self._descriptions_per_image_path = {}
     self._descriptions_per_image_path["train"] = { image_path: self._get_image_description(dataset_dir, image_path = image_path, scale = scale) for image_path in train_image_paths }
     self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(dataset_dir, image_path = image_path, scale = scale) for image_path in val_image_paths }
@@ -61,6 +65,9 @@ class VOC:
       self.width = width
       self.height = height
       self.boxes_by_class_name = boxes_by_class_name
+
+    def shape(self):
+      return (self.height, self.width, 3)
 
     def get_boxes(self):
       """
@@ -148,3 +155,41 @@ class VOC:
       box = VOC.Box(x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max)
       boxes_by_class_name[class_name].append(box)
     return VOC.ImageDescription(name = basename, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
+
+  @staticmethod
+  def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
+    print("Thread %d started" % thread_num)
+    y_per_image_path = {}
+    for image_path in image_paths:
+      description = descriptions_per_image_path["train"][image_path]
+      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
+      ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+      y_per_image_path[image_path] = (ground_truth_regressions, positive_anchors, negative_anchors)
+    print("Thread %d finished" % thread_num)
+    return y_per_image_path
+
+  def train_data(self, num_threads = 32):
+    import concurrent.futures
+
+    # Precache everything
+    y_per_image_path = {}
+    image_paths = list(self._descriptions_per_image_path["train"].keys())
+    batch_size = len(image_paths) // num_threads + 1
+    print("Spawning %d worker threads to prepare %d training samples..." % (num_threads, len(image_paths)))  
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+      futures = [ executor.submit(self._prepare_data, i, image_paths[i * batch_size : i * batch_size + batch_size], self._descriptions_per_image_path) for i in range(num_threads) ]   
+      results = [ f.result() for f in futures ]
+      for subset_y_per_image_path in results:
+        y_per_image_path.update(subset_y_per_image_path)
+    print("Processed %d training samples" % len(y_per_image_path))
+
+    while True:
+      # Shuffle data each epoch
+      random.shuffle(image_paths)
+
+      # Return one image at a time 
+      for image_path in image_paths:
+        yield image_path, y_per_image_path[image_path]
+
+
