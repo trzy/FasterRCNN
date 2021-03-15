@@ -27,7 +27,7 @@ def show_annotated_image(voc, filename, draw_anchor_points = True, draw_anchor_i
 
   # Draw anchor boxes and intersection areas, if requested
   if draw_anchor_intersections or draw_anchor_points:
-    _draw_anchor_box_intersections(image = image, ground_truth_boxes = boxes, draw_anchor_points = draw_anchor_points, image_input_map = image_input_map, anchor_map = anchor_map)
+    _draw_anchor_box_intersections(image = image, ground_truth_boxes = boxes, draw_anchor_points = draw_anchor_points, input_image_shape = image_input_map.shape[1:])
 
   # Display image
   image.show()
@@ -39,10 +39,10 @@ def _draw_ground_truth_boxes(image, boxes):
     draw_rectangle(ctx, x_min = box.x_min, y_min = box.y_min, x_max = box.x_max, y_max = box.y_max, color = (0, 255, 0, 255))
     print("box=%s" % str(box))
 
-def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points, image_input_map, anchor_map):
+def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points, input_image_shape):
   ctx = ImageDraw.Draw(image, mode = "RGBA")
 
-  anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(image_input_map = image_input_map, anchor_map = anchor_map)
+  anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = input_image_shape)
 
   ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = ground_truth_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
 

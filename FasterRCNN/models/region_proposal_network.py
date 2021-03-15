@@ -1,3 +1,4 @@
+#TODO: assert anchor map shape is indeed image/16
 from .intersection_over_union import intersection_over_union
 
 import itertools
@@ -48,21 +49,24 @@ def _compute_anchor_sizes():
 
   return heights, widths
 
-def convert_anchor_coordinate_from_rpn_layer_to_image_space(y, x, image_input_map, anchor_map):
+def compute_anchor_map_shape(input_image_shape):
+  """
+  Returns the 2D shape of the RPN output map (height, width), which will be
+  1/16th of the input image for VGG16. 
+  """
+  return (input_image_shape[0] // 16, input_image_shape[1] // 16)
+
+def convert_anchor_coordinate_from_rpn_layer_to_image_space(y, x):
   """
   Returns (y, x) converted from the coordinate space of an anchor map (the
   output of the RPN model) to the original input image space. This gives the
   anchor center coordinates in the original image.
   """
-  image_height = image_input_map.shape[1]
-  image_width = image_input_map.shape[2]
-  downstream_height = anchor_map.shape[1]
-  downstream_width = anchor_map.shape[2]
-  y_scale = image_height / downstream_height      # will be pretty close to 16 for VGG
-  x_scale = image_width / downstream_width
+  y_scale = 16
+  x_scale = 16
   return (y + 0.5) * y_scale, (x + 0.5) * x_scale # add 0.5 to move into the center of the cell
 
-def compute_all_anchor_boxes(image_input_map, anchor_map):
+def compute_all_anchor_boxes(input_image_shape):
   """
   Returns a map of shape (height, width, k*4) where height and width are the
   same as the anchor map and k = 9 different anchor boxes. The anchor boxes are
@@ -78,19 +82,18 @@ def compute_all_anchor_boxes(image_input_map, anchor_map):
     output[0, 0, 4] = anchor map position (0,0), second anchor center_y
     ...
   """
-  image_height = image_input_map.shape[1]
-  image_width = image_input_map.shape[2]
+  image_height = input_image_shape[0]
+  image_width = input_image_shape[1]
 
   anchors_per_location = 9  # this is k
-  anchor_map_height = anchor_map.shape[1]
-  anchor_map_width = anchor_map.shape[2]
-
+  anchor_map_height, anchor_map_width = compute_anchor_map_shape(input_image_shape = input_image_shape)
+  
   # Generate two matrices of same shape as anchor map containing the center coordinate in anchor map space
   anchor_center_x = np.repeat(np.arange(anchor_map_width).reshape((1,anchor_map_width)), repeats = anchor_map_height, axis = 0)
   anchor_center_y = np.repeat(np.arange(anchor_map_height).reshape((anchor_map_height,1)), repeats = anchor_map_width, axis = 1)
 
   # Convert to input image space
-  anchor_center_y, anchor_center_x = convert_anchor_coordinate_from_rpn_layer_to_image_space(y = anchor_center_y, x = anchor_center_x, image_input_map = image_input_map, anchor_map = anchor_map)
+  anchor_center_y, anchor_center_x = convert_anchor_coordinate_from_rpn_layer_to_image_space(y = anchor_center_y, x = anchor_center_x)
 
   # All possible anchor sizes
   heights, widths = _compute_anchor_sizes()

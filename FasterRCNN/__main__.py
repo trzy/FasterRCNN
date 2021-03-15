@@ -33,22 +33,6 @@ if __name__ == "__main__":
   from tensorflow.keras import Model
   from tensorflow.keras import Input
 
-
-  conv_model = vgg16.conv_layers(input_shape = (709,600,3))
-  classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
-
-  model = Model([conv_model.input], [classifier_output, regression_output])
-  model.summary()
-
-  z, _ = region_proposal_network.compute_all_anchor_boxes(image_input_map = model.input, anchor_map = classifier_output)
-  print(z.shape)
-  for i in range(9):
-    y = z[0, 0, i*4 + 0]
-    x = z[0, 0, i*4 + 1]
-    h = z[0, 0, i*4 + 2]
-    w = z[0, 0, i*4 + 3]
-    print("(%f, %f) (%f, %f) %f" % (x, y, w, h, w*h))
-
   if options.show_image:
     info = voc.get_image_description(path = voc.get_full_path(options.show_image))
 
@@ -56,5 +40,7 @@ if __name__ == "__main__":
     conv_model = vgg16.conv_layers(input_shape = (info.height,info.width,3))
     classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
     model = Model([conv_model.input], [classifier_output, regression_output])
+
+    print(classifier_output.shape, model.input.shape)
     
     visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
