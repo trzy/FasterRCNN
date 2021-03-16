@@ -3,10 +3,16 @@ from .models import region_proposal_network
 from collections import defaultdict
 import itertools
 import os
+from operator import itemgetter
 from pathlib import Path
 import random
 import time
 import xml.etree.ElementTree as ET
+
+import imageio
+from PIL import Image
+import numpy as np
+import tensorflow as tf
 
 class VOC:
   """
@@ -58,14 +64,22 @@ class VOC:
     def __str__(self):
       return repr(self)
 
+  #TODO: rename to ImageInfo
   class ImageDescription:
-    def __init__(self,name, original_width, original_height, width, height, boxes_by_class_name):
+    def __init__(self, name, path, original_width, original_height, width, height, boxes_by_class_name):
       self.name = name
+      self.path = path
       self.original_width = original_width
       self.original_height = original_height
       self.width = width
       self.height = height
       self.boxes_by_class_name = boxes_by_class_name
+
+    def load_image_data(self):
+      data = imageio.imread(self.path, pilmode = "RGB")
+      image = Image.fromarray(data, mode = "RGB").resize((self.height, self.width))
+      image = np.array(image)
+      return tf.keras.applications.vgg16.preprocess_input(x = image)
 
     def shape(self):
       return (self.height, self.width, 3)
@@ -155,7 +169,30 @@ class VOC:
       #print("width: %d -> %d\theight: %d -> %d\tx_min: %d -> %d\ty_min: %d -> %d" % (original_width, width, original_height, height, original_x_min, x_min, original_y_min, y_min))
       box = VOC.Box(x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max)
       boxes_by_class_name[class_name].append(box)
-    return VOC.ImageDescription(name = basename, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
+    return VOC.ImageDescription(name = basename, path = image_path, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
+
+  @staticmethod
+  def _create_anchor_minibatch(positive_anchors, negative_anchors, mini_batch_size, image_path):
+    """
+    Returns N=mini_batch_size anchors, trying to get as close to a 1:1 ratio as
+    possible with no more than 50% of the samples being positive.
+    """
+    assert len(positive_anchors) + len(negative_anchors) >= mini_batch_size, "Image has insufficient anchors for mini_batch_size=%d: %s" % (mini_batch_size, image_path)
+    assert len(positive_anchors) > 0, "Image does not have any positive anchors: %s" % image_path
+    assert mini_batch_size % 2 == 0, "mini_batch_size must be evenly divisible"
+
+    num_positive_anchors = len(positive_anchors)
+    num_negative_anchors = len(negative_anchors)
+
+    num_positive_samples = min(mini_batch_size // 2, num_positive_anchors)  # up to half the samples should be positive, if possible
+    num_negative_samples = mini_batch_size - num_positive_samples           # the rest should be negative
+    positive_sample_indices = random.sample(range(num_positive_anchors), num_positive_samples)
+    negative_sample_indices = random.sample(range(num_negative_anchors), num_negative_samples)
+
+    positive_samples = list(map(positive_anchors.__getitem__, positive_sample_indices)) #list(itemgetter(*positive_sample_indices)(positive_anchors))
+    negative_samples = list(map(negative_anchors.__getitem__, negative_sample_indices)) #list(itemgetter(*negative_sample_indices)(negative_anchors))
+
+    return positive_samples, negative_samples
 
   @staticmethod
   def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
@@ -169,12 +206,14 @@ class VOC:
     print("Thread %d finished" % thread_num)
     return y_per_image_path
 
-  def train_data(self, num_threads = 16):
+  def train_data(self, num_threads = 16, limit_samples = None):
     import concurrent.futures
 
-    # Precache everything
+    # Precache anchor label assignments
     y_per_image_path = {}
     image_paths = list(self._descriptions_per_image_path["train"].keys())
+    if limit_samples:
+      image_paths = image_paths[0:limit_samples]
     batch_size = len(image_paths) // num_threads + 1
     print("Spawning %d worker threads to prepare %d training samples..." % (num_threads, len(image_paths)))  
 
@@ -193,6 +232,20 @@ class VOC:
 
       # Return one image at a time 
       for image_path in image_paths:
-        yield image_path, y_per_image_path[image_path]
+        image_data = self._descriptions_per_image_path["train"][image_path].load_image_data()
+        ground_truth_regressions, positive_anchors, negative_anchors = y_per_image_path[image_path]
 
+        # Observed: the maximum number of positive anchors in in a VOC image is 102.
+        # Is this a bug in our code? Paper talks about a 1:1 (128:128) ratio.
 
+        # Randomly choose anchors to use in this mini-batch
+        positive_anchors, negative_anchors = self._create_anchor_minibatch(positive_anchors = positive_anchors, negative_anchors = negative_anchors, mini_batch_size = 256, image_path = image_path)
+
+        # Mark which anchors to use in the map
+        for anchor_position in positive_anchors + negative_anchors:
+          y = anchor_position[0]
+          x = anchor_position[1]
+          k = anchor_position[2]
+          ground_truth_regressions[y,x,k,0] = 1.0
+
+        yield image_path, image_data, ground_truth_regressions
