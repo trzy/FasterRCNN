@@ -5,6 +5,7 @@ import itertools
 import os
 from pathlib import Path
 import random
+import time
 import xml.etree.ElementTree as ET
 
 class VOC:
@@ -168,7 +169,7 @@ class VOC:
     print("Thread %d finished" % thread_num)
     return y_per_image_path
 
-  def train_data(self, num_threads = 32):
+  def train_data(self, num_threads = 16):
     import concurrent.futures
 
     # Precache everything
@@ -177,12 +178,14 @@ class VOC:
     batch_size = len(image_paths) // num_threads + 1
     print("Spawning %d worker threads to prepare %d training samples..." % (num_threads, len(image_paths)))  
 
+    tic = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor() as executor:
       futures = [ executor.submit(self._prepare_data, i, image_paths[i * batch_size : i * batch_size + batch_size], self._descriptions_per_image_path) for i in range(num_threads) ]   
       results = [ f.result() for f in futures ]
       for subset_y_per_image_path in results:
         y_per_image_path.update(subset_y_per_image_path)
-    print("Processed %d training samples" % len(y_per_image_path))
+    toc = time.perf_counter()
+    print("Processed %d training samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
 
     while True:
       # Shuffle data each epoch
