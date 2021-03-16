@@ -65,7 +65,7 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
         # Draw anchor center pos
         if draw_anchor_points:
           size = 1
-          any_positive = True in [ ground_truth_regressions[y,x,k,0] > 0 for k in range(ground_truth_regressions.shape[2]) ]
+          any_positive = True in [ ground_truth_regressions[y,x,k,2] > 0 for k in range(ground_truth_regressions.shape[2]) ]
           color = (0, 255, 0, 255) if any_positive else (255, 0, 0, 255)
           draw_filled_rectangle(ctx, y_min = center_y - size, x_min = center_x - size, y_max = center_y + size, x_max = center_x + size, color = color)
 

@@ -16,11 +16,6 @@ def layers(input_map):
   assert len(input_map.shape) == 4
   anchors_per_location = 9
 
-  # We can infer the total number of anchors from the input map size
-  height = input_map.shape[1]
-  width = input_map.shape[2]
-  num_anchors = anchors_per_location * height * width
-
   # 3x3 convolution over input map producing 512-d result at each output. The center of each output is an anchor point (k anchors at each point).
   anchors = Conv2D(name = "rpn_conv1", kernel_size = (3,3), strides = 1, filters = 512, padding = "same", activation = "relu", kernel_initializer = "normal")(input_map)
 
@@ -128,18 +123,21 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   """
   Returns:
 
-  - Map of shape (height, width, k, 6), where height, width, and k refer to
+  - Map of shape (height, width, k, 8), where height, width, and k refer to
     anchor map shape and number of anchors at each location. The last dimension
     contains:
 
-      0: class (negative if not an object, zero if indeterminate and should be
+      0: 0.0 (unused, initialized to 0, for use by caller)
+      1: object (1 if this is an object anchor, 0 if either a negative or
+         ignored/unused sample)
+      2: class (negative if not an object, zero if indeterminate and should be
          ignored, and when positive, equal to one plus the ground truth object
-         index)
-      1: IoU score with the ground truth box (if this is a positive sample)
-      2: ty (if this is a positive sample)
-      3: tx (if this is a positive sample)
-      4: th (if this is a positive sample)
-      5: tw (if this is a positive sample)
+         index)                                                                                 <-- TODO: is this useful?
+      3: IoU score with the ground truth box (if this is a positive sample)
+      4: ty (if this is a positive sample)
+      5: tx (if this is a positive sample)
+      6: th (if this is a positive sample)
+      7: tw (if this is a positive sample)
 
   - List of positive anchors (anchors that are classified as "object"), with
     each element consisting of the tuple (y,x,k) indicating the anchor position
@@ -171,7 +169,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   anchors_height = anchor_boxes.shape[0]
   anchors_width = anchor_boxes.shape[1]
   anchors_sizes = anchor_boxes_valid.shape[2]
-  regression_map = np.zeros((anchors_height, anchors_width, anchors_sizes, 6))
+  regression_map = np.zeros((anchors_height, anchors_width, anchors_sizes, 8))
   
   # First pass over all anchors and ground truth boxes: determine which anchors
   # can be definitively classified as "object" or "not object". It is possible
@@ -183,7 +181,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
 
         if not anchor_boxes_valid[y,x,k]:
           continue  # ignore anchors that aren't even valid
-
+        
         anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
         anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
 
@@ -232,20 +230,22 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
 
           # Label each anchor. We have to be careful not to overwrite a better
           # result belonging to a different box
-          if iou > 0.7 and iou > regression_map[y,x,k,1]:
+          if iou > 0.7 and iou > regression_map[y,x,k,3]:
             # This IoU meets our threshold for "object" and is better than any
             # other IoU found for this anchor
-            regression_map[y,x,k,0] = box_idx + 1.0 # positive example: box number as [1,N]
-            regression_map[y,x,k,1] = iou
-            regression_map[y,x,k,2] = ty
-            regression_map[y,x,k,3] = tx
-            regression_map[y,x,k,4] = th
-            regression_map[y,x,k,5] = tw
+            regression_map[y,x,k,1] = 1.0           # positive example
+            regression_map[y,x,k,2] = box_idx + 1.0 # positive example: box number as [1,N]
+            regression_map[y,x,k,3] = iou
+            regression_map[y,x,k,4] = ty
+            regression_map[y,x,k,5] = tx
+            regression_map[y,x,k,6] = th
+            regression_map[y,x,k,7] = tw
             anchor_assigned_for_box[box_idx] = True
           elif iou < 0.3 and regression_map[y,x,k,1] <= 0:
             # Definitely not an object and we do not have a positive anchor
             # result at this slot for any other ground truth box
-            regression_map[y,x,k,0] = -1.0          # negative value indicates "not object"
+            regression_map[y,x,k,1] = 0.0           # negative/irrelevant example
+            regression_map[y,x,k,2] = -1.0          # negative value indicates "not object"
   
   # For any ground truth box that did not have an anchor assigned, use the
   # highest-scoring anchor found. This means we may potentially reassign
@@ -259,9 +259,9 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
       k = int(best_anchor_for_box[box_idx,3])
 
       # Assign this box to it, overwriting previous assignment
-      regression_map[y,x,k,0] = box_idx + 1.0
-      regression_map[y,x,k,1] = best_anchor_for_box[box_idx,0]
-      regression_map[y,x,k,2:6] = best_anchor_for_box[box_idx,4:8]
+      regression_map[y,x,k,2] = box_idx + 1.0
+      regression_map[y,x,k,3] = best_anchor_for_box[box_idx,0]
+      regression_map[y,x,k,4:8] = best_anchor_for_box[box_idx,4:8]
 
   # Second pass over all anchors: make lists of all positive and negative
   # examples (for easy random indexing later)
@@ -270,9 +270,9 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   for y in range(anchors_height):
     for x in range(anchors_width):
       for k in range(anchors_sizes):
-        if regression_map[y,x,k,0] > 0:
+        if regression_map[y,x,k,2] > 0:
           object_anchors.append((y, x, k))
-        elif regression_map[y,x,k,0] < 0:
+        elif regression_map[y,x,k,2] < 0:
           not_object_anchors.append((y, x, k))
 
   return regression_map, object_anchors, not_object_anchors
