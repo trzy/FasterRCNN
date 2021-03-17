@@ -206,7 +206,7 @@ class VOC:
     print("Thread %d finished" % thread_num)
     return y_per_image_path
 
-  def train_data(self, num_threads = 16, limit_samples = None):
+  def train_data(self, num_threads = 1, limit_samples = None):
     import concurrent.futures
 
     # Precache anchor label assignments
@@ -228,7 +228,9 @@ class VOC:
 
     while True:
       # Shuffle data each epoch
-      random.shuffle(image_paths)
+      #random.shuffle(image_paths)
+      #print(image_paths)
+      image_paths = ['\\projects\\voc\\vocdevkit\\voc2012\\JPEGImages\\2008_000019.jpg', '\\projects\\voc\\vocdevkit\\voc2012\\JPEGImages\\2008_000015.jpg', '\\projects\\voc\\vocdevkit\\voc2012\\JPEGImages\\2008_000008.jpg']
 
       # Return one image at a time 
       for image_path in image_paths:
