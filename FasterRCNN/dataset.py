@@ -77,7 +77,7 @@ class VOC:
 
     def load_image_data(self):
       data = imageio.imread(self.path, pilmode = "RGB")
-      image = Image.fromarray(data, mode = "RGB").resize((self.height, self.width))
+      image = Image.fromarray(data, mode = "RGB").resize((self.width, self.height))
       image = np.array(image)
       return tf.keras.applications.vgg16.preprocess_input(x = image)
 
