@@ -21,6 +21,7 @@ class VOC:
   dimension is equal to `scale`.
   """
   def __init__(self, dataset_dir, scale = None):
+    print("VOC dataset: Parsing metadata...")
     self._dataset_dir = dataset_dir
     self.index_to_class_name = self._get_index_to_class_name(dataset_dir)
     train_image_paths = self._get_image_paths(dataset_dir, dataset = "train")
@@ -196,17 +197,18 @@ class VOC:
 
   @staticmethod
   def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
-    print("Thread %d started" % thread_num)
+    print("VOC dataset: Thread %d started" % thread_num)
     y_per_image_path = {}
     for image_path in image_paths:
       description = descriptions_per_image_path["train"][image_path]
       anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
       ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
       y_per_image_path[image_path] = (ground_truth_regressions, positive_anchors, negative_anchors)
-    print("Thread %d finished" % thread_num)
+    print("VOC dataset: Thread %d finished" % thread_num)
     return y_per_image_path
 
-  def train_data(self, num_threads = 1, limit_samples = None):
+  # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
+  def train_data(self, shuffle = True, num_threads = 16, limit_samples = None):
     import concurrent.futures
 
     # Precache anchor label assignments
@@ -215,7 +217,7 @@ class VOC:
     if limit_samples:
       image_paths = image_paths[0:limit_samples]
     batch_size = len(image_paths) // num_threads + 1
-    print("Spawning %d worker threads to prepare %d training samples..." % (num_threads, len(image_paths)))  
+    print("VOC dataset: Spawning %d worker threads to process %d training samples..." % (num_threads, len(image_paths)))  
 
     tic = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -224,13 +226,12 @@ class VOC:
       for subset_y_per_image_path in results:
         y_per_image_path.update(subset_y_per_image_path)
     toc = time.perf_counter()
-    print("Processed %d training samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
+    print("VOC dataset: Processed %d training samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
 
     while True:
       # Shuffle data each epoch
-      #random.shuffle(image_paths)
-      #print(image_paths)
-      image_paths = ['\\projects\\voc\\vocdevkit\\voc2012\\JPEGImages\\2008_000019.jpg', '\\projects\\voc\\vocdevkit\\voc2012\\JPEGImages\\2008_000015.jpg', '\\projects\\voc\\vocdevkit\\voc2012\\JPEGImages\\2008_000008.jpg']
+      if shuffle:
+        random.shuffle(image_paths)
 
       # Return one image at a time 
       for image_path in image_paths:
