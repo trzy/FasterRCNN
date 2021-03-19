@@ -1,6 +1,6 @@
 # TODO:
-# - Test that loss functions are actually working by creating and passing in manual y_true values
-#   and then evaluating them offline using a numpy reimplementation of the loss functions
+# - How can regression loss by 0 with a randomly initialized network? Need to check these
+#   examples by hand.
 # - Test whether K.abs()/tf.abs() fail on Linux
 # - Test loss function on an artificial y_true and y_predicted that we can compute by hand
 
@@ -33,6 +33,36 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import backend as K
 import time
 
+def rpn_loss_class_term_np(y_true, y_predicted):
+  """
+  NumPy reference implementation of loss function for immediate execution.
+  """
+  y_predicted_class = y_predicted
+  y_true_class = y_true[:,:,:,:,1].reshape(y_predicted.shape)
+  y_mask = y_true[:,:,:,:,0].reshape(y_predicted.shape)
+  N_cls = float(np.count_nonzero(y_mask)) + 1e-9
+  loss_all_anchors = -(y_true_class * np.log(y_predicted) + (1.0 - y_true_class) * np.log(1.0 - y_predicted)) # binary cross-entropy, element-wise
+  relevant_loss_terms = y_mask * loss_all_anchors
+  return np.sum(relevant_loss_terms) / N_cls
+
+def rpn_loss_regression_term_np(y_true, y_predicted):
+  y_predicted_regression = y_predicted
+  y_true_regression = y_true[:,:,:,:,4:8].reshape(y_predicted.shape)
+  mask_shape = (y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3])
+  y_included = y_true[:,:,:,:,0].reshape(mask_shape)
+  y_positive = y_true[:,:,:,:,1].reshape(mask_shape)
+  y_mask = y_included * y_positive
+  y_mask = np.repeat(y_mask, repeats = 4, axis = 3)
+  N_cls = float(np.count_nonzero(y_included)) + 1e-9
+  x = y_true_regression - y_predicted_regression
+  x_abs = np.sqrt(x * x)  # K.abs/tf.abs crash (Windows only?)
+  is_negative_branch = np.less(x_abs, 1.0).astype(np.float)
+  R_negative_branch = 0.5 * x * x
+  R_positive_branch = x_abs - 0.5
+  loss_all_anchors = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
+  relevant_loss_terms = y_mask * loss_all_anchors
+  return np.sum(relevant_loss_terms) / N_cls
+
 def rpn_loss_class_term(y_true, y_predicted):
   y_predicted_class = tf.convert_to_tensor(y_predicted)
   y_true_class = tf.cast(tf.reshape(y_true[:,:,:,:,1], shape = tf.shape(y_predicted)), dtype = y_predicted.dtype)
@@ -50,10 +80,8 @@ def rpn_loss_class_term(y_true, y_predicted):
   # Zero out the ones which should not have been included
   relevant_loss_terms = y_mask * loss_all_anchors
 
-  # Sum the total loss. Because we are operating on a batch size of 1, the mean
-  # operation should be equivalent to a normal summation, after which we want
-  # to divide by the number of anchors used.
-  return K.mean(relevant_loss_terms) / N_cls
+  # Sum the total loss and normalize by the number of anchors used
+  return K.sum(relevant_loss_terms) / N_cls
 
 def rpn_loss_regression_term(y_true, y_predicted):
   y_predicted_regression = tf.convert_to_tensor(y_predicted)
@@ -92,7 +120,7 @@ def rpn_loss_regression_term(y_true, y_predicted):
 
   # Zero out the ones which should not have been included
   relevant_loss_terms = y_mask * loss_all_anchors
-  return K.mean(relevant_loss_terms) / N_cls
+  return K.sum(relevant_loss_terms) / N_cls
 
 def build_rpn_model(input_image_shape = (None, None, 3)):
   conv_model = vgg16.conv_layers(input_shape = input_image_shape)
@@ -108,6 +136,36 @@ def build_rpn_model(input_image_shape = (None, None, 3)):
 def train(voc):
   pass
 
+def test_loss_functions(voc):
+  model = build_rpn_model()
+  train_data = voc.train_data(shuffle = False)
+
+  print("Running loss function test over training samples...")
+
+  # For each training sample, run forward inference pass and then compute loss
+  # using both Keras backend and reference implementations
+  max_diff_cls = 0
+  max_diff_regr = 0
+  epsilon = 1e-9
+  for i in range(voc.num_samples["train"]):
+    image_path, x, y = next(train_data)
+    y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1      
+    x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
+    y_predicted_cls, y_predicted_regr = model.predict(x)
+    loss_cls_keras  = K.eval(rpn_loss_class_term(y_true = K.variable(y), y_predicted = K.variable(y_predicted_cls)))
+    loss_cls_np     = rpn_loss_class_term_np(y_true = y, y_predicted = y_predicted_cls)
+    loss_regr_keras = K.eval(rpn_loss_regression_term(y_true = K.variable(y), y_predicted = K.variable(y_predicted_regr)))
+    loss_regr_np    = rpn_loss_regression_term_np(y_true = y, y_predicted = y_predicted_regr)
+    pct_diff_cls    = 100 * ((loss_cls_keras + epsilon) / (loss_cls_np + epsilon) - 1)    # epsilon because loss can be 0
+    pct_diff_regr   = 100 * ((loss_regr_keras + epsilon) / (loss_regr_np + epsilon) - 1)
+    print("loss_cls = %f %f\tloss_regr = %f %f\t%s" % (K.eval(loss_cls_keras), loss_cls_np, K.eval(loss_regr_keras), loss_regr_np, image_path))
+    max_diff_cls = max(max_diff_cls, pct_diff_cls)
+    max_diff_regr = max(max_diff_regr, pct_diff_regr)
+
+  #print("Test succeeded -- Keras backend implementation is working")
+  print("Max % difference cls loss = %f" % max_diff_cls)
+  print("Max % difference regr loss = %f" % max_diff_regr)
+
 # good test images:
 # 2010_004041.jpg
 # 2010_005080.jpg
@@ -116,9 +174,9 @@ if __name__ == "__main__":
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
   parser.add_argument("--train", action = "store_true", help = "Train the region proposal network")
+  parser.add_argument("--test-loss", action = "store_true", help = "Test Keras backend implementation of loss functions")
   options = parser.parse_args()
 
-  print("Loading VOC dataset...")
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
   
   if options.show_image:
@@ -133,17 +191,18 @@ if __name__ == "__main__":
     
     visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
 
+  if options.test_loss:
+    test_loss_functions(voc)
+    
   if options.train:
     
-    model = build_rpn_model()
-    info = voc.get_image_description(voc.get_full_path("2008_000019.jpg"))
-    x = info.load_image_data()
-    x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
-    model.predict(x)
-    print("ok")
+    #model = build_rpn_model()
+    #info = voc.get_image_description(voc.get_full_path("2008_000019.jpg"))
+    #x = info.load_image_data()
+    #x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
+    #model.predict(x)
+    #print("ok")
     #exit()
-    
-    
     
     model = build_rpn_model()
     train_data = voc.train_data(limit_samples = 16)
@@ -155,26 +214,10 @@ if __name__ == "__main__":
     
       for i in range(voc.num_samples["train"]):
         image_path, x, y = next(train_data)
-        #print("y=",y.shape)
-        #if "2008_000019.jpg" in image_path:
-        #  print("test=", x.reshape((1, x.shape[0], x.shape[1], x.shape[2])).shape)
-        #  print("shape of image=", x.shape)
-        #  #model = build_rpn_model() 
-        #  x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
-        #  #model.predict(x.reshape((1,600,1058,3)))
-        #  model.predict(x)
-        #  #exit()
         y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1      
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
         loss = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
         progbar.update(current = i, values = [ ("loss", loss[0]) ])
-        #model.summary()
 
-
-    
-  
-  #train_data = voc.train_data(limit_samples = 100)
-  #for i in range(voc.num_samples["train"]):
-  #  image_path, x, ground_truth_regressions = next(train_data)
     
 
