@@ -163,8 +163,8 @@ def test_loss_functions(voc):
     max_diff_regr = max(max_diff_regr, pct_diff_regr)
 
   #print("Test succeeded -- Keras backend implementation is working")
-  print("Max % difference cls loss = %f" % max_diff_cls)
-  print("Max % difference regr loss = %f" % max_diff_regr)
+  print("Max %% difference cls loss = %f" % max_diff_cls)
+  print("Max %% difference regr loss = %f" % max_diff_regr)
 
 # good test images:
 # 2010_004041.jpg
