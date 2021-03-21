@@ -259,6 +259,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
       k = int(best_anchor_for_box[box_idx,3])
 
       # Assign this box to it, overwriting previous assignment
+      regression_map[y,x,k,1] = 1.0
       regression_map[y,x,k,2] = box_idx + 1.0
       regression_map[y,x,k,3] = best_anchor_for_box[box_idx,0]
       regression_map[y,x,k,4:8] = best_anchor_for_box[box_idx,4:8]
