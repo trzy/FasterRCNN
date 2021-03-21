@@ -1,8 +1,5 @@
 # TODO:
-# - How can regression loss by 0 with a randomly initialized network? Need to check these
-#   examples by hand.
 # - Test whether K.abs()/tf.abs() fail on Linux
-# - Test loss function on an artificial y_true and y_predicted that we can compute by hand
 
 #
 # Faster R-CNN in Keras: https://towardsdatascience.com/faster-r-cnn-object-detection-implemented-by-keras-for-custom-data-from-googles-open-images-125f62b9141a
@@ -159,10 +156,11 @@ def test_loss_functions(voc):
     pct_diff_cls    = 100 * ((loss_cls_keras + epsilon) / (loss_cls_np + epsilon) - 1)    # epsilon because loss can be 0
     pct_diff_regr   = 100 * ((loss_regr_keras + epsilon) / (loss_regr_np + epsilon) - 1)
     print("loss_cls = %f %f\tloss_regr = %f %f\t%s" % (K.eval(loss_cls_keras), loss_cls_np, K.eval(loss_regr_keras), loss_regr_np, image_path))
+    assert pct_diff_cls < 0.01 and pct_diff_regr < 0.01 # expect negligible difference (< 0.01%)
     max_diff_cls = max(max_diff_cls, pct_diff_cls)
     max_diff_regr = max(max_diff_regr, pct_diff_regr)
 
-  #print("Test succeeded -- Keras backend implementation is working")
+  print("Test succeeded -- Keras backend implementation is working")
   print("Max %% difference cls loss = %f" % max_diff_cls)
   print("Max %% difference regr loss = %f" % max_diff_regr)
 
@@ -205,7 +203,7 @@ if __name__ == "__main__":
     #exit()
     
     model = build_rpn_model()
-    train_data = voc.train_data(limit_samples = 16)
+    train_data = voc.train_data(cache_images = True)
 
     num_epochs = 16    
     for epoch in range(num_epochs):
