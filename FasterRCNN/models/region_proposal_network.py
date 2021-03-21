@@ -72,8 +72,8 @@ def compute_all_anchor_boxes(input_image_shape):
 
     output[0, 0, 0] = anchor map position (0,0), first anchor center_y
     output[0, 0, 1] = anchor map position (0,0), first anchor center_x
-    output[0, 0, 2] = anchor map position (0,0), first anchor width
-    output[0, 0, 3] = anchor map position (0,0), first anchor height
+    output[0, 0, 2] = anchor map position (0,0), first anchor height
+    output[0, 0, 3] = anchor map position (0,0), first anchor width
     output[0, 0, 4] = anchor map position (0,0), second anchor center_y
     ...
   """
