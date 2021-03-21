@@ -208,7 +208,7 @@ class VOC:
     return y_per_image_path
 
   # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
-  def train_data(self, shuffle = True, num_threads = 16, limit_samples = None):
+  def train_data(self, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
     import concurrent.futures
 
     # Precache anchor label assignments
@@ -228,6 +228,10 @@ class VOC:
     toc = time.perf_counter()
     print("VOC dataset: Processed %d training samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
 
+    # Image cache
+    cached_image_by_path = {}
+
+    # Iterate
     while True:
       # Shuffle data each epoch
       if shuffle:
@@ -235,7 +239,16 @@ class VOC:
 
       # Return one image at a time 
       for image_path in image_paths:
-        image_data = self._descriptions_per_image_path["train"][image_path].load_image_data()
+        # Load image
+        image_data = None
+        if cache_images and image_path in cached_image_by_path:
+          image_data = cached_image_by_path[image_path]
+        if image_data == None:
+          image_data = self._descriptions_per_image_path["train"][image_path].load_image_data()
+          if cache_images:
+            cached_image_by_path[image_path] = image_data
+
+        # Retrieve pre-computed y value
         ground_truth_regressions, positive_anchors, negative_anchors = y_per_image_path[image_path]
 
         # Observed: the maximum number of positive anchors in in a VOC image is 102.
