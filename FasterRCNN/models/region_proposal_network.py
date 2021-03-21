@@ -254,6 +254,8 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   for box_idx in range(len(ground_truth_object_boxes)):
     if not anchor_assigned_for_box[box_idx]:
       # Get the best anchor found
+      iou = best_anchor_for_box[box_idx, 0]
+      assert iou > 0, "Encountered an image for which there appear to be no boxes"  # can't imagine this happening unless there are simply no boxes at all
       y = int(best_anchor_for_box[box_idx,1])
       x = int(best_anchor_for_box[box_idx,2])
       k = int(best_anchor_for_box[box_idx,3])
