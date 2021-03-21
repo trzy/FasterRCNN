@@ -1,4 +1,6 @@
-# TODO:
+# TODO next:
+# - Why are class and regression losses so different? Should be comparable.
+# - Constrain VGG-16 layers when training
 # - Test whether K.abs()/tf.abs() fail on Linux
 
 #
@@ -205,17 +207,36 @@ if __name__ == "__main__":
     model = build_rpn_model()
     train_data = voc.train_data(cache_images = True)
 
-    num_epochs = 16    
+    num_epochs = 16
+    num_samples = voc.num_samples["train"]  # number of iterations in an epoch
+
+    rpn_total_losses = np.zeros(num_samples)
+    class_losses = np.zeros(num_samples)
+    regression_losses = np.zeros(num_samples)
+
     for epoch in range(num_epochs):
-      progbar = tf.keras.utils.Progbar(voc.num_samples["train"])
+      progbar = tf.keras.utils.Progbar(num_samples)
       print("Epoch %d/%d" % (epoch + 1, num_epochs))
     
-      for i in range(voc.num_samples["train"]):
+      for i in range(num_samples):
+        # Fetch one sample and reshape to batch size of 1
         image_path, x, y = next(train_data)
         y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1      
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
-        loss = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
-        progbar.update(current = i, values = [ ("loss", loss[0]) ])
+
+        # Back prop one step
+        losses = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
+
+        # Save losses for this iteration and update mean
+        rpn_total_losses[i] = losses[0]
+        class_losses[i] = losses[1]
+        regression_losses[i] = losses[2]
+        mean_class_loss = np.mean(class_losses[0:i+1])
+        mean_regression_loss = np.mean(regression_losses[0:i+1])
+        mean_rpn_total_loss = mean_class_loss + mean_regression_loss
+
+        # Progress
+        progbar.update(current = i, values = [ ("rpn_total_loss", mean_rpn_total_loss), ("class_loss", mean_class_loss), ("regression_loss", mean_regression_loss) ])
 
     
 
