@@ -243,7 +243,7 @@ class VOC:
         image_data = None
         if cache_images and image_path in cached_image_by_path:
           image_data = cached_image_by_path[image_path]
-        if image_data == None:
+        if image_data is None:  # NumPy array -- cannot test for == None or "is None"
           image_data = self._descriptions_per_image_path["train"][image_path].load_image_data()
           if cache_images:
             cached_image_by_path[image_path] = image_data
