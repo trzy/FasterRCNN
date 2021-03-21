@@ -94,6 +94,7 @@ def rpn_loss_class_term_np(y_true, y_predicted):
   return np.sum(relevant_loss_terms) / N_cls
 
 def rpn_loss_regression_term_np(y_true, y_predicted):
+  scale_factor = 100.0
   y_predicted_regression = y_predicted
   y_true_regression = y_true[:,:,:,:,4:8].reshape(y_predicted.shape)
   mask_shape = (y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3])
@@ -109,7 +110,7 @@ def rpn_loss_regression_term_np(y_true, y_predicted):
   R_positive_branch = x_abs - 0.5
   loss_all_anchors = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
   relevant_loss_terms = y_mask * loss_all_anchors
-  return np.sum(relevant_loss_terms) / N_cls
+  return scale_factor * np.sum(relevant_loss_terms) / N_cls
 
 def rpn_loss_class_term(y_true, y_predicted):
   y_predicted_class = tf.convert_to_tensor(y_predicted)
@@ -132,6 +133,9 @@ def rpn_loss_class_term(y_true, y_predicted):
   return K.sum(relevant_loss_terms) / N_cls
 
 def rpn_loss_regression_term(y_true, y_predicted):
+  #TODO: factor this out as an actual conifgurable parameter and make this function return a loss function
+  scale_factor = 100.0  # hyper-parameter that controls magnitude of regression loss and is chosen to make regression term comparable to class term
+  
   y_predicted_regression = tf.convert_to_tensor(y_predicted)
   y_true_regression = tf.cast(tf.reshape(y_true[:,:,:,:,4:8], shape = tf.shape(y_predicted)), dtype = y_predicted.dtype)
   
@@ -167,7 +171,7 @@ def rpn_loss_regression_term(y_true, y_predicted):
 
   # Zero out the ones which should not have been included
   relevant_loss_terms = y_mask * loss_all_anchors
-  return K.sum(relevant_loss_terms) / N_cls
+  return scale_factor * K.sum(relevant_loss_terms) / N_cls
 
 def build_rpn_model(input_image_shape = (None, None, 3)):
   conv_model = vgg16.conv_layers(input_shape = input_image_shape)
