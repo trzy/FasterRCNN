@@ -26,6 +26,25 @@ def int_range_str(value):
   values = [ min(values), max(values) ]
   return values
 
+def freeze_layers(model, layers):
+  """
+  Sets specified layers in a model to non-trainable. Layers may be specified as
+  a string of comma-separated layer names or as a list of layer names.
+  """
+  frozen_layers = []
+  if type(layers) == str:
+    frozen_layers = [ frozen_layer.strip() for frozen_layer in layers.split(",") ]
+  elif type(layers) == list:
+    frozen_layers = layers
+  elif layers != None:
+    raise RuntimeError("freeze_layers: 'layers' must be a string or a list of strings")
+  for layer in model.layers:
+    if layer.name in frozen_layers:
+      layer.trainable = False
+      frozen_layers.remove(layer.name)
+  if len(frozen_layers) > 0:
+    raise RuntimeError("Cannot freeze missing layers: %s" % ", ".join(frozen_layers))
+
 class CSVLogCallback(tf.keras.callbacks.Callback):
   """
   Keras callback to log metrics along with epoch number and learning rate to a

@@ -1,7 +1,7 @@
 # TODO next:
 # - Why are class and regression losses so different? Should be comparable.
-# - Constrain VGG-16 layers when training
 # - Test whether K.abs()/tf.abs() fail on Linux
+# - Weight decay, dropout, momentum
 
 #
 # Faster R-CNN in Keras: https://towardsdatascience.com/faster-r-cnn-object-detection-implemented-by-keras-for-custom-data-from-googles-open-images-125f62b9141a
@@ -177,15 +177,26 @@ def build_rpn_model(input_image_shape = (None, None, 3)):
   conv_model = vgg16.conv_layers(input_shape = input_image_shape)
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
   model = Model([conv_model.input], [classifier_output, regression_output])
-  
+
   optimizer = Adam(lr=1e-5)
   loss = [ rpn_loss_class_term, rpn_loss_regression_term ]
-  
   model.compile(optimizer = optimizer, loss = loss)
+
+  utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2") # train VGG-16 layers block3_conv1 and up
   return model
 
 def train(voc):
   pass
+
+def show_image(filename):
+  info = voc.get_image_description(path = voc.get_full_path(filename))
+
+  # Need to build the model for this image size in order to be able to visualize boxes correctly
+  conv_model = vgg16.conv_layers(input_shape = (info.height,info.width,3))
+  classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
+  model = Model([conv_model.input], [classifier_output, regression_output])
+    
+  visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
 
 def test_loss_functions(voc):
   model = build_rpn_model()
@@ -226,22 +237,21 @@ if __name__ == "__main__":
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
   parser.add_argument("--train", action = "store_true", help = "Train the region proposal network")
+  parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
+  parser.add_argument("--save-to", metavar="filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
+  parser.add_argument("--load-from", metavar="filepath", type = str, action = "store", help = "File to load initial model weights from")
   parser.add_argument("--test-loss", action = "store_true", help = "Test Keras backend implementation of loss functions")
   options = parser.parse_args()
 
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
+
+  model = build_rpn_model()
+  if options.load_from:
+    model.load_weights(filepath = options.load_from, by_name = True)
+    print("Loaded model weights from %s" % options.load_from)
   
   if options.show_image:
-    info = voc.get_image_description(path = voc.get_full_path(options.show_image))
-
-    # Need to build the model for this image size in order to be able to visualize boxes correctly
-    conv_model = vgg16.conv_layers(input_shape = (info.height,info.width,3))
-    classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
-    model = Model([conv_model.input], [classifier_output, regression_output])
-
-    print(classifier_output.shape, model.input.shape)
-    
-    visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
+    show_image(filename = options.show_image)
 
   if options.test_loss:
     test_loss_functions(voc)
@@ -256,19 +266,16 @@ if __name__ == "__main__":
     #print("ok")
     #exit()
     
-    model = build_rpn_model()
     train_data = voc.train_data(cache_images = True)
-
-    num_epochs = 16
     num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
     rpn_total_losses = np.zeros(num_samples)
     class_losses = np.zeros(num_samples)
     regression_losses = np.zeros(num_samples)
 
-    for epoch in range(num_epochs):
+    for epoch in range(options.epochs):
       progbar = tf.keras.utils.Progbar(num_samples)
-      print("Epoch %d/%d" % (epoch + 1, num_epochs))
+      print("Epoch %d/%d" % (epoch + 1, options.epochs))
     
       for i in range(num_samples):
         # Fetch one sample and reshape to batch size of 1
@@ -290,5 +297,8 @@ if __name__ == "__main__":
         # Progress
         progbar.update(current = i, values = [ ("rpn_total_loss", mean_rpn_total_loss), ("class_loss", mean_class_loss), ("regression_loss", mean_regression_loss) ])
 
-    
+    # Save learned model parameters
+    if options.save_to is not None:
+      model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
+      print("Saved model weights to %s" % options.save_to)
 
