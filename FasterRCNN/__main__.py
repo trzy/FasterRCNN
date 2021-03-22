@@ -188,7 +188,7 @@ def build_rpn_model(input_image_shape = (None, None, 3)):
 def train(voc):
   pass
 
-def show_image(filename):
+def show_image(voc, filename):
   info = voc.get_image_description(path = voc.get_full_path(filename))
 
   # Need to build the model for this image size in order to be able to visualize boxes correctly
@@ -197,6 +197,13 @@ def show_image(filename):
   model = Model([conv_model.input], [classifier_output, regression_output])
     
   visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
+
+def infer_boxes(model, voc, filename):
+  info = voc.get_image_description(path = voc.get_full_path(filename))
+  x = info.load_image_data()
+  x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
+  y_class, y_regression = model.predict(x)
+  visualization.show_proposed_regions(voc = voc, filename = filename, y_class = y_class, y_regression = y_regression)
 
 def test_loss_functions(voc):
   model = build_rpn_model()
@@ -241,6 +248,7 @@ if __name__ == "__main__":
   parser.add_argument("--save-to", metavar="filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
   parser.add_argument("--load-from", metavar="filepath", type = str, action = "store", help = "File to load initial model weights from")
   parser.add_argument("--test-loss", action = "store_true", help = "Test Keras backend implementation of loss functions")
+  parser.add_argument("--infer-boxes", metavar = "file", type = str, action = "store", help = "Run inference on image using region proposal network and display bounding boxes")
   options = parser.parse_args()
 
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
@@ -251,11 +259,14 @@ if __name__ == "__main__":
     print("Loaded model weights from %s" % options.load_from)
   
   if options.show_image:
-    show_image(filename = options.show_image)
+    show_image(voc = voc, filename = options.show_image)
 
   if options.test_loss:
     test_loss_functions(voc)
     
+  if options.infer_boxes:
+    infer_boxes(model = model, voc = voc, filename = options.infer_boxes)
+
   if options.train:
     
     #model = build_rpn_model()
@@ -301,4 +312,3 @@ if __name__ == "__main__":
     if options.save_to is not None:
       model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
       print("Saved model weights to %s" % options.save_to)
-

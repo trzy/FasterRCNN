@@ -3,6 +3,7 @@ from .models import region_proposal_network
 from .models import intersection_over_union
 
 import imageio
+from math import exp
 from PIL import Image, ImageDraw
 
 def draw_rectangle(ctx, x_min, y_min, x_max, y_max, color, thickness = 4):
@@ -31,6 +32,46 @@ def show_annotated_image(voc, filename, draw_anchor_points = True, draw_anchor_i
 
   # Display image
   image.show()
+
+def show_proposed_regions(voc, filename, y_class, y_regression):
+  # Load image and scale appropriately
+  filepath = voc.get_full_path(filename = filename)
+  info = voc.get_image_description(path = filepath)
+  data = imageio.imread(filepath, pilmode = "RGB")
+  image = Image.fromarray(data, mode = "RGB")
+  image = image.resize((info.width, info.height), resample = Image.BILINEAR)
+  ctx = ImageDraw.Draw(image)
+
+  # Get all anchors for this image size
+  anchor_boxes, _ = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
+
+  # Extract predicted boxes
+  boxes = []  # (y_min,, x_min, y_max, x_max)
+  for y in range(y_class.shape[1]):
+    for x in range(y_class.shape[2]):
+      for k in range(y_class.shape[3]):
+        if y_class[0,y,x,k] > 0.5:  # is object?
+          box_params = y_regression[0,y,x,k*4+0:k*4+4]
+          anchor_box = anchor_boxes[y,x,k*4+0:k*4+4]
+          box = _convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
+          boxes.append(box)
+
+  # Draw boxes
+  for box in boxes:
+    draw_rectangle(ctx = ctx, x_min = box[1], y_min = box[0], x_max = box[3], y_max = box[2], color = (255, 255, 0, 255), thickness = 1)
+  image.show()
+
+def _convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width):
+  ty, tx, th, tw = box_params
+  center_x = anchor_width * tx + anchor_center_x
+  center_y = anchor_height * ty + anchor_center_y
+  width = exp(tw) * anchor_width
+  height = exp(th) * anchor_height
+  y_min = center_y - 0.5 * height
+  x_min = center_x - 0.5 * width
+  y_max = center_y + 0.5 * height
+  x_max = center_x + 0.5 * width
+  return (y_min, x_min, y_max, x_max)
 
 def _draw_ground_truth_boxes(image, boxes):
   # Draw green boxes
