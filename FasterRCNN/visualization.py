@@ -51,7 +51,7 @@ def show_proposed_regions(voc, filename, y_class, y_regression):
     for x in range(y_class.shape[2]):
       for k in range(y_class.shape[3]):
         if y_class[0,y,x,k] > 0.5:  # is object?
-          box_params = y_regression[0,y,x,k*4+0:k*4+4]
+          box_params = y_regression[0,y,x,k*4+0:k*4+4] / 4.0
           anchor_box = anchor_boxes[y,x,k*4+0:k*4+4]
           box = _convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
           boxes.append(box)

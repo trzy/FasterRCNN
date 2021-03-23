@@ -239,6 +239,8 @@ def test_loss_functions(voc):
 # good test images:
 # 2010_004041.jpg
 # 2010_005080.jpg
+# 2008_000019.jpg
+# 2009_004872.jpg
 if __name__ == "__main__":
   parser = argparse.ArgumentParser("FasterRCNN")
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")

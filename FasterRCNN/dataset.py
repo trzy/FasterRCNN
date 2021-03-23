@@ -203,6 +203,7 @@ class VOC:
       description = descriptions_per_image_path["train"][image_path]
       anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
       ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+      ground_truth_regressions[:,:,:,4:8] *= 4.0
       y_per_image_path[image_path] = (ground_truth_regressions, positive_anchors, negative_anchors)
     print("VOC dataset: Thread %d finished" % thread_num)
     return y_per_image_path
