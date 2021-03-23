@@ -203,10 +203,54 @@ class VOC:
       description = descriptions_per_image_path["train"][image_path]
       anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
       ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
-      ground_truth_regressions[:,:,:,4:8] *= 4.0
       y_per_image_path[image_path] = (ground_truth_regressions, positive_anchors, negative_anchors)
     print("VOC dataset: Thread %d finished" % thread_num)
     return y_per_image_path
+
+  def _standardize_regressions(self, y_per_image_path):
+    ty = []
+    tx = []
+    th = []
+    tw = []
+
+    # Extract all regression components for every single positive anchor
+    for _, (ground_truth_regressions, _, _) in y_per_image_path.items():
+      for y in range(ground_truth_regressions.shape[0]):
+        for x in range(ground_truth_regressions.shape[1]):
+          for k in range(ground_truth_regressions.shape[2]):
+            is_object = ground_truth_regressions[y,x,k,1] > 0
+            if is_object:
+              ty.append(ground_truth_regressions[y,x,k,4])
+              tx.append(ground_truth_regressions[y,x,k,5])
+              th.append(ground_truth_regressions[y,x,k,6])
+              tw.append(ground_truth_regressions[y,x,k,7])
+    
+    # Compute mean and standard deviation for each
+    ty = np.array(ty)
+    tx = np.array(tx)
+    th = np.array(th)
+    tw = np.array(tw)
+    ty_mean = np.mean(ty)
+    tx_mean = np.mean(tx)
+    th_mean = np.mean(th)
+    tw_mean = np.mean(tw)
+    ty_stdev = np.std(ty)
+    tx_stdev = np.std(tx)
+    th_stdev = np.std(th)
+    tw_stdev = np.std(tw)
+
+    # TODO: figure out where to properly store these
+    means = { "tx": tx_mean, "ty": ty_mean, "tw": tw_mean, "th": th_mean }
+    stdevs = { "tx": tx_stdev, "ty": ty_stdev, "tw": tw_stdev, "th": th_stdev }
+    print("means = ", means)
+    print("stdevs = ", stdevs)
+
+    # Standardize the ground truth data
+    means = np.array([ ty_mean, tx_mean, th_mean, tw_mean ])
+    stdevs = np.array([ ty_stdev, tx_stdev, th_stdev, tw_stdev ])
+    for _, (ground_truth_regressions, _, _) in y_per_image_path.items():
+      ground_truth_regressions[:,:,:,4:8] -= means
+      ground_truth_regressions[:,:,:,4:8] /= stdevs
 
   # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
   def train_data(self, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
@@ -229,6 +273,9 @@ class VOC:
     toc = time.perf_counter()
     print("VOC dataset: Processed %d training samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
 
+    # Standardize the regressions
+    self._standardize_regressions(y_per_image_path)
+    
     # Image cache
     cached_image_by_path = {}
 
