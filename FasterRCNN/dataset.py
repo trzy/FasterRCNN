@@ -273,9 +273,6 @@ class VOC:
     toc = time.perf_counter()
     print("VOC dataset: Processed %d training samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
 
-    # Standardize the regressions
-    self._standardize_regressions(y_per_image_path)
-    
     # Image cache
     cached_image_by_path = {}
 

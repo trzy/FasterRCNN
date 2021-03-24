@@ -94,7 +94,9 @@ def rpn_loss_class_term_np(y_true, y_predicted):
   return np.sum(relevant_loss_terms) / N_cls
 
 def rpn_loss_regression_term_np(y_true, y_predicted):
-  scale_factor = 100.0
+  scale_factor = 1.0
+  sigma = 3.0
+  sigma_squared = sigma * sigma
   y_predicted_regression = y_predicted
   y_true_regression = y_true[:,:,:,:,4:8].reshape(y_predicted.shape)
   mask_shape = (y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3])
@@ -106,8 +108,8 @@ def rpn_loss_regression_term_np(y_true, y_predicted):
   x = y_true_regression - y_predicted_regression
   x_abs = np.sqrt(x * x)  # K.abs/tf.abs crash (Windows only?)
   is_negative_branch = np.less(x_abs, 1.0).astype(np.float)
-  R_negative_branch = 0.5 * x * x
-  R_positive_branch = x_abs - 0.5
+  R_negative_branch = 0.5 * sigma_squared * x * x
+  R_positive_branch = x_abs - 0.5 / sigma_squared
   loss_all_anchors = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
   relevant_loss_terms = y_mask * loss_all_anchors
   return scale_factor * np.sum(relevant_loss_terms) / N_cls
@@ -134,8 +136,10 @@ def rpn_loss_class_term(y_true, y_predicted):
 
 def rpn_loss_regression_term(y_true, y_predicted):
   #TODO: factor this out as an actual conifgurable parameter and make this function return a loss function
-  scale_factor = 100.0  # hyper-parameter that controls magnitude of regression loss and is chosen to make regression term comparable to class term
-  
+  scale_factor = 1.0  # hyper-parameter that controls magnitude of regression loss and is chosen to make regression term comparable to class term
+  sigma = 3.0         # see: https://github.com/rbgirshick/py-faster-rcnn/issues/89
+  sigma_squared = sigma * sigma
+
   y_predicted_regression = tf.convert_to_tensor(y_predicted)
   y_true_regression = tf.cast(tf.reshape(y_true[:,:,:,:,4:8], shape = tf.shape(y_predicted)), dtype = y_predicted.dtype)
   
@@ -165,24 +169,36 @@ def rpn_loss_regression_term(y_true, y_predicted):
   x = y_true_regression - y_predicted_regression
   x_abs = tf.sqrt(x * x)  # K.abs/tf.abs crash (Windows only?)
   is_negative_branch = tf.cast(tf.less(x_abs, 1.0), dtype = tf.float32)
-  R_negative_branch = 0.5 * x * x
-  R_positive_branch = x_abs - 0.5
+  R_negative_branch = 0.5 * x * x * sigma_squared
+  R_positive_branch = x_abs - 0.5 / sigma_squared
   loss_all_anchors = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
 
   # Zero out the ones which should not have been included
   relevant_loss_terms = y_mask * loss_all_anchors
   return scale_factor * K.sum(relevant_loss_terms) / N_cls
 
-def build_rpn_model(input_image_shape = (None, None, 3)):
+def print_weights(model):
+  for layer in model.layers:
+    weights = layer.get_weights()
+    if len(weights) > 0:
+      print(layer.name, layer.get_weights()[0][0])
+
+def build_rpn_model(input_image_shape = (None, None, 3), weights_filepath = None):
   conv_model = vgg16.conv_layers(input_shape = input_image_shape)
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
   model = Model([conv_model.input], [classifier_output, regression_output])
 
-  optimizer = Adam(lr=1e-5)
+  optimizer = SGD(lr=1e-3, momentum=0.9)
   loss = [ rpn_loss_class_term, rpn_loss_regression_term ]
   model.compile(optimizer = optimizer, loss = loss)
 
-  utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2") # train VGG-16 layers block3_conv1 and up
+  # Load before freezing layers
+  if weights_filepath:
+    model.load_weights(filepath = weights_filepath, by_name = True)
+    print("Loaded model weights from %s" % weights_filepath)
+
+  # Freeze first two convolutional blocks during training
+  utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2")
   return model
 
 def train(voc):
@@ -255,10 +271,7 @@ if __name__ == "__main__":
 
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
 
-  model = build_rpn_model()
-  if options.load_from:
-    model.load_weights(filepath = options.load_from, by_name = True)
-    print("Loaded model weights from %s" % options.load_from)
+  model = build_rpn_model(weights_filepath = options.load_from)
   
   if options.show_image:
     show_image(voc = voc, filename = options.show_image)

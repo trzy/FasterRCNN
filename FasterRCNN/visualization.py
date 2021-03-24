@@ -62,13 +62,7 @@ def show_proposed_regions(voc, filename, y_class, y_regression):
   image.show()
 
 def _convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width):
-  means =  {'tx': 0.014873692772671428, 'ty': 0.026718008820397855, 'tw': -0.014357306010561604, 'th': -0.014870371536232914}
-  stdevs =  {'tx': 0.09052156085315972, 'ty': 0.08890437589529802, 'tw': 0.27006506570671296, 'th': 0.29379770479513506}
   ty, tx, th, tw = box_params
-  tx = tx * stdevs["tx"] + means["tx"]
-  ty = ty * stdevs["ty"] + means["ty"]
-  tw = tw * stdevs["tw"] + means["tw"]
-  th = th * stdevs["th"] + means["th"]
   center_x = anchor_width * tx + anchor_center_x
   center_y = anchor_height * ty + anchor_center_y
   width = exp(tw) * anchor_width
