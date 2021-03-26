@@ -183,12 +183,12 @@ def print_weights(model):
     if len(weights) > 0:
       print(layer.name, layer.get_weights()[0][0])
 
-def build_rpn_model(input_image_shape = (None, None, 3), weights_filepath = None):
+def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_filepath = None):
   conv_model = vgg16.conv_layers(input_shape = input_image_shape)
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
   model = Model([conv_model.input], [classifier_output, regression_output])
 
-  optimizer = SGD(lr=1e-3, momentum=0.9)
+  optimizer = SGD(lr=learning_rate, momentum=0.9)
   loss = [ rpn_loss_class_term, rpn_loss_regression_term ]
   model.compile(optimizer = optimizer, loss = loss)
 
@@ -263,6 +263,7 @@ if __name__ == "__main__":
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
   parser.add_argument("--train", action = "store_true", help = "Train the region proposal network")
   parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
+  parser.add_argument("--learning-rate", metavar="rate", type = float, action = "store", default = "0.001", help = "Learning rate")
   parser.add_argument("--save-to", metavar="filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
   parser.add_argument("--load-from", metavar="filepath", type = str, action = "store", help = "File to load initial model weights from")
   parser.add_argument("--test-loss", action = "store_true", help = "Test Keras backend implementation of loss functions")
@@ -271,7 +272,7 @@ if __name__ == "__main__":
 
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
 
-  model = build_rpn_model(weights_filepath = options.load_from)
+  model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate)
   
   if options.show_image:
     show_image(voc = voc, filename = options.show_image)
