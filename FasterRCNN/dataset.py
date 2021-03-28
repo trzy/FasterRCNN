@@ -253,7 +253,7 @@ class VOC:
       ground_truth_regressions[:,:,:,4:8] /= stdevs
 
   # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
-  def train_data(self, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
+  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
     import concurrent.futures
 
     # Precache anchor label assignments
@@ -300,9 +300,10 @@ class VOC:
         # Is this a bug in our code? Paper talks about a 1:1 (128:128) ratio.
 
         # Randomly choose anchors to use in this mini-batch
-        positive_anchors, negative_anchors = self._create_anchor_minibatch(positive_anchors = positive_anchors, negative_anchors = negative_anchors, mini_batch_size = 256, image_path = image_path)
+        positive_anchors, negative_anchors = self._create_anchor_minibatch(positive_anchors = positive_anchors, negative_anchors = negative_anchors, mini_batch_size = mini_batch_size, image_path = image_path)
 
         # Mark which anchors to use in the map
+        ground_truth_regressions[:,:,:,0] = 0.0 # clear out previous (we re-use the same object)
         for anchor_position in positive_anchors + negative_anchors:
           y = anchor_position[0]
           x = anchor_position[1]
