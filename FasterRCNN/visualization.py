@@ -40,21 +40,24 @@ def show_proposed_regions(voc, filename, y_class, y_regression):
   data = imageio.imread(filepath, pilmode = "RGB")
   image = Image.fromarray(data, mode = "RGB")
   image = image.resize((info.width, info.height), resample = Image.BILINEAR)
-  ctx = ImageDraw.Draw(image)
+  ctx = ImageDraw.Draw(image, mode = "RGBA")
 
   # Get all anchors for this image size
   anchor_boxes, _ = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
 
-  # Extract predicted boxes
   boxes = []  # (y_min,, x_min, y_max, x_max)
   for y in range(y_class.shape[1]):
     for x in range(y_class.shape[2]):
       for k in range(y_class.shape[3]):
         if y_class[0,y,x,k] > 0.5:  # is object?
+          # Extract predicted box
           anchor_box = anchor_boxes[y,x,k*4+0:k*4+4]
           box_params = y_regression[0,y,x,k*4+0:k*4+4]
           box = _convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
           boxes.append(box)
+          # Draw filled anchor indicating object region
+          draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (0, 255, 0, 64))
+
 
   # Draw boxes
   for box in boxes:
