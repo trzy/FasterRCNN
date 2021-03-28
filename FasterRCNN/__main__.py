@@ -183,13 +183,15 @@ def print_weights(model):
     if len(weights) > 0:
       print(layer.name, layer.get_weights()[0][0])
 
-def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_filepath = None):
-  conv_model = vgg16.conv_layers(input_shape = input_image_shape)
-  classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
-  model = Model([conv_model.input], [classifier_output, regression_output])
+def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_filepath = None, l2 = 0):
+  conv_model = vgg16.conv_layers(input_shape = input_image_shape, l2 = l2)
+  classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0], l2 = l2)
+  #model = Model([conv_model.input], [classifier_output, regression_output])
+  model = Model([conv_model.input], [classifier_output ])
 
   optimizer = SGD(lr=learning_rate, momentum=0.9)
-  loss = [ rpn_loss_class_term, rpn_loss_regression_term ]
+  #loss = [ rpn_loss_class_term, rpn_loss_regression_term ]
+  loss = [ rpn_loss_class_term ]
   model.compile(optimizer = optimizer, loss = loss)
 
   # Load before freezing layers
@@ -263,8 +265,10 @@ if __name__ == "__main__":
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
   parser.add_argument("--train", action = "store_true", help = "Train the region proposal network")
   parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
-  parser.add_argument("--learning-rate", metavar="rate", type = float, action = "store", default = "0.001", help = "Learning rate")
-  parser.add_argument("--save-to", metavar="filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
+  parser.add_argument("--learning-rate", metavar = "rate", type = float, action = "store", default = "0.001", help = "Learning rate")
+  parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = "256", help = "Mini-batch size")
+  parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
+  parser.add_argument("--save-to", metavar = "filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
   parser.add_argument("--load-from", metavar="filepath", type = str, action = "store", help = "File to load initial model weights from")
   parser.add_argument("--test-loss", action = "store_true", help = "Test Keras backend implementation of loss functions")
   parser.add_argument("--infer-boxes", metavar = "file", type = str, action = "store", help = "Run inference on image using region proposal network and display bounding boxes")
@@ -272,7 +276,8 @@ if __name__ == "__main__":
 
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
 
-  model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate)
+  model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, l2 = options.l2)
+  model.summary()
   
   if options.show_image:
     show_image(voc = voc, filename = options.show_image)
@@ -293,12 +298,13 @@ if __name__ == "__main__":
     #print("ok")
     #exit()
     
-    train_data = voc.train_data(cache_images = True)
+    train_data = voc.train_data(cache_images = True, mini_batch_size = options.mini_batch)
     num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
     rpn_total_losses = np.zeros(num_samples)
     class_losses = np.zeros(num_samples)
     regression_losses = np.zeros(num_samples)
+    class_accuracies = np.zeros(num_samples)
 
     for epoch in range(options.epochs):
       progbar = tf.keras.utils.Progbar(num_samples)
@@ -311,18 +317,56 @@ if __name__ == "__main__":
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
 
         # Back prop one step
-        losses = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
+        #losses = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
+        loss = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
+
+
+
+        # Predict to compute current accuracy
+        y_predicted_class = model.predict_on_batch(x = x)
+        y_true_class = y[:,:,:,:,1].reshape(y_predicted_class.shape)
+        y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)
+        assert np.size(y_true_class) == np.size(y_predicted_class)
+        true_positives = np.sum(y_valid * np.where(y_predicted_class > 0.5, True, False) * np.where(y_true_class > 0.5, True, False))
+        true_negatives = np.sum(y_valid * np.where(y_predicted_class < 0.5, True, False) * np.where(y_true_class < 0.5, True, False))
+        total_samples = np.sum(np.where(y_valid == 1.0, True, False))
+        class_accuracy = (true_positives + true_negatives) / total_samples
 
         # Save losses for this iteration and update mean
-        rpn_total_losses[i] = losses[0]
-        class_losses[i] = losses[1]
-        regression_losses[i] = losses[2]
+        class_losses[i] = loss
+        class_accuracies[i] = class_accuracy
         mean_class_loss = np.mean(class_losses[0:i+1])
-        mean_regression_loss = np.mean(regression_losses[0:i+1])
-        mean_rpn_total_loss = mean_class_loss + mean_regression_loss
+        mean_class_accuracy = np.mean(class_accuracies[0:i+1])
 
         # Progress
-        progbar.update(current = i, values = [ ("rpn_total_loss", mean_rpn_total_loss), ("class_loss", mean_class_loss), ("regression_loss", mean_regression_loss) ])
+        progbar.update(current = i, values = [ ("class_loss", mean_class_loss), ("class_accuracy", mean_class_accuracy) ])
+
+
+
+
+        # Predict to compute current accuracy
+        #y_predicted_class, y_predicted_regression = model.predict_on_batch(x = x)
+        #y_true_class = y[:,:,:,:,1].reshape(y_predicted_class.shape)
+        #y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)
+        #assert np.size(y_true_class) == np.size(y_predicted_class)
+        #true_positives = np.sum(y_valid * np.where(y_predicted_class > 0.5, True, False) * np.where(y_true_class > 0.5, True, False))
+        #true_negatives = np.sum(y_valid * np.where(y_predicted_class < 0.5, True, False) * np.where(y_true_class < 0.5, True, False))
+        #class_accuracy = (true_positives + true_negatives) / np.size(y_predicted_class)
+
+        ## Save losses for this iteration and update mean
+        #rpn_total_losses[i] = losses[0]
+        #class_losses[i] = losses[1]
+        #regression_losses[i] = losses[2]
+        #class_accuracies[i] = class_accuracy
+        #mean_class_loss = np.mean(class_losses[0:i+1])
+        #mean_regression_loss = np.mean(regression_losses[0:i+1])
+        #mean_rpn_total_loss = mean_class_loss + mean_regression_loss
+        #mean_class_accuracy = np.mean(class_accuracies[0:i+1])
+
+        ## Progress
+        #progbar.update(current = i, values = [ ("rpn_total_loss", mean_rpn_total_loss), ("class_loss", mean_class_loss), ("regression_loss", mean_regression_loss), ("class_accuracy", mean_class_accuracy) ])
+
+      print("")
 
     # Save learned model parameters
     if options.save_to is not None:
