@@ -220,7 +220,9 @@ def infer_boxes(model, voc, filename):
   info = voc.get_image_description(path = voc.get_full_path(filename))
   x = info.load_image_data()
   x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
-  y_class, y_regression = model.predict(x)
+  y_class = model.predict(x)
+  y_regression = np.zeros((y_class.shape[0], y_class.shape[1], y_class.shape[2], y_class.shape[3] * 4))
+  #y_class, y_regression = model.predict(x)
   visualization.show_proposed_regions(voc = voc, filename = filename, y_class = y_class, y_regression = y_regression)
 
 def test_loss_functions(voc):
