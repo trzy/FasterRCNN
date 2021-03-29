@@ -1,4 +1,8 @@
 # TODO next:
+# - Compute loss on ground truth and compare w/ loss from prediction for one of the images. That is, generate a fake y_class output using
+#   ground truth data (mark anchors with correct IoU as 1.0 and the rest as 0.0) and confirm GT loss is much lower
+# - Visualize mini batches!
+# - Try reduced dataset of 15 images or so
 # - Why are class and regression losses so different? Should be comparable.
 # - Test whether K.abs()/tf.abs() fail on Linux
 # - Weight decay, dropout, momentum
@@ -36,14 +40,14 @@ import time
 #TODO: turn this into a unit test
 def test_loss_manual():
   # Creates an artificial prediction and ground truth pair to test the box
-  # regression loss function. All anchors are marked as valid and a single 
+  # regression loss function. All anchors are marked as valid and a single
   # anchor is marked as positive. Only it should be reflected in the loss.
 
   predicted_t = np.array([10, 20, 30, 40])
   true_t      = np.array([11, 22, 33, 44])
 
   y_predicted = np.zeros((1, 2, 2, 9*4))
-  y_true      = np.zeros((1, 2, 2, 9, 8)) 
+  y_true      = np.zeros((1, 2, 2, 9, 8))
 
   y_predicted[0,0,0,0:9*4] = -50 * np.ones(9*4)   # all anchors at (0,0) are invalid
   y_predicted[0,1,0,0:9*4] = -60 * np.ones(9*4)   # ""
@@ -142,14 +146,14 @@ def rpn_loss_regression_term(y_true, y_predicted):
 
   y_predicted_regression = tf.convert_to_tensor(y_predicted)
   y_true_regression = tf.cast(tf.reshape(y_true[:,:,:,:,4:8], shape = tf.shape(y_predicted)), dtype = y_predicted.dtype)
-  
+
   # Include only anchors that are used in the mini-batch and which correspond
   # to objects (positive samples)
   mask_shape = tf.slice(tf.shape(y_true), begin = [0], size = [4])
   y_included = tf.cast(tf.reshape(y_true[:,:,:,:,0], mask_shape), dtype = y_predicted.dtype)
   y_positive = tf.cast(tf.reshape(y_true[:,:,:,:,1], mask_shape), dtype = y_predicted.dtype)
   y_mask = y_included * y_positive
-  
+
   # y_mask is of the wrong shape. We have one value per (y,x,k) position but in
   # fact need to have 4 values (one for each of the regression variables). For
   # example, y_predicted might be (1,37,50,36) and y_mask will be (1,37,50,9).
@@ -213,7 +217,7 @@ def show_image(voc, filename):
   conv_model = vgg16.conv_layers(input_shape = (info.height,info.width,3))
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0])
   model = Model([conv_model.input], [classifier_output, regression_output])
-    
+
   visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
 
 def infer_boxes(model, voc, filename):
@@ -223,6 +227,11 @@ def infer_boxes(model, voc, filename):
   y_class = model.predict(x)
   y_regression = np.zeros((y_class.shape[0], y_class.shape[1], y_class.shape[2], y_class.shape[3] * 4))
   #y_class, y_regression = model.predict(x)
+  for yy in range(y_class.shape[1]):
+    for xx in range(y_class.shape[2]):
+      for kk in range(y_class.shape[3]):
+        if y_class[0,yy,xx,kk] > 0.5:
+          print("%d,%d,%d -> %f" % (yy, xx, kk, y_class[0,yy,xx,kk]))
   visualization.show_proposed_regions(voc = voc, filename = filename, y_class = y_class, y_regression = y_regression)
 
 def test_loss_functions(voc):
@@ -238,7 +247,7 @@ def test_loss_functions(voc):
   epsilon = 1e-9
   for i in range(voc.num_samples["train"]):
     image_path, x, y = next(train_data)
-    y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1      
+    y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1
     x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
     y_predicted_cls, y_predicted_regr = model.predict(x)
     loss_cls_keras  = K.eval(rpn_loss_class_term(y_true = K.variable(y), y_predicted = K.variable(y_predicted_cls)))
@@ -280,18 +289,18 @@ if __name__ == "__main__":
 
   model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, l2 = options.l2)
   model.summary()
-  
+
   if options.show_image:
     show_image(voc = voc, filename = options.show_image)
 
   if options.test_loss:
     test_loss_functions(voc)
-    
+
   if options.infer_boxes:
     infer_boxes(model = model, voc = voc, filename = options.infer_boxes)
 
   if options.train:
-    
+
     #model = build_rpn_model()
     #info = voc.get_image_description(voc.get_full_path("2008_000019.jpg"))
     #x = info.load_image_data()
@@ -299,7 +308,7 @@ if __name__ == "__main__":
     #model.predict(x)
     #print("ok")
     #exit()
-    
+
     train_data = voc.train_data(cache_images = True, mini_batch_size = options.mini_batch)
     num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
@@ -311,11 +320,11 @@ if __name__ == "__main__":
     for epoch in range(options.epochs):
       progbar = tf.keras.utils.Progbar(num_samples)
       print("Epoch %d/%d" % (epoch + 1, options.epochs))
-    
+
       for i in range(num_samples):
         # Fetch one sample and reshape to batch size of 1
         image_path, x, y = next(train_data)
-        y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1      
+        y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
 
         # Back prop one step
@@ -326,12 +335,14 @@ if __name__ == "__main__":
 
         # Predict to compute current accuracy
         y_predicted_class = model.predict_on_batch(x = x)
-        y_true_class = y[:,:,:,:,1].reshape(y_predicted_class.shape)
+        y_true_class = y[:,:,:,:,2].reshape(y_predicted_class.shape)
         y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)
         assert np.size(y_true_class) == np.size(y_predicted_class)
-        true_positives = np.sum(y_valid * np.where(y_predicted_class > 0.5, True, False) * np.where(y_true_class > 0.5, True, False))
-        true_negatives = np.sum(y_valid * np.where(y_predicted_class < 0.5, True, False) * np.where(y_true_class < 0.5, True, False))
-        total_samples = np.sum(np.where(y_valid == 1.0, True, False))
+        ground_truth_positives = np.where(y_true_class > 0, True, False)
+        ground_truth_negatives = np.where(y_true_class < 0, True, False)
+        true_positives = np.sum(np.where(y_predicted_class > 0.5, True, False) * ground_truth_positives)
+        true_negatives = np.sum(np.where(y_predicted_class < 0.5, True, False) * ground_truth_negatives)
+        total_samples = np.sum(ground_truth_positives) + np.sum(ground_truth_negatives)
         class_accuracy = (true_positives + true_negatives) / total_samples
 
         # Save losses for this iteration and update mean

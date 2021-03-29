@@ -133,6 +133,8 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
     x = positive_anchors[i][1]
     k = positive_anchors[i][2]
 
+    print("anchor=[%d,%d,%d]" % (y, x, k))
+
     # Extract box and draw
     box = anchor_boxes[y, x, k * 4 : k * 4 + 4]
     center_y = box[0]
@@ -143,5 +145,5 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
     anchor_x_min = center_x - 0.5 * width
     anchor_y_max = center_y + 0.5 * height
     anchor_x_max = center_x + 0.5 * width
-    
+
     draw_rectangle(ctx, x_min = anchor_x_min, y_min = anchor_y_min, x_max = anchor_x_max, y_max = anchor_y_max, color = (255, 255, 0, 255))
