@@ -110,6 +110,70 @@ class VOC:
     with open(image_list_file) as fp:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(dataset_dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
+    # Debug: 60 car training images
+    image_paths = [
+      "2008_000028",
+      "2008_000074",
+      "2008_000085",
+      "2008_000105",
+      "2008_000109",
+      "2008_000143",
+      "2008_000176",
+      "2008_000185",
+      "2008_000187",
+      "2008_000189",
+      "2008_000193",
+      "2008_000199",
+      "2008_000226",
+      "2008_000237",
+      "2008_000252",
+      "2008_000260",
+      "2008_000315",
+      "2008_000346",
+      "2008_000356",
+      "2008_000399",
+      "2008_000488",
+      "2008_000531",
+      "2008_000563",
+      "2008_000583",
+      "2008_000595",
+      "2008_000613",
+      "2008_000619",
+      "2008_000719",
+      "2008_000833",
+      "2008_000944",
+      "2008_000953",
+      "2008_000959",
+      "2008_000979",
+      "2008_001018",
+      "2008_001039",
+      "2008_001042",
+      "2008_001104",
+      "2008_001169",
+      "2008_001196",
+      "2008_001208",
+      "2008_001274",
+      "2008_001329",
+      "2008_001359",
+      "2008_001375",
+      "2008_001440",
+      "2008_001446",
+      "2008_001500",
+      "2008_001533",
+      "2008_001541",
+      "2008_001631",
+      "2008_001632",
+      "2008_001716",
+      "2008_001746",
+      "2008_001860",
+      "2008_001941",
+      "2008_002062",
+      "2008_002118",
+      "2008_002197",
+      "2008_002202",    
+      "2011_003247"
+    ]
+    return [ os.path.join(dataset_dir, "JPEGImages", path) + ".jpg" for path in image_paths ]
     return image_paths
 
   @staticmethod
@@ -224,7 +288,7 @@ class VOC:
               tx.append(ground_truth_regressions[y,x,k,5])
               th.append(ground_truth_regressions[y,x,k,6])
               tw.append(ground_truth_regressions[y,x,k,7])
-    
+
     # Compute mean and standard deviation for each
     ty = np.array(ty)
     tx = np.array(tx)
@@ -262,11 +326,11 @@ class VOC:
     if limit_samples:
       image_paths = image_paths[0:limit_samples]
     batch_size = len(image_paths) // num_threads + 1
-    print("VOC dataset: Spawning %d worker threads to process %d training samples..." % (num_threads, len(image_paths)))  
+    print("VOC dataset: Spawning %d worker threads to process %d training samples..." % (num_threads, len(image_paths)))
 
     tic = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor() as executor:
-      futures = [ executor.submit(self._prepare_data, i, image_paths[i * batch_size : i * batch_size + batch_size], self._descriptions_per_image_path) for i in range(num_threads) ]   
+      futures = [ executor.submit(self._prepare_data, i, image_paths[i * batch_size : i * batch_size + batch_size], self._descriptions_per_image_path) for i in range(num_threads) ]
       results = [ f.result() for f in futures ]
       for subset_y_per_image_path in results:
         y_per_image_path.update(subset_y_per_image_path)
@@ -282,7 +346,7 @@ class VOC:
       if shuffle:
         random.shuffle(image_paths)
 
-      # Return one image at a time 
+      # Return one image at a time
       for image_path in image_paths:
         # Load image
         image_data = None
