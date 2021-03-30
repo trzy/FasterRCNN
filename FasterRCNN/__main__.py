@@ -354,7 +354,7 @@ if __name__ == "__main__":
         # Progress
         progbar.update(current = i, values = [ ("class_loss", mean_class_loss), ("class_accuracy", mean_class_accuracy) ])
 
-
+        mean_rpn_total_loss = mean_class_loss
 
 
         # Predict to compute current accuracy
@@ -379,7 +379,11 @@ if __name__ == "__main__":
         ## Progress
         #progbar.update(current = i, values = [ ("rpn_total_loss", mean_rpn_total_loss), ("class_loss", mean_class_loss), ("regression_loss", mean_regression_loss), ("class_accuracy", mean_class_accuracy) ])
 
+      # Checkpoint
       print("")
+      checkpoint_filename = "checkpoint-%d-%1.2f.hdf5" % (epoch, mean_rpn_total_loss)
+      model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
+      print("Saved checkpoint: %s" % checkpoint_filename)
 
     # Save learned model parameters
     if options.save_to is not None:
