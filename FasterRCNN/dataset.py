@@ -259,7 +259,6 @@ class VOC:
     # Precache anchor label assignments
     y_per_image_path = {}
     image_paths = list(self._descriptions_per_image_path["train"].keys())
-    image_paths = [ self.get_full_path("2008_000019.jpg") ]
     if limit_samples:
       image_paths = image_paths[0:limit_samples]
     batch_size = len(image_paths) // num_threads + 1
