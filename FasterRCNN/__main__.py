@@ -265,6 +265,43 @@ def test_loss_functions(voc):
   print("Max %% difference cls loss = %f" % max_diff_cls)
   print("Max %% difference regr loss = %f" % max_diff_regr)
 
+
+def test(voc):
+  import imageio
+  from math import exp
+  from PIL import Image, ImageDraw
+
+  train_data = voc.train_data(cache_images = True, mini_batch_size = 256)
+
+  while True:
+    image_path, x, y = next(train_data)
+
+    # Draw image
+    info = voc.get_image_description(path = image_path)
+    data = imageio.imread(image_path, pilmode = "RGB")
+    image = Image.fromarray(data, mode = "RGB")
+    image = image.resize((info.width, info.height), resample = Image.BILINEAR)
+    ctx = ImageDraw.Draw(image, mode = "RGBA")
+
+    # Get anchor boxes
+    anchor_boxes, _ = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
+
+    # Find all positive examples and draw yellow boxes
+    for yy in range(y.shape[0]):
+      for xx in range(y.shape[1]):
+        for kk in range(y.shape[2]):
+          center_y, center_x, height, width = anchor_boxes[yy,xx,kk*4+0:kk*4+4]
+          y_min = center_y - 0.5 * height
+          x_min = center_x - 0.5 * width
+          y_max = center_y + 0.5 * height
+          x_max = center_x + 0.5 * width
+          if y[yy,xx,kk,0] > 0 and y[yy,xx,kk,1] > 0.5: # valid and positive
+            ctx.rectangle(xy = [(x_min, y_min), (x_max, y_max)], outline = (255, 255, 0, 255), width = 4)
+          if y[yy,xx,kk,0] > 0 and y[yy,xx,kk,1] < 0.5: # valid and negative
+            ctx.rectangle(xy = [(x_min, y_min), (x_max, y_max)], outline = (255, 0, 0, 255), width = 1)
+
+    image.show()
+
 # good test images:
 # 2010_004041.jpg
 # 2010_005080.jpg
@@ -289,6 +326,8 @@ if __name__ == "__main__":
 
   model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, l2 = options.l2)
   model.summary()
+
+  test(voc=voc)
 
   if options.show_image:
     show_image(voc = voc, filename = options.show_image)
