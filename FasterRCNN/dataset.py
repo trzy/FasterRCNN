@@ -99,6 +99,7 @@ class VOC:
         x = anchor_position[1]
         k = anchor_position[2]
         ground_truth_regressions[y,x,k,0] = 1.0
+      return ground_truth_regressions
 
     def __repr__(self):
       return "[name=%s, (%d, %d), boxes=%s]" % (self.name, self.width, self.height, self.boxes_by_class_name)
