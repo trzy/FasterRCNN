@@ -91,6 +91,15 @@ class VOC:
       """
       return list(itertools.chain.from_iterable(self.boxes_by_class_name.values()))
 
+    def get_complete_ground_truth_regressions_map(self):
+      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
+      ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+      for anchor_position in positive_anchors + negative_anchors:
+        y = anchor_position[0]
+        x = anchor_position[1]
+        k = anchor_position[2]
+        ground_truth_regressions[y,x,k,0] = 1.0
+
     def __repr__(self):
       return "[name=%s, (%d, %d), boxes=%s]" % (self.name, self.width, self.height, self.boxes_by_class_name)
 
