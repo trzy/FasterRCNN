@@ -41,10 +41,8 @@ def _compute_anchor_sizes():
   x_aspects = [ 1.0, 0.5, 2.0 ]   # x:1 ratio
 
   # Generate all 9 combinations of area and aspect ratio
-  widths = [ int(sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
-  heights = [ int(x_aspects[j] * sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
-#  widths = [ sqrt(areas[i] / x_aspects[j]) for (i, j) in itertools.product(range(3), range(3)) ]
-#  heights = [x_aspects[j] * sqrt(areas[i] / x_aspects[j]) for (i, j) in itertools.product(range(3), range(3)) ]
+  widths = [ sqrt(areas[i] / x_aspects[j]) for (i, j) in itertools.product(range(3), range(3)) ]
+  heights = [x_aspects[j] * sqrt(areas[i] / x_aspects[j]) for (i, j) in itertools.product(range(3), range(3)) ]
 
   return heights, widths
 
