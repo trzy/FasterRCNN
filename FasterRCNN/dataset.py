@@ -329,7 +329,7 @@ class VOC:
       ground_truth_regressions[:,:,:,4:8] /= stdevs
 
   # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
-  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 1, limit_samples = None, cache_images = False):
+  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
     import concurrent.futures
 
     # Precache anchor label assignments
