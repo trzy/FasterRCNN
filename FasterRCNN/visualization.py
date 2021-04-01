@@ -32,8 +32,9 @@ def show_annotated_image(voc, filename, draw_anchor_points = True, draw_anchor_i
 
   # Display image
   image.show()
+  image.save("out_gt.png")
 
-def show_proposed_regions(voc, filename, y_class, y_regression):
+def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Load image and scale appropriately
   filepath = voc.get_full_path(filename = filename)
   info = voc.get_image_description(path = filepath)
@@ -46,23 +47,47 @@ def show_proposed_regions(voc, filename, y_class, y_regression):
   anchor_boxes, _ = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
 
   boxes = []  # (y_min,, x_min, y_max, x_max)
+  proposals = [] # (score, (y_min,x_min,y_max,x_max))
   for y in range(y_class.shape[1]):
     for x in range(y_class.shape[2]):
       for k in range(y_class.shape[3]):
-        if y_class[0,y,x,k] > 0.5:  # is object?
+        if y_class[0,y,x,k] > 0.5:# and y_true[0,y,x,k,0] > 0: # valid anchor and object
           # Extract predicted box
           anchor_box = anchor_boxes[y,x,k*4+0:k*4+4]
           box_params = y_regression[0,y,x,k*4+0:k*4+4]
           box = _convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
           boxes.append(box)
-          # Draw filled anchor indicating object region
-          draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (0, 255, 0, 64))
+          proposals.append((y_class[0,y,x,k], box))
+          # Draw filled anchor indicating region
+          #draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (0, 255, 0, 64))
 
+
+  # Perform NMS on boxes
+  print("initial proposals=%d" % len(proposals))
+  final_proposals = []
+  while len(proposals) > 0:
+    # Extract best proposal
+    best_score = -1
+    best_idx = 0
+    for i in range(len(proposals)):
+      if proposals[i][0] > best_score:
+        best_score = proposals[i][0]
+        best_idx = i
+    best_proposal = proposals[best_idx]
+    final_proposals.append(best_proposal)
+    del proposals[best_idx]
+    
+    # Compare IoU of current best against all remaining and discard those for which IoU is > 0.7
+    proposals = [ proposal for proposal in proposals if intersection_over_union.intersection_over_union(box1=best_proposal[1], box2=proposal[1]) <= 0.7 ]
+  print("final proposals=%d" % len(final_proposals))
 
   # Draw boxes
-  for box in boxes:
-    draw_rectangle(ctx = ctx, x_min = box[1], y_min = box[0], x_max = box[3], y_max = box[2], color = (255, 255, 0, 255), thickness = 1)
-  image.show()
+  for proposal in final_proposals:
+    draw_rectangle(ctx = ctx, x_min = proposal[1][1], y_min = proposal[1][0], x_max = proposal[1][3], y_max = proposal[1][2], color = (255, 255, 0, 255), thickness = 1)
+  #for box in boxes:
+  #  draw_rectangle(ctx = ctx, x_min = box[1], y_min = box[0], x_max = box[3], y_max = box[2], color = (255, 255, 0, 255), thickness = 1)
+  #image.show()
+  image.save("out.png")
 
 def _convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width):
   ty, tx, th, tw = box_params

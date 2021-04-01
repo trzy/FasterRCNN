@@ -1,6 +1,7 @@
 #TODO: assert anchor map shape is indeed image/16
 from .intersection_over_union import intersection_over_union
 
+from collections import defaultdict
 import itertools
 from math import sqrt
 from math import log
@@ -43,6 +44,8 @@ def _compute_anchor_sizes():
   # Generate all 9 combinations of area and aspect ratio
   widths = [ int(sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
   heights = [ int(x_aspects[j] * sqrt(areas[i] / x_aspects[j])) for (i, j) in itertools.product(range(3), range(3)) ]
+#  widths = [ sqrt(areas[i] / x_aspects[j]) for (i, j) in itertools.product(range(3), range(3)) ]
+#  heights = [x_aspects[j] * sqrt(areas[i] / x_aspects[j]) for (i, j) in itertools.product(range(3), range(3)) ]
 
   return heights, widths
 
@@ -157,7 +160,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   num_boxes = len(ground_truth_object_boxes)
   anchor_assigned_for_box = np.zeros(num_boxes, dtype = np.bool)    # true if at least one anchor meeting the objectness threshold was found for each given ground truth box
   best_anchor_for_box = np.zeros((num_boxes, 8))                    # each entry is: (iou, anchor_y_idx, anchor_x_idx, anchor_k_idx, ty, tx, th, tw)
-  
+
   #
   # Output array corresponding to anchor map, where fourth dimension consists
   # of: (class, iou, ty, tx, th, tw). The "class" is:
@@ -263,10 +266,15 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
       k = int(best_anchor_for_box[box_idx,3])
 
       # Assign this box to it, overwriting previous assignment
+      old_box = regression_map[y,x,k,2]
       regression_map[y,x,k,1] = 1.0
       regression_map[y,x,k,2] = box_idx + 1.0
       regression_map[y,x,k,3] = best_anchor_for_box[box_idx,0]
       regression_map[y,x,k,4:8] = best_anchor_for_box[box_idx,4:8]
+      
+      # Did we steal from a box that only had one anchor? Check to see if the old box is still represented
+      #if np.sum(np.where(regression_map[:,:,:,2] == old_box, True, False)) == 0:
+      #  print("When reassigning an anchor to an orphan ground truth box, we inadvertently orphaned a different box: %s" % image_path)
 
   # Second pass over all anchors: make lists of all positive and negative
   # examples (for easy random indexing later)
@@ -283,3 +291,178 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   return regression_map, object_anchors, not_object_anchors
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+def _compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, anchor_boxes_valid):
+  """
+  Returns:
+
+  - Map of shape (height, width, k, 8), where height, width, and k refer to
+    anchor map shape and number of anchors at each location. The last dimension
+    contains:
+
+      0: 0.0 (unused, initialized to 0, for use by caller)
+      1: object (1 if this is an object anchor, 0 if either a negative or
+         ignored/unused sample)
+      2: class (negative if not an object, zero if indeterminate and should be
+         ignored, and when positive, equal to one plus the ground truth object
+         index)                                                                                 <-- TODO: is this useful?
+      3: IoU score with the ground truth box (if this is a positive sample)
+      4: ty (if this is a positive sample)
+      5: tx (if this is a positive sample)
+      6: th (if this is a positive sample)
+      7: tw (if this is a positive sample)
+
+  - List of positive anchors (anchors that are classified as "object"), with
+    each element consisting of the tuple (y,x,k) indicating the anchor position
+    in the previous map.
+
+  - List of all negative anchors.
+  """
+
+  assert anchor_boxes.shape[0] == anchor_boxes_valid.shape[0]       # height
+  assert anchor_boxes.shape[1] == anchor_boxes_valid.shape[1]       # width
+  assert anchor_boxes.shape[2] == anchor_boxes_valid.shape[2] * 4   # k*4
+  assert anchor_boxes_valid.shape[2] == 9                           # k=9
+
+  height = anchor_boxes.shape[0]
+  width = anchor_boxes.shape[1]
+  num_anchors = anchor_boxes_valid.shape[2]
+  truth_map = np.zeros((height, width, num_anchors, 8))
+
+  # Compute IoU of each anchor with each box and store the results in a map of
+  # shape: (height, width, num_anchors, num_ground_truth_boxes)
+  num_ground_truth_boxes = len(ground_truth_object_boxes)
+  ious = np.full(shape = (height, width, num_anchors, num_ground_truth_boxes), fill_value = -1.0)
+  for y in range(height):
+    for x in range(width):
+      for k in range(num_anchors):
+  
+        # Ignore invalid anchors (i.e., at image boundary)
+        if not anchor_boxes_valid[y,x,k]:
+          continue
+          
+        for box_idx in range(num_ground_truth_boxes):
+
+          # Compute anchor box in pixels      
+          anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
+          anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
+
+          # Compute IoU with ground truth box
+          box = ground_truth_object_boxes[box_idx]
+          object_box_coords = (box.y_min, box.x_min, box.y_max, box.x_max)
+          ious[y,x,k,box_idx] = intersection_over_union(box1 = anchor_box_coords, box2 = object_box_coords)
+
+  # Keep track of how many anchors have been assigned to represent each box
+  num_anchors_for_box = np.zeros(num_ground_truth_boxes)
+  
+  # Associate anchors to ground truth boxes when IoU > 0.7 and background when
+  # IoU < 0.3
+  for y in range(height):
+    for x in range(width):
+      for k in range(num_anchors):
+        if not anchor_boxes_valid[y,x,k]:
+          continue
+        # Box with highest IoU that exceeds threshold will be associated with
+        # this anchor
+        best_box_idx = np.argmax(ious[y,x,k,:])
+        iou = ious[y,x,k,best_box_idx]
+        if iou > 0.7:
+          truth_map[y,x,k,1] = 1.0                # this is an object anchor
+          truth_map[y,x,k,2] = 1.0 + best_box_idx # object anchor and the box it corresponds to
+          num_anchors_for_box[best_box_idx] += 1
+        elif iou < 0.3:
+          truth_map[y,x,k,1] = 0.0                # this is not an object (background or neutral)
+          truth_map[y,x,k,2] = -1.0               # background
+        truth_map[y,x,k,3] = iou
+
+  # For each box that still lacks an anchor, construct a list of (iou, (y,x,k))
+  # of anchors still available for use (all negative or unassigned anchors)
+  anchor_candidates_for_anchorless_box = defaultdict(list)
+  for box_idx in range(num_ground_truth_boxes):
+    if num_anchors_for_box[box_idx] == 0:
+      for y in range(height):
+        for x in range(width):
+          for k in range(num_anchors):
+            # Skip invalid anchors
+            if not anchor_boxes_valid[y,x,k]:
+              continue
+            # If this anchor has not been marked as an object, put it in the candidate list
+            if truth_map[y,x,k,1] < 1.0:
+              iou = ious[y,x,k,box_idx]
+              candidate = (iou, (y, x, k))
+              anchor_candidates_for_anchorless_box[box_idx].append(candidate)
+ 
+  # For the unaccounted boxes, pick anchors to assign them. We want to pick the
+  # highest IoU anchors to assign to each box. If an anchor has the highest IoU
+  # for more than one box (highly unlikely!), it is assigned to the box which
+  # has the highest value of the IoU score.
+  for box_idx in anchor_candidates_for_anchorless_box:
+    candidates = anchor_candidates_for_anchorless_box[box_idx]
+    sorted_candidates = sorted(candidates, key = lambda candidate: candidate[0], reverse = True)  # sort descending by IoU
+    anchor_candidates_for_anchorless_box[box_idx] = sorted_candidates
+  while len(anchor_candidates_for_anchorless_box) > 0:
+    # Find the box that currently has the highest-scoring candidate
+    box_idx = max(anchor_candidates_for_anchorless_box, key = lambda idx: anchor_candidates_for_anchorless_box[idx][0])
+    
+    # Assign best anchor to that box and remove this box from further
+    # consideration
+    best_candidate = anchor_candidates_for_anchorless_box[box_idx][0] # best candidate is at front of list
+    del anchor_candidates_for_anchorless_box[box_idx]
+    y, x, k = best_candidate[1][0], best_candidate[1][1], best_candidate[1][2]
+    truth_map[y,x,k,1] = 1.0                # object anchor
+    truth_map[y,x,k,2] = 1.0 + box_idx      # object anchor and the box it corresponds to
+    truth_map[y,x,k,3] = best_candidate[0]  # IoU score
+
+    # Go through all remaining boxes' lists and remove this anchor
+    for box_idx in anchor_candidates_for_anchorless_box:
+      candidates = anchor_candidates_for_anchorless_box[box_idx]
+      candidates = [ candidate for candidate in candidates if candidate[1] != best_candidate[1] ]
+      anchor_candidates_for_anchorless_box[box_idx] = candidates
+
+    # Virtually impossible but being pedantic: remove empty lists
+    n = len(anchor_candidates_for_anchorless_box)
+    anchor_candidates_for_anchorless_box = { box_idx: candidates for box_idx, candidates in anchor_candidates_for_anchorless_box.items() }
+    assert n == len(anchor_candidates_for_anchorless_box), "Unexpectedly ran out of anchors to assign to ground truth box"
+
+  # Compute regression parameters of each positive anchor onto ground truth box
+  # and, while we're at it, find all the positive and negative anchors
+  object_anchors = []
+  not_object_anchors = []
+  for y in range(height):
+    for x in range(width):
+      for k in range(num_anchors):
+        # Compute regression parameters for positive samples only
+        if truth_map[y,x,k,1] > 0:
+          box_idx = int(truth_map[y,x,k,1] - 1.0)
+          anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
+          anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
+          box = ground_truth_object_boxes[box_idx]
+          object_box_coords = (box.y_min, box.x_min, box.y_max, box.x_max)
+          center_x = 0.5 * (box.x_min + box.x_max)
+          center_y = 0.5 * (box.y_min + box.y_max)
+          box_width = box.x_max - box.x_min
+          box_height = box.y_max - box.y_min
+          ty = (center_y - anchor_center_y) / anchor_height
+          tx = (center_x - anchor_center_x) / anchor_width
+          th = log(box_height / anchor_height)
+          tw = log(box_width / anchor_width)
+          truth_map[y,x,k,4:8] = ty, tx, th, tw
+        
+        # Store positive and negative samples (but not neutral ones), in lists
+        if truth_map[y,x,k,2] > 0:
+          object_anchors.append((y, x, k))
+        elif truth_map[y,x,k,2] < 0:
+          not_object_anchors.append((y, x, k))
+
+  return truth_map, object_anchors, not_object_anchors

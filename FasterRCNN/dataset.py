@@ -99,6 +99,7 @@ class VOC:
         x = anchor_position[1]
         k = anchor_position[2]
         ground_truth_regressions[y,x,k,0] = 1.0
+      print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(ground_truth_regressions[:,:,:,0])))
       return ground_truth_regressions
 
     def __repr__(self):
@@ -183,6 +184,7 @@ class VOC:
       "2008_002202",    
       "2011_003247"
     ]
+    
     return [ os.path.join(dataset_dir, "JPEGImages", path) + ".jpg" for path in image_paths ]
     return image_paths
 
@@ -327,7 +329,7 @@ class VOC:
       ground_truth_regressions[:,:,:,4:8] /= stdevs
 
   # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
-  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
+  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 1, limit_samples = None, cache_images = False):
     import concurrent.futures
 
     # Precache anchor label assignments
