@@ -1,8 +1,4 @@
 # TODO next:
-# - See TODO in compute_ground_truth_regressions -- are we ever stealing any anchors away?
-#   If so, we need to be more careful about which regression parameters we choose. We may
-#   need a second pass that, for each positive anchor assigned to multiple boxes, chooses
-#   the highest IoU box to regress against.
 # - Check to see if NMS code is correct and maybe implement an alternative.
 # - Re-add regression. Visualize proposals by showing GT box regions as green
 
