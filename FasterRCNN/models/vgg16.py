@@ -41,3 +41,12 @@ def conv_layers(input_shape = (None,None,3), l2 = 0):
   model.add( Conv2D(name = "block5_conv3", kernel_size = (3,3), strides = 1, filters = 512, padding = "same", activation = "relu", kernel_initializer = initial_weights, kernel_regularizer = regularizer) )
 
   return model
+
+def load_imagenet_weights(model):
+  keras_model = tf.keras.applications.VGG16(weights = "imagenet")
+  for keras_layer in keras_model.layers:
+    weights = keras_layer.get_weights()
+    if len(weights) > 0:
+      our_layer = [ layer for layer in model.layers if layer.name == keras_layer.name ]
+      if len(our_layer) > 0:
+        our_layer[0].set_weights(weights)

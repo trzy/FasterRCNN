@@ -204,17 +204,12 @@ def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_
   model.compile(optimizer = optimizer, loss = loss)
 
   # Load before freezing layers
-  keras_model = tf.keras.applications.VGG16(weights = "imagenet")
-  for keras_layer in keras_model.layers:
-    weights = keras_layer.get_weights()
-    print(keras_layer.name)
-    if len(weights) > 0:
-      our_layer = [ layer for layer in model.layers if layer.name == keras_layer.name ]
-      if len(our_layer) > 0:
-        our_layer[0].set_weights(weights)
   if weights_filepath:
     model.load_weights(filepath = weights_filepath, by_name = True)
     print("Loaded model weights from %s" % weights_filepath)
+  else:
+    # When initializing from scratch, use pre-trained VGG
+    vgg16.load_imagenet_weights(model = model)
 
   # Freeze first two convolutional blocks during training
   utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2")
