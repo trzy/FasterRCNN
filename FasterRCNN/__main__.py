@@ -206,6 +206,7 @@ def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_
   else:
     # When initializing from scratch, use pre-trained VGG
     vgg16.load_imagenet_weights(model = model)
+    print("Loaded pre-trained VGG-16 weights")
 
   # Freeze first two convolutional blocks during training
   utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2")
@@ -307,15 +308,6 @@ if __name__ == "__main__":
     infer_boxes(model = model, voc = voc, filename = options.infer_boxes)
 
   if options.train:
-
-    #model = build_rpn_model()
-    #info = voc.get_image_description(voc.get_full_path("2008_000019.jpg"))
-    #x = info.load_image_data()
-    #x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
-    #model.predict(x)
-    #print("ok")
-    #exit()
-
     train_data = voc.train_data(cache_images = True, mini_batch_size = options.mini_batch)
     num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
@@ -323,6 +315,7 @@ if __name__ == "__main__":
     class_losses = np.zeros(num_samples)
     regression_losses = np.zeros(num_samples)
     class_accuracies = np.zeros(num_samples)
+    class_recalls = np.zeros(num_samples)
 
     for epoch in range(options.epochs):
       progbar = tf.keras.utils.Progbar(num_samples)
@@ -334,67 +327,43 @@ if __name__ == "__main__":
         y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
 
-        # Back prop one step
+        # RPN: back prop one step
         losses = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
-        #loss = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
 
-
-
-        ## Predict to compute current accuracy
-        #y_predicted_class = model.predict_on_batch(x = x)
-        #y_true_class = y[:,:,:,:,2].reshape(y_predicted_class.shape)
-        #y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)
-        #assert np.size(y_true_class) == np.size(y_predicted_class)
-        #ground_truth_positives = np.where(y_true_class > 0, True, False)
-        #ground_truth_negatives = np.where(y_true_class < 0, True, False)
-        #true_positives = np.sum(np.where(y_predicted_class > 0.5, True, False) * ground_truth_positives)
-        #true_negatives = np.sum(np.where(y_predicted_class < 0.5, True, False) * ground_truth_negatives)
-        #total_samples = np.sum(ground_truth_positives) + np.sum(ground_truth_negatives)
-        #class_accuracy = (true_positives + true_negatives) / total_samples
-
-        ## Save losses for this iteration and update mean
-        #class_losses[i] = loss
-        #class_accuracies[i] = class_accuracy
-        #mean_class_loss = np.mean(class_losses[0:i+1])
-        #mean_class_accuracy = np.mean(class_accuracies[0:i+1])
-
-        ## Progress
-        #progbar.update(current = i, values = [ ("class_loss", mean_class_loss), ("class_accuracy", mean_class_accuracy) ])
-
-        #mean_rpn_total_loss = mean_class_loss
-
-
-        # Predict to compute current accuracy
-        #y_predicted_class, y_predicted_regression = model.predict_on_batch(x = x)
-        #y_true_class = y[:,:,:,:,1].reshape(y_predicted_class.shape)
-        #y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)
-        #assert np.size(y_true_class) == np.size(y_predicted_class)
-        #true_positives = np.sum(y_valid * np.where(y_predicted_class > 0.5, True, False) * np.where(y_true_class > 0.5, True, False))
-        #true_negatives = np.sum(y_valid * np.where(y_predicted_class < 0.5, True, False) * np.where(y_true_class < 0.5, True, False))
-        #class_accuracy = (true_positives + true_negatives) / np.size(y_predicted_class)
+        # RPN: predict so we can compute current accuracy
         y_predicted_class, y_predicted_regression = model.predict_on_batch(x = x)
-        y_true_class = y[:,:,:,:,2].reshape(y_predicted_class.shape)
-        y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)
+        y_true_class = y[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
+        y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)       # valid anchors
         assert np.size(y_true_class) == np.size(y_predicted_class)
+
+        # Compute class accuracy and recall
         ground_truth_positives = np.where(y_true_class > 0, True, False)
         ground_truth_negatives = np.where(y_true_class < 0, True, False)
+        num_ground_truth_positives = np.sum(ground_truth_positives)
+        num_ground_truth_negatives = np.sum(ground_truth_negatives)
         true_positives = np.sum(np.where(y_predicted_class > 0.5, True, False) * ground_truth_positives)
         true_negatives = np.sum(np.where(y_predicted_class < 0.5, True, False) * ground_truth_negatives)
-        total_samples = np.sum(ground_truth_positives) + np.sum(ground_truth_negatives)
+        total_samples = num_ground_truth_positives + num_ground_truth_negatives
         class_accuracy = (true_positives + true_negatives) / total_samples
+        class_recall = true_positives / num_ground_truth_positives
 
-        # Save losses for this iteration and update mean
+        # Update progress
         rpn_total_losses[i] = losses[0]
         class_losses[i] = losses[1]
         regression_losses[i] = losses[2]
         class_accuracies[i] = class_accuracy
+        class_recalls[i] = class_recall
         mean_class_loss = np.mean(class_losses[0:i+1])
+        mean_class_recall = np.mean(class_recalls[0:i+1])
         mean_regression_loss = np.mean(regression_losses[0:i+1])
         mean_rpn_total_loss = mean_class_loss + mean_regression_loss
         mean_class_accuracy = np.mean(class_accuracies[0:i+1])
+        progbar.update(current = i, values = [ ("rpn_total_loss", mean_rpn_total_loss), ("class_loss", mean_class_loss), ("regression_loss", mean_regression_loss), ("class_accuracy", mean_class_accuracy), ("class_recall", mean_class_recall) ])
 
-        # Progress
-        progbar.update(current = i, values = [ ("rpn_total_loss", mean_rpn_total_loss), ("class_loss", mean_class_loss), ("regression_loss", mean_regression_loss), ("class_accuracy", mean_class_accuracy) ])
+        #if losses[1] > 10:  # exploding class loss?
+        #  print("\n", num_ground_truth_negatives, num_ground_truth_positives, true_positives, true_negatives, "\n\n\n")
+        #  loss_np = rpn_loss_class_term_np(y_true = y, y_predicted = y_predicted_class)
+        #  print("loss=", losses[1], "np loss=", loss_np, K.eval(rpn_loss_class_term(y_true = K.variable(y), y_predicted = K.variable(y_predicted_class))))
 
       # Checkpoint
       print("")
