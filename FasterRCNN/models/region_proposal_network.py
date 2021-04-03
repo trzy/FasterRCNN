@@ -162,9 +162,9 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   # shape: (height, width, num_anchors, num_ground_truth_boxes)
   num_ground_truth_boxes = len(ground_truth_object_boxes)
   ious = np.full(shape = (height, width, num_anchors, num_ground_truth_boxes), fill_value = -1.0)
-  for y in range(height):
-    for x in range(width):
-      for k in range(num_anchors):
+  for y in range(truth_map.shape[0]):
+    for x in range(truth_map.shape[1]):
+      for k in range(truth_map.shape[2]):
   
         # Ignore invalid anchors (i.e., at image boundary)
         if not anchor_boxes_valid[y,x,k]:
@@ -186,9 +186,9 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   
   # Associate anchors to ground truth boxes when IoU > 0.7 and background when
   # IoU < 0.3
-  for y in range(height):
-    for x in range(width):
-      for k in range(num_anchors):
+  for y in range(truth_map.shape[0]):
+    for x in range(truth_map.shape[1]):
+      for k in range(truth_map.shape[2]):
         if not anchor_boxes_valid[y,x,k]:
           continue
         # Box with highest IoU that exceeds threshold will be associated with
@@ -209,9 +209,9 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   anchor_candidates_for_anchorless_box = defaultdict(list)
   for box_idx in range(num_ground_truth_boxes):
     if num_anchors_for_box[box_idx] == 0:
-      for y in range(height):
-        for x in range(width):
-          for k in range(num_anchors):
+      for y in range(truth_map.shape[0]):
+        for x in range(truth_map.shape[1]):
+          for k in range(truth_map.shape[2]):
             # Skip invalid anchors
             if not anchor_boxes_valid[y,x,k]:
               continue
@@ -257,9 +257,9 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   # and, while we're at it, find all the positive and negative anchors
   object_anchors = []
   not_object_anchors = []
-  for y in range(height):
-    for x in range(width):
-      for k in range(num_anchors):
+  for y in range(truth_map.shape[0]):
+    for x in range(truth_map.shape[1]):
+      for k in range(truth_map.shape[2]):
         # Compute regression parameters for positive samples only
         if truth_map[y,x,k,1] > 0:
           box_idx = int(truth_map[y,x,k,1] - 1.0)

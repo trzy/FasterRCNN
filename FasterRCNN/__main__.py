@@ -188,13 +188,13 @@ def print_weights(model):
     if len(weights) > 0:
       print(layer.name, layer.get_weights()[0][0])
 
-def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_filepath = None, l2 = 0):
+def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_filepath = None, l2 = 0, freeze = False):
   conv_model = vgg16.conv_layers(input_shape = input_image_shape, l2 = l2)
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0], l2 = l2)
   model = Model([conv_model.input], [classifier_output, regression_output])
   #model = Model([conv_model.input], [classifier_output ])
 
-  optimizer = SGD(lr=learning_rate, momentum=0.9)
+  optimizer = SGD(lr=learning_rate, momentum=0.9, clipnorm = 1.0)
   loss = [ rpn_loss_class_term, rpn_loss_regression_term ]
   #loss = [ rpn_loss_class_term ]
   model.compile(optimizer = optimizer, loss = loss)
@@ -209,7 +209,8 @@ def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_
     print("Loaded pre-trained VGG-16 weights")
 
   # Freeze first two convolutional blocks during training
-  utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2")
+  if freeze:
+    utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2")
   return model
 
 def train(voc):
@@ -287,6 +288,7 @@ if __name__ == "__main__":
   parser.add_argument("--learning-rate", metavar = "rate", type = float, action = "store", default = "0.001", help = "Learning rate")
   parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = "256", help = "Mini-batch size")
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
+  parser.add_argument("--freeze", action = "store_true", help = "Freeze first 2 blocks of VGG-16")
   parser.add_argument("--save-to", metavar = "filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
   parser.add_argument("--load-from", metavar="filepath", type = str, action = "store", help = "File to load initial model weights from")
   parser.add_argument("--test-loss", action = "store_true", help = "Test Keras backend implementation of loss functions")
@@ -324,16 +326,20 @@ if __name__ == "__main__":
       for i in range(num_samples):
         # Fetch one sample and reshape to batch size of 1
         image_path, x, y = next(train_data)
+        y_true_complete = voc.get_image_description(image_path).get_complete_ground_truth_regressions_map()
+        y_true_complete = y_true_complete.reshape((1, y_true_complete.shape[0], y_true_complete.shape[1], y_true_complete.shape[2], y_true_complete.shape[3]))
         y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
 
         # RPN: back prop one step
         losses = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
+#        loss = model.train_on_batch(x = x, y = y)
 
         # RPN: predict so we can compute current accuracy
         y_predicted_class, y_predicted_regression = model.predict_on_batch(x = x)
-        y_true_class = y[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
-        y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)       # valid anchors
+#        y_predicted_class = model.predict_on_batch(x=x)
+        y_true_class = y_true_complete[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
+        y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)                     # valid anchors
         assert np.size(y_true_class) == np.size(y_predicted_class)
 
         # Compute class accuracy and recall
@@ -351,6 +357,9 @@ if __name__ == "__main__":
         rpn_total_losses[i] = losses[0]
         class_losses[i] = losses[1]
         regression_losses[i] = losses[2]
+#        rpn_total_losses[i] = loss
+#        class_losses[i] = loss
+#        regression_losses[i] = 0
         class_accuracies[i] = class_accuracy
         class_recalls[i] = class_recall
         mean_class_loss = np.mean(class_losses[0:i+1])

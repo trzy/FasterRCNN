@@ -51,7 +51,7 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   for y in range(y_class.shape[1]):
     for x in range(y_class.shape[2]):
       for k in range(y_class.shape[3]):
-        if y_class[0,y,x,k] > 0.5:# and y_true[0,y,x,k,0] > 0: # valid anchor and object
+        if y_class[0,y,x,k] > 0.5:# and y_true[0,y,x,k,1] > 0:# and y_true[0,y,x,k,0] > 0: # valid anchor and object
           # Extract predicted box
           anchor_box = anchor_boxes[y,x,k*4+0:k*4+4]
           box_params = y_regression[0,y,x,k*4+0:k*4+4]

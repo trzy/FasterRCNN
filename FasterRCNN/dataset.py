@@ -99,7 +99,7 @@ class VOC:
         x = anchor_position[1]
         k = anchor_position[2]
         ground_truth_regressions[y,x,k,0] = 1.0
-      print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(ground_truth_regressions[:,:,:,0])))
+      #print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(ground_truth_regressions[:,:,:,0])))
       return ground_truth_regressions
 
     def __repr__(self):
