@@ -188,13 +188,13 @@ def print_weights(model):
     if len(weights) > 0:
       print(layer.name, layer.get_weights()[0][0])
 
-def build_rpn_model(learning_rate, input_image_shape = (None, None, 3), weights_filepath = None, l2 = 0, freeze = False):
+def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3), weights_filepath = None, l2 = 0, freeze = False):
   conv_model = vgg16.conv_layers(input_shape = input_image_shape, l2 = l2)
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0], l2 = l2)
   model = Model([conv_model.input], [classifier_output, regression_output])
   #model = Model([conv_model.input], [classifier_output ])
 
-  optimizer = SGD(lr=learning_rate, momentum=0.9, clipnorm = 1.0)
+  optimizer = SGD(lr = learning_rate, momentum = 0.9, clipnorm = clipnorm)
   loss = [ rpn_loss_class_term, rpn_loss_regression_term ]
   #loss = [ rpn_loss_class_term ]
   model.compile(optimizer = optimizer, loss = loss)
@@ -286,6 +286,7 @@ if __name__ == "__main__":
   parser.add_argument("--train", action = "store_true", help = "Train the region proposal network")
   parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "rate", type = float, action = "store", default = "0.001", help = "Learning rate")
+  parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = "1.0", help = "Clip gradient norm to value")
   parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = "256", help = "Mini-batch size")
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
   parser.add_argument("--freeze", action = "store_true", help = "Freeze first 2 blocks of VGG-16")
@@ -297,7 +298,7 @@ if __name__ == "__main__":
 
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
 
-  model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, l2 = options.l2)
+  model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
   model.summary()
 
   if options.show_image:
