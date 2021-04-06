@@ -79,9 +79,8 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
     best_proposal = proposals[best_idx]
     final_proposals.append(best_proposal)
     del proposals[best_idx]
-    
-  # Compare IoU of current best against all remaining and discard those for which IoU is > 0.7
-  proposals = [ proposal for proposal in proposals if intersection_over_union.intersection_over_union(box1=best_proposal[1], box2=proposal[1]) <= 0.7 ]
+    # Compare IoU of current best against all remaining and discard those for which IoU is > 0.7
+    proposals = [ proposal for proposal in proposals if intersection_over_union.intersection_over_union(box1=best_proposal[1], box2=proposal[1]) <= 0.7 ]
   print("final proposals=%d" % len(final_proposals))
 
   # Draw boxes
