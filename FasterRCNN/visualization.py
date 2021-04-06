@@ -46,21 +46,24 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Get all anchors for this image size
   anchor_boxes, _ = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
 
+  # Extract proposals and highlight positive anchors that we got correct/incorrect
   boxes = []  # (y_min,, x_min, y_max, x_max)
   proposals = [] # (score, (y_min,x_min,y_max,x_max))
   for y in range(y_class.shape[1]):
     for x in range(y_class.shape[2]):
       for k in range(y_class.shape[3]):
+        anchor_box = anchor_boxes[y,x,k*4+0:k*4+4]
         if y_class[0,y,x,k] > 0.5:# and y_true[0,y,x,k,1] > 0:# and y_true[0,y,x,k,0] > 0: # valid anchor and object
           # Extract predicted box
-          anchor_box = anchor_boxes[y,x,k*4+0:k*4+4]
           box_params = y_regression[0,y,x,k*4+0:k*4+4]
           box = _convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
           boxes.append(box)
           proposals.append((y_class[0,y,x,k], box))
-          # Draw filled anchor indicating region
-          #draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (0, 255, 0, 64))
-
+        # Draw positive anchors we got correct (true positives) as green and those we mispredicted as orange (false negatives)
+        if y_class[0,y,x,k] > 0.5 and y_true[0,y,x,k,1] > 0.5:    # true positive
+          draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (0, 255, 0, 64))
+        elif y_class[0,y,x,k] < 0.5 and y_true[0,y,x,k,1] > 0.5:  # false negative
+          draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (255, 100, 0, 64))
 
   # Perform NMS on boxes
   print("initial proposals=%d" % len(proposals))
@@ -77,8 +80,8 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
     final_proposals.append(best_proposal)
     del proposals[best_idx]
     
-    # Compare IoU of current best against all remaining and discard those for which IoU is > 0.7
-    proposals = [ proposal for proposal in proposals if intersection_over_union.intersection_over_union(box1=best_proposal[1], box2=proposal[1]) <= 0.7 ]
+  # Compare IoU of current best against all remaining and discard those for which IoU is > 0.7
+  proposals = [ proposal for proposal in proposals if intersection_over_union.intersection_over_union(box1=best_proposal[1], box2=proposal[1]) <= 0.7 ]
   print("final proposals=%d" % len(final_proposals))
 
   # Draw boxes
