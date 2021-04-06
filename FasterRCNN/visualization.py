@@ -1,9 +1,11 @@
 from .dataset import VOC
 from .models import region_proposal_network
 from .models import intersection_over_union
+from .models.nms import nms
 
 import imageio
 from math import exp
+import numpy as np
 from PIL import Image, ImageDraw
 
 def draw_rectangle(ctx, x_min, y_min, x_max, y_max, color, thickness = 4):
@@ -65,29 +67,21 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
         elif y_class[0,y,x,k] < 0.5 and y_true[0,y,x,k,1] > 0.5:  # false negative
           draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (255, 100, 0, 64))
 
-  # Perform NMS on boxes
-  print("initial proposals=%d" % len(proposals))
-  final_proposals = []
-  while len(proposals) > 0:
-    # Extract best proposal
-    best_score = -1
-    best_idx = 0
-    for i in range(len(proposals)):
-      if proposals[i][0] > best_score:
-        best_score = proposals[i][0]
-        best_idx = i
-    best_proposal = proposals[best_idx]
-    final_proposals.append(best_proposal)
-    del proposals[best_idx]
-    # Compare IoU of current best against all remaining and discard those for which IoU is > 0.7
-    proposals = [ proposal for proposal in proposals if intersection_over_union.intersection_over_union(box1=best_proposal[1], box2=proposal[1]) <= 0.7 ]
-  print("final proposals=%d" % len(final_proposals))
+  # Perform NMS on boxes (TODO: need to find faster way to build this array)
+  proposals_tmp = proposals
+  proposals = np.empty((len(proposals_tmp), 5))
+  for i in range(proposals.shape[0]):
+    proposals[i,0:4] = proposals_tmp[i][1]
+    proposals[i,4] = proposals_tmp[i][0]
+  final_proposal_indexes = nms(proposals = proposals, iou_threshold = 0.7)
+  final_proposals = proposals[final_proposal_indexes] # keep only the rows that made it through NMS
 
   # Draw boxes
-  for proposal in final_proposals:
-    draw_rectangle(ctx = ctx, x_min = proposal[1][1], y_min = proposal[1][0], x_max = proposal[1][3], y_max = proposal[1][2], color = (255, 255, 0, 255), thickness = 1)
-  #for box in boxes:
-  #  draw_rectangle(ctx = ctx, x_min = box[1], y_min = box[0], x_max = box[3], y_max = box[2], color = (255, 255, 0, 255), thickness = 1)
+  for i in range(final_proposals.shape[0]):
+    y_min, x_min, y_max, x_max = final_proposals[i,0:4]
+    #print("proposal =", y_min, x_min, y_max, x_max)
+    draw_rectangle(ctx = ctx, x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, color = (255, 255, 0, 255), thickness = 1)
+     
   #image.show()
   image.save("out.png")
 
