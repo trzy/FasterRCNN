@@ -262,7 +262,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
       for k in range(truth_map.shape[2]):
         # Compute regression parameters for positive samples only
         if truth_map[y,x,k,1] > 0:
-          box_idx = int(truth_map[y,x,k,1] - 1.0)
+          box_idx = int(truth_map[y,x,k,2] - 1.0)
           anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
           anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
           box = ground_truth_object_boxes[box_idx]
