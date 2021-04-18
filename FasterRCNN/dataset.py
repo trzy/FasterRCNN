@@ -181,10 +181,9 @@ class VOC:
       "2008_002062",
       "2008_002118",
       "2008_002197",
-      "2008_002202",    
+      "2008_002202",
       "2011_003247"
     ]
-    
     return [ os.path.join(dataset_dir, "JPEGImages", path) + ".jpg" for path in image_paths ]
     return image_paths
 
@@ -275,13 +274,15 @@ class VOC:
   def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
     print("VOC dataset: Thread %d started" % thread_num)
     y_per_image_path = {}
+    anchor_boxes_per_image_path = {}
     for image_path in image_paths:
       description = descriptions_per_image_path["train"][image_path]
       anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
       ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
       y_per_image_path[image_path] = (ground_truth_regressions, positive_anchors, negative_anchors)
+      anchor_boxes_per_image_path[image_path] = anchor_boxes
     print("VOC dataset: Thread %d finished" % thread_num)
-    return y_per_image_path
+    return y_per_image_path, anchor_boxes_per_image_path
 
   def _standardize_regressions(self, y_per_image_path):
     ty = []
@@ -334,6 +335,7 @@ class VOC:
 
     # Precache anchor label assignments
     y_per_image_path = {}
+    anchor_boxes_per_image_path = {}
     image_paths = list(self._descriptions_per_image_path["train"].keys())
     if limit_samples:
       image_paths = image_paths[0:limit_samples]
@@ -344,8 +346,9 @@ class VOC:
     with concurrent.futures.ThreadPoolExecutor() as executor:
       futures = [ executor.submit(self._prepare_data, i, image_paths[i * batch_size : i * batch_size + batch_size], self._descriptions_per_image_path) for i in range(num_threads) ]
       results = [ f.result() for f in futures ]
-      for subset_y_per_image_path in results:
+      for subset_y_per_image_path, subset_anchor_boxes_per_image_path in results:
         y_per_image_path.update(subset_y_per_image_path)
+        anchor_boxes_per_image_path.update(subset_anchor_boxes_per_image_path)
     toc = time.perf_counter()
     print("VOC dataset: Processed %d training samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
 
@@ -369,8 +372,9 @@ class VOC:
           if cache_images:
             cached_image_by_path[image_path] = image_data
 
-        # Retrieve pre-computed y value
+        # Retrieve pre-computed y value and anchor boxes
         ground_truth_regressions, positive_anchors, negative_anchors = y_per_image_path[image_path]
+        anchor_boxes = anchor_boxes_per_image_path[image_path]
 
         # Observed: the maximum number of positive anchors in in a VOC image is 102.
         # Is this a bug in our code? Paper talks about a 1:1 (128:128) ratio.
@@ -386,4 +390,4 @@ class VOC:
           k = anchor_position[2]
           ground_truth_regressions[y,x,k,0] = 1.0
 
-        yield image_path, image_data, ground_truth_regressions
+        yield image_path, image_data, ground_truth_regressions, anchor_boxes
