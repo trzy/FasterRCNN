@@ -4,7 +4,6 @@ from .models import intersection_over_union
 from .models.nms import nms
 
 import imageio
-from math import exp
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -48,54 +47,27 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Get all anchors for this image size
   anchor_boxes, _ = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
 
-  # Extract proposals and highlight positive anchors that we got correct/incorrect
-  boxes = []  # (y_min,, x_min, y_max, x_max)
-  proposals = [] # (score, (y_min,x_min,y_max,x_max))
+  # Draw positive anchors we got correct (true positives) as green and those we mispredicted as orange (false negatives)
   for y in range(y_class.shape[1]):
     for x in range(y_class.shape[2]):
       for k in range(y_class.shape[3]):
         anchor_box = anchor_boxes[y,x,k*4+0:k*4+4]
-        if y_class[0,y,x,k] > 0.5:# and y_true[0,y,x,k,1] > 0:# and y_true[0,y,x,k,0] > 0: # valid anchor and object
-          # Extract predicted box
-          box_params = y_regression[0,y,x,k*4+0:k*4+4]
-          box = _convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
-          boxes.append(box)
-          proposals.append((y_class[0,y,x,k], box))
-        # Draw positive anchors we got correct (true positives) as green and those we mispredicted as orange (false negatives)
         if y_class[0,y,x,k] > 0.5 and y_true[0,y,x,k,1] > 0.5:    # true positive
           draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (0, 255, 0, 64))
         elif y_class[0,y,x,k] < 0.5 and y_true[0,y,x,k,1] > 0.5:  # false negative
           draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (255, 100, 0, 64))
 
-  # Perform NMS on boxes (TODO: need to find faster way to build this array)
-  proposals_tmp = proposals
-  proposals = np.empty((len(proposals_tmp), 5))
-  for i in range(proposals.shape[0]):
-    proposals[i,0:4] = proposals_tmp[i][1]
-    proposals[i,4] = proposals_tmp[i][0]
-  final_proposal_indexes = nms(proposals = proposals, iou_threshold = 0.7)
-  final_proposals = proposals[final_proposal_indexes] # keep only the rows that made it through NMS
+  # Perform NMS on boxes
+  final_proposals = region_proposal_network.extract_proposals(y_predicted_class = y_class, y_predicted_regression = y_regression, y_true = y_true, anchor_boxes = anchor_boxes)
 
   # Draw boxes
   for i in range(final_proposals.shape[0]):
     y_min, x_min, y_max, x_max = final_proposals[i,0:4]
     #print("proposal =", y_min, x_min, y_max, x_max)
     draw_rectangle(ctx = ctx, x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, color = (255, 255, 0, 255), thickness = 1)
-     
-  #image.show()
-  image.save("out.png")
 
-def _convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width):
-  ty, tx, th, tw = box_params
-  center_x = anchor_width * tx + anchor_center_x
-  center_y = anchor_height * ty + anchor_center_y
-  width = exp(tw) * anchor_width
-  height = exp(th) * anchor_height
-  y_min = center_y - 0.5 * height
-  x_min = center_x - 0.5 * width
-  y_max = center_y + 0.5 * height
-  x_max = center_x + 0.5 * width
-  return (y_min, x_min, y_max, x_max)
+  image.show()
+  image.save("out.png")
 
 def _draw_ground_truth_boxes(image, boxes):
   # Draw green boxes

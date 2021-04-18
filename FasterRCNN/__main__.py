@@ -326,7 +326,8 @@ if __name__ == "__main__":
 
       for i in range(num_samples):
         # Fetch one sample and reshape to batch size of 1
-        image_path, x, y = next(train_data)
+        # TODO: should we just return y_true_complete with a y_batch/y_valid?
+        image_path, x, y, anchor_boxes = next(train_data)
         y_true_complete = voc.get_image_description(image_path).get_complete_ground_truth_regressions_map()
         y_true_complete = y_true_complete.reshape((1, y_true_complete.shape[0], y_true_complete.shape[1], y_true_complete.shape[2], y_true_complete.shape[3]))
         y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1
@@ -342,6 +343,9 @@ if __name__ == "__main__":
         y_true_class = y_true_complete[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
         y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)                     # valid anchors
         assert np.size(y_true_class) == np.size(y_predicted_class)
+
+        # Extract proposals
+        proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y, anchor_boxes = anchor_boxes)
 
         # Compute class accuracy and recall
         ground_truth_positives = np.where(y_true_class > 0, True, False)

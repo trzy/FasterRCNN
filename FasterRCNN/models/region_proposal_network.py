@@ -1,9 +1,11 @@
 from .intersection_over_union import intersection_over_union
+from .nms import nms
 
 from collections import defaultdict
 import itertools
-from math import sqrt
+from math import exp
 from math import log
+from math import sqrt
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras
@@ -49,7 +51,7 @@ def _compute_anchor_sizes():
 def compute_anchor_map_shape(input_image_shape):
   """
   Returns the 2D shape of the RPN output map (height, width), which will be
-  1/16th of the input image for VGG16. 
+  1/16th of the input image for VGG16.
   """
   return (input_image_shape[0] // 16, input_image_shape[1] // 16)
 
@@ -78,13 +80,16 @@ def compute_all_anchor_boxes(input_image_shape):
     output[0, 0, 3] = anchor map position (0,0), first anchor width
     output[0, 0, 4] = anchor map position (0,0), second anchor center_y
     ...
+
+  Also returns a map of shape (height, width, k) indicating valid anchors.
+  Anchors that would intersect image boundaries are not valid.
   """
   image_height = input_image_shape[0]
   image_width = input_image_shape[1]
 
   anchors_per_location = 9  # this is k
   anchor_map_height, anchor_map_width = compute_anchor_map_shape(input_image_shape = input_image_shape)
-  
+
   # Generate two matrices of same shape as anchor map containing the center coordinate in anchor map space
   anchor_center_x = np.repeat(np.arange(anchor_map_width).reshape((1,anchor_map_width)), repeats = anchor_map_height, axis = 0)
   anchor_center_y = np.repeat(np.arange(anchor_map_height).reshape((anchor_map_height,1)), repeats = anchor_map_width, axis = 1)
@@ -165,14 +170,13 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   for y in range(truth_map.shape[0]):
     for x in range(truth_map.shape[1]):
       for k in range(truth_map.shape[2]):
-  
+
         # Ignore invalid anchors (i.e., at image boundary)
         if not anchor_boxes_valid[y,x,k]:
           continue
-          
-        for box_idx in range(num_ground_truth_boxes):
 
-          # Compute anchor box in pixels      
+        for box_idx in range(num_ground_truth_boxes):
+          # Compute anchor box in pixels
           anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
           anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
 
@@ -183,7 +187,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
 
   # Keep track of how many anchors have been assigned to represent each box
   num_anchors_for_box = np.zeros(num_ground_truth_boxes)
-  
+
   # Associate anchors to ground truth boxes when IoU > 0.7 and background when
   # IoU < 0.3
   for y in range(truth_map.shape[0]):
@@ -220,7 +224,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
               iou = ious[y,x,k,box_idx]
               candidate = (iou, (y, x, k))
               anchor_candidates_for_anchorless_box[box_idx].append(candidate)
- 
+
   # For the unaccounted boxes, pick anchors to assign them. We want to pick the
   # highest IoU anchors to assign to each box. If an anchor has the highest IoU
   # for more than one box (highly unlikely!), it is assigned to the box which
@@ -232,7 +236,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   while len(anchor_candidates_for_anchorless_box) > 0:
     # Find the box that currently has the highest-scoring candidate
     box_idx = max(anchor_candidates_for_anchorless_box, key = lambda idx: anchor_candidates_for_anchorless_box[idx][0])
-    
+
     # Assign best anchor to that box and remove this box from further
     # consideration
     best_candidate = anchor_candidates_for_anchorless_box[box_idx][0] # best candidate is at front of list
@@ -276,11 +280,48 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
           th = log(box_height / anchor_height)
           tw = log(box_width / anchor_width)
           truth_map[y,x,k,4:8] = ty, tx, th, tw
-        
-        # Store positive and negative samples (but not neutral ones), in lists
+
+        # Store positive and negative samples (but nt neutral ones), in lists
         if truth_map[y,x,k,2] > 0:
           object_anchors.append((y, x, k))
         elif truth_map[y,x,k,2] < 0:
           not_object_anchors.append((y, x, k))
 
   return truth_map, object_anchors, not_object_anchors
+
+def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_boxes):
+  """
+  Returns a map of shape (Nx5) of N proposals from the prediction. Each
+  proposal consists of:
+
+    0: y_min
+    1: x_min
+    2: y_max
+    3: x_max
+    4: class score (0=background, 1=object)
+  """
+  y_valid = y_true[:,:,:,:,0] # make sure to filter by valid anchors
+  positive_indices = np.argwhere(y_valid * y_predicted_class > 0.5)
+  num_proposals = positive_indices.shape[0]
+  proposals = np.empty((num_proposals, 5))
+  for i in range(proposals.shape[0]):
+    _, y_idx, x_idx, k_idx = positive_indices[i]  # first element is sample number, which is always 0: (0, y, x, k)
+    box_params = y_predicted_regression[0, y_idx, x_idx, k_idx*4+0 : k_idx*4+4]
+    anchor_box = anchor_boxes[y_idx, x_idx, k_idx*4+0 : k_idx*4+4]
+    proposals[i,0:4] = convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
+    proposals[i,4] = y_predicted_class[0, y_idx, x_idx, k_idx]
+  proposal_indices = nms(proposals = proposals, iou_threshold = 0.7)
+  proposals = proposals[proposal_indices]
+  return proposals
+
+def convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width):
+  ty, tx, th, tw = box_params
+  center_x = anchor_width * tx + anchor_center_x
+  center_y = anchor_height * ty + anchor_center_y
+  width = exp(tw) * anchor_width
+  height = exp(th) * anchor_height
+  y_min = center_y - 0.5 * height
+  x_min = center_x - 0.5 * width
+  y_max = center_y + 0.5 * height
+  x_max = center_x + 0.5 * width
+  return (y_min, x_min, y_max, x_max)
