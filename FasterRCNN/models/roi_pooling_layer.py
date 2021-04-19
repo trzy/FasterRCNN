@@ -16,25 +16,25 @@ class RoIPoolingLayer(Layer):
   Output shape:
     (samples, num_rois, pool_size, pool_size, channels)
   """
-  def __init__(self, pool_size, num_rois, **kwargs):
+  def __init__(self, pool_size, **kwargs):
     self.pool_size = pool_size
-    self.num_rois = num_rois
     super().__init__(**kwargs)
 
   def get_config(self):
     config = {
       "pool_size": self.pool_size,
-      "num_rois": self.num_rois
     }
     base_config = super(RoIPoolingLayer, self).get_config()
     return dict(list(base_config.items()) + list(config.items()))
 
   def compute_output_shape(self, input_shape):
     map_shape, rois_shape = input_shape
-    assert map_shape[0] == rois_shape[0]
+    assert len(map_shape) == 4 and len(rois_shape) == 3 and rois_shape[2] == 4
+    assert map_shape[0] == rois_shape[0]  # same number of samples
     num_samples = map_shape[0]
     num_channels = map_shape[3]
-    return (num_samples, self.num_rois, self.pool_size, self.pool_size, num_channels)
+    num_rois = rois_shape[1]
+    return (num_samples, num_rois, self.pool_size, self.pool_size, num_channels)
 
   def call(self, inputs):
     #
