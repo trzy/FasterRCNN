@@ -230,8 +230,6 @@ def infer_boxes(model, voc, filename):
   info = voc.get_image_description(path = voc.get_full_path(filename))
   x = info.load_image_data()
   x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
-  #y_class = model.predict(x)
-  #y_regression = np.zeros((y_class.shape[0], y_class.shape[1], y_class.shape[2], y_class.shape[3] * 4))
   y_class, y_regression = model.predict(x)
   for yy in range(y_class.shape[1]):
     for xx in range(y_class.shape[2]):
@@ -335,11 +333,9 @@ if __name__ == "__main__":
 
         # RPN: back prop one step
         losses = model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
-#        loss = model.train_on_batch(x = x, y = y)
 
         # RPN: predict so we can compute current accuracy
         y_predicted_class, y_predicted_regression = model.predict_on_batch(x = x)
-#        y_predicted_class = model.predict_on_batch(x=x)
         y_true_class = y_true_complete[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
         y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)                     # valid anchors
         assert np.size(y_true_class) == np.size(y_predicted_class)
@@ -362,9 +358,6 @@ if __name__ == "__main__":
         rpn_total_losses[i] = losses[0]
         class_losses[i] = losses[1]
         regression_losses[i] = losses[2]
-#        rpn_total_losses[i] = loss
-#        class_losses[i] = loss
-#        regression_losses[i] = 0
         class_accuracies[i] = class_accuracy
         class_recalls[i] = class_recall
         mean_class_loss = np.mean(class_losses[0:i+1])
