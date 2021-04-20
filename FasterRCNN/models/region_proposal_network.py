@@ -351,12 +351,9 @@ def clip_box_coordinates_to_map_boundaries(boxes, map_shape):
   boxes = np.delete(boxes, invalid_indices, axis = 0)
 
   # Next, clip to boundaries
-  print("map_shape=", map_shape)
   y_max = map_shape[0] - 1
   x_max = map_shape[1] - 1
-  print("before=", boxes)
   boxes = np.maximum(boxes, [ 0, 0, 0, 0 ])                 # clip to x=0 and y=0
   boxes = np.minimum(boxes, [ y_max, x_max, y_max, x_max ]) # clip to maximum dimension
-  print("after=",boxes)
 
   return boxes
