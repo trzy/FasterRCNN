@@ -50,10 +50,17 @@ def _compute_anchor_sizes():
 
 def compute_anchor_map_shape(input_image_shape):
   """
-  Returns the 2D shape of the RPN output map (height, width), which will be
+  Returns the 2D shape of the RPN input map (height, width), which will be
   1/16th of the input image for VGG16.
   """
   return (input_image_shape[0] // 16, input_image_shape[1] // 16)
+
+def convert_box_coordinates_from_image_to_rpn_layer_space(box):
+  """
+  Returns box coordinates converted from image space to RPN layer space. Rounds
+  to the nearest point and returns the result as integers.
+  """
+  return np.round(box / 16).astype(np.int32)
 
 def convert_anchor_coordinate_from_rpn_layer_to_image_space(y, x):
   """
@@ -325,3 +332,31 @@ def convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_cent
   y_max = center_y + 0.5 * height
   x_max = center_x + 0.5 * width
   return (y_min, x_min, y_max, x_max)
+
+def clip_box_coordinates_to_map_boundaries(boxes, map_shape):
+  """
+  Clips an array of image-space boxes provided as an (Nx4) tensor against the
+  image boundaries.
+
+  Each box consists of:
+  0: y_min
+  1: x_min
+  2: y_max
+  3: x_max
+  """
+  # First, remove boxes that are entirely out of bounds
+  out_of_bounds = (boxes[:,0] >= map_shape[0]) + (boxes[:,2] < 0) + \
+                  (boxes[:,1] >= map_shape[1]) + (boxes[:,3] < 0)
+  invalid_indices = np.squeeze(np.argwhere(out_of_bounds))                  # rows (boxes) that are entirely out of bounds and must be removed
+  boxes = np.delete(boxes, invalid_indices, axis = 0)
+
+  # Next, clip to boundaries
+  print("map_shape=", map_shape)
+  y_max = map_shape[0] - 1
+  x_max = map_shape[1] - 1
+  print("before=", boxes)
+  boxes = np.maximum(boxes, [ 0, 0, 0, 0 ])                 # clip to x=0 and y=0
+  boxes = np.minimum(boxes, [ y_max, x_max, y_max, x_max ]) # clip to maximum dimension
+  print("after=",boxes)
+
+  return boxes
