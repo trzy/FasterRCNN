@@ -347,7 +347,7 @@ def clip_box_coordinates_to_map_boundaries(boxes, map_shape):
   # First, remove boxes that are entirely out of bounds
   out_of_bounds = (boxes[:,0] >= map_shape[0]) + (boxes[:,2] < 0) + \
                   (boxes[:,1] >= map_shape[1]) + (boxes[:,3] < 0)
-  invalid_indices = np.squeeze(np.argwhere(out_of_bounds))                  # rows (boxes) that are entirely out of bounds and must be removed
+  invalid_indices = np.squeeze(np.argwhere(out_of_bounds))  # rows (boxes) that are entirely out of bounds and must be removed
   boxes = np.delete(boxes, invalid_indices, axis = 0)
 
   # Next, clip to boundaries
