@@ -2,3 +2,8 @@
 
 __pycache__
 .vs
+
+*.hdf5
+*.h5
+*.png
+*.sh
