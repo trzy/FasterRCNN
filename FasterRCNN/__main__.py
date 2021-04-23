@@ -1,8 +1,8 @@
-# TODO next:
-# - Check to see if NMS code is correct and maybe implement an alternative.
-# - Re-add regression. Visualize proposals by showing GT box regions as green
-
-# - Why are class and regression losses so different? Should be comparable.
+# TODO:
+#
+# - Maximum number of proposals in the VOC dataset in a single image is only 157 when training from scratch (and this number drops further
+#   as training progresses)
+#
 # - Test whether K.abs()/tf.abs() fail on Linux
 # - Weight decay, dropout, momentum
 
