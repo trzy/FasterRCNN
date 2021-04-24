@@ -24,6 +24,7 @@ class VOC:
     print("VOC dataset: Parsing metadata...")
     self._dataset_dir = dataset_dir
     self.index_to_class_name, self.class_name_to_index = self._get_index_to_class_name(dataset_dir)
+    self.num_classes = len(self.index_to_class_name.keys()) # number of classes including background class
     train_image_paths = self._get_image_paths(dataset_dir, dataset = "train")
     val_image_paths = self._get_image_paths(dataset_dir, dataset = "val")
     self.num_samples = { "train": len(train_image_paths), "val": len(val_image_paths) }
@@ -120,6 +121,8 @@ class VOC:
     assert len(train_classes) > 0, "No classes found in ImageSets/Main"
     index_to_class_name = { (1 + v[0]): v[1] for v in enumerate(sorted(train_classes)) }
     class_name_to_index = { v[1]: (1 + v[0]) for v in enumerate(sorted(train_classes)) }
+    index_to_class_name[0] = "background"
+    class_name_to_index["background"] = 0
     return index_to_class_name, class_name_to_index
 
   @staticmethod
