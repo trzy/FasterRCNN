@@ -144,7 +144,7 @@ class TrainingStatistics:
     """
     pass
 
-  def on_rpn_step(self, losses, y_predicted_class, y_predicted_regression, y_true_minibatch, y_true_complete):
+  def on_rpn_step(self, losses, y_predicted_class, y_predicted_regression, y_true_minibatch, y_true):
     """
     Must be called on each training step after the RPN model has been updated.
     Updates the training statistics for the RPN model.
@@ -164,13 +164,13 @@ class TrainingStatistics:
         object classes and, most importantly, a mask indicating which anchors
         are valid and were used in the mini-batch. See
         region_proposal_network.compute_anchor_label_assignments() for layout.
-      y_true_complete: Complete RPN ground truth map for all anchors in the
-        image (the anchor valid mask indicates all valid anchors from which
-        mini-batches are drawn). This is used to compute classification
-        accuracy and recall statistics because predictions occur over all
-        possible anchors in the image.
+      y_true: Complete RPN ground truth map for all anchors in the image (the
+        anchor valid mask indicates all valid anchors from which mini-batches
+        are drawn). This is used to compute classification accuracy and recall
+        statistics because predictions occur over all possible anchors in the
+        image.
     """
-    y_true_class = y_true_complete[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
+    y_true_class = y_true[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
     y_valid = y_true_minibatch[:,:,:,:,0].reshape(y_predicted_class.shape)      # valid anchors participating in this mini-batch
     assert np.size(y_true_class) == np.size(y_predicted_class)
     
@@ -254,23 +254,22 @@ if __name__ == "__main__":
         stats.on_step_begin()
 
         # Fetch one sample and reshape to batch size of 1
-        # TODO: should we just return y_true_complete with a y_batch/y_valid?
-        # TODO: y -> y_minibatch, y_true_complete -> y_all?
-        image_path, x, y, anchor_boxes = next(train_data)
+        # TODO: should we just return complete y_true with a y_batch/y_valid map to define mini-batch?
+        image_path, x, y_true_minibatch, anchor_boxes = next(train_data)
         input_image_shape = x.shape
-        y_true_complete = voc.get_image_description(image_path).get_complete_ground_truth_regressions_map()
-        y_true_complete = y_true_complete.reshape((1, y_true_complete.shape[0], y_true_complete.shape[1], y_true_complete.shape[2], y_true_complete.shape[3]))
-        y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1
+        y_true = voc.get_image_description(image_path).get_complete_ground_truth_regressions_map()
+        y_true = y_true.reshape((1, y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3]))
+        y_true_minibatch = y_true_minibatch.reshape((1, y_true_minibatch.shape[0], y_true_minibatch.shape[1], y_true_minibatch.shape[2], y_true_minibatch.shape[3]))  # convert to batch size of 1
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
 
         # RPN: back prop one step (and then predict so we can evaluate accuracy)
-        rpn_losses = rpn_model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
+        rpn_losses = rpn_model.train_on_batch(x = x, y = y_true_minibatch) # loss = [sum, loss_cls, loss_regr]
         y_predicted_class, y_predicted_regression = rpn_model.predict_on_batch(x = x)
 
         # Extract proposals and convert to RPN space
         #TODO: we could also convert the anchors to feature map space and operate in that space because regressed box parameters are expressed relative to anchor
         #      dimensions and therefore independent of scale. Parameters converted to absolute values would then be in feature map space.
-        proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y, anchor_boxes = anchor_boxes)
+        proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true_minibatch, anchor_boxes = anchor_boxes)
         proposals = proposals[:,0:4]  # strip out class
         proposals = region_proposal_network.convert_box_coordinates_from_image_to_rpn_layer_space(box = proposals)
 
@@ -282,14 +281,14 @@ if __name__ == "__main__":
 
         # Test: run classifier model forward (not yet complete)
         if proposals.shape[1] > 0:
-          proposals[:,:,2] = proposals[:,:,2] - proposals[:,:,0] + 1
-          proposals[:,:,3] = proposals[:,:,3] - proposals[:,:,1] + 1
+          proposals[:,:,2] = proposals[:,:,2] - proposals[:,:,0] + 1  # convert from y_max -> height
+          proposals[:,:,3] = proposals[:,:,3] - proposals[:,:,1] + 1  # convert from x_max -> width
           y_final = classifier_model.predict_on_batch(x = [ x, proposals ])
           #print(y_final.shape)
           #exit()
 
         # Update progress
-        stats.on_rpn_step(losses = rpn_losses, y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true_minibatch = y, y_true_complete = y_true_complete)
+        stats.on_rpn_step(losses = rpn_losses, y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true_minibatch = y_true_minibatch, y_true = y_true)
         progbar.update(current = i, values = [ 
           ("rpn_total_loss", stats.rpn_mean_total_loss),
           ("rpn_class_loss", stats.rpn_mean_class_loss),
