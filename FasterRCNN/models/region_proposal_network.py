@@ -344,3 +344,32 @@ def clip_box_coordinates_to_map_boundaries(boxes, map_shape):
   boxes = np.minimum(boxes, [ y_max, x_max, y_max, x_max ]) # clip to maximum dimension
 
   return boxes
+
+def label_proposals(proposals, ground_truth_object_boxes, num_classes):
+  # One hot encoded labels
+  num_proposals = proposals.shape[0]
+  y_labels = np.zeros((num_proposals, num_classes))
+
+  # IoU threshold for positive examples as in FasterRCNN paper. Note that older
+  # models had a minimum threshold (e.g., 0.1), creating a range for negative
+  # (background) labels. Presumably proposals that scored even lower than this
+  # against all ground truth boxes would have been ignored entirely and removed
+  # from the proposal set, which we do not currently support here.
+  iou_threshold = 0.5  
+
+  for i in range(num_proposals):
+    best_iou = 0
+    best_class_idx = 0  # background 
+
+    for box in ground_truth_object_boxes:
+      proposal_box_coords = proposals[i,0:4]
+      object_box_coords = np.array([box.y_min, box.x_min, box.y_max, box.x_max])
+      iou = intersection_over_union(box1 = proposal_box_coords, box2 = object_box_coords)
+      if iou > best_iou:
+        best_iou = iou
+        best_class_idx = box.class_index
+
+    # Create one-hot encoded label for this proposal
+    y_labels[i,best_class_idx] = 1.0
+
+  return y_labels
