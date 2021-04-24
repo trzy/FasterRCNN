@@ -203,6 +203,32 @@ class TrainingStatistics:
     """
     self._step_number += 1
 
+def convert_proposals_to_roi_input_format(proposals, roi_pool_input_shape):
+  """
+  Converts proposals from (N,5) shaped map, containing proposal box corners and
+  objectness class score, to (1,M,4) format. Proposals are converted to anchor
+  map space from input image pixel space, clipped (hence why M <= N), and
+  converted to (y_min,x_min,height,width) format.
+  """
+  # Strip out class score
+  proposals = proposals[:,0:4]
+
+  # Convert to anchor map (RPN output map) space
+  #TODO: we could also convert the anchors to feature map space and operate in that space because regressed box parameters are expressed relative to anchor
+  #      dimensions and therefore independent of scale. Parameters converted to absolute values would then be in feature map space.
+  proposals = region_proposal_network.convert_box_coordinates_from_image_to_rpn_layer_space(box = proposals)
+
+  # Perform clipping in RPN map space so that RoI pooling layer is never
+  # passed rectangles that exceed the boundaries of its input map
+  proposals = region_proposal_network.clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = roi_pool_input_shape)
+
+  # Convert from (y_min,x_min,y_max,x_max) -> (y_min,x_min,height,width) as expected by RoI pool layer
+  proposals[:,2:4] = proposals[:,2:4] - proposals[:,0:2] + 1
+
+  # Reshape to batch size of 1
+  proposals = proposals.reshape((1, proposals.shape[0], proposals.shape[1]))
+  return proposals
+
 # good test images:
 # 2010_004041.jpg
 # 2010_005080.jpg
@@ -254,6 +280,7 @@ if __name__ == "__main__":
         # TODO: should we just return complete y_true with a y_batch/y_valid map to define mini-batch?
         image_path, x, y_true_minibatch, anchor_boxes = next(train_data)
         input_image_shape = x.shape
+        anchor_map_shape = region_proposal_network.compute_anchor_map_shape(input_image_shape = input_image_shape)
         y_true = voc.get_image_description(image_path).get_complete_ground_truth_regressions_map()
         y_true = y_true.reshape((1, y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3]))
         y_true_minibatch = y_true_minibatch.reshape((1, y_true_minibatch.shape[0], y_true_minibatch.shape[1], y_true_minibatch.shape[2], y_true_minibatch.shape[3]))  # convert to batch size of 1
@@ -263,26 +290,12 @@ if __name__ == "__main__":
         rpn_losses = rpn_model.train_on_batch(x = x, y = y_true_minibatch) # loss = [sum, loss_cls, loss_regr]
         y_predicted_class, y_predicted_regression = rpn_model.predict_on_batch(x = x)
 
-        # Extract proposals and convert to RPN space
-        #TODO: we could also convert the anchors to feature map space and operate in that space because regressed box parameters are expressed relative to anchor
-        #      dimensions and therefore independent of scale. Parameters converted to absolute values would then be in feature map space.
-        proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true, anchor_boxes = anchor_boxes)
-        proposals = proposals[:,0:4]  # strip out class
-        proposals = region_proposal_network.convert_box_coordinates_from_image_to_rpn_layer_space(box = proposals)
-
-        # Perform clipping in RPN map space so that RoI pooling layer is never
-        # passed rectangles that exceed the boundaries of its input map
-        rpn_map_shape = region_proposal_network.compute_anchor_map_shape(input_image_shape = input_image_shape)
-        proposals = region_proposal_network.clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = rpn_map_shape)
-        proposals = proposals.reshape((1, proposals.shape[0], proposals.shape[1]))  # batch size of 1
-
         # Test: run classifier model forward (not yet complete)
-        if proposals.shape[1] > 0:
-          proposals[:,:,2] = proposals[:,:,2] - proposals[:,:,0] + 1  # convert from y_max -> height
-          proposals[:,:,3] = proposals[:,:,3] - proposals[:,:,1] + 1  # convert from x_max -> width
+        proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true, anchor_boxes = anchor_boxes)
+        if proposals.shape[0] > 0:
+          # Classifier forward step
+          proposals = convert_proposals_to_roi_input_format(proposals = proposals, roi_pool_input_shape = anchor_map_shape)
           y_final = classifier_model.predict_on_batch(x = [ x, proposals ])
-          #print(y_final.shape)
-          #exit()
 
         # Update progress
         stats.on_rpn_step(losses = rpn_losses, y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true_minibatch = y_true_minibatch, y_true = y_true)
