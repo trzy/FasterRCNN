@@ -23,13 +23,13 @@ class VOC:
   def __init__(self, dataset_dir, scale = None):
     print("VOC dataset: Parsing metadata...")
     self._dataset_dir = dataset_dir
-    self.index_to_class_name = self._get_index_to_class_name(dataset_dir)
+    self.index_to_class_name, self.class_name_to_index = self._get_index_to_class_name(dataset_dir)
     train_image_paths = self._get_image_paths(dataset_dir, dataset = "train")
     val_image_paths = self._get_image_paths(dataset_dir, dataset = "val")
     self.num_samples = { "train": len(train_image_paths), "val": len(val_image_paths) }
     self._descriptions_per_image_path = {}
-    self._descriptions_per_image_path["train"] = { image_path: self._get_image_description(dataset_dir, image_path = image_path, scale = scale) for image_path in train_image_paths }
-    self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(dataset_dir, image_path = image_path, scale = scale) for image_path in val_image_paths }
+    self._descriptions_per_image_path["train"] = { image_path: self._get_image_description(image_path = image_path, scale = scale) for image_path in train_image_paths }
+    self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(image_path = image_path, scale = scale) for image_path in val_image_paths }
 
   def get_full_path(self, filename):
     return os.path.join(self._dataset_dir, "JPEGImages", filename)
@@ -53,14 +53,15 @@ class VOC:
     return boxes_per_image_path
 
   class Box:
-    def __init__(self, x_min, y_min, x_max, y_max):
+    def __init__(self, x_min, y_min, x_max, y_max, class_index):
       self.x_min = x_min
       self.x_max = x_max
       self.y_min = y_min
       self.y_max = y_max
+      self.class_index = class_index
 
     def __repr__(self):
-      return "[x=%d, y=%d, width=%d, height=%d]" % (self.x_min, self.y_min, self.x_max - self.x_min + 1, self.y_max - self.y_min + 1)
+      return "[x=%d, y=%d, width=%d, height=%d, class=%d]" % (self.x_min, self.y_min, self.x_max - self.x_min + 1, self.y_max - self.y_min + 1, self.class_index)
 
     def __str__(self):
       return repr(self)
@@ -113,7 +114,8 @@ class VOC:
     assert train_classes == val_classes, "Number of training and validation image sets in ImageSets/Main differs. Does your dataset have missing or extraneous files?"
     assert len(train_classes) > 0, "No classes found in ImageSets/Main"
     index_to_class_name = { v[0]: v[1] for v in enumerate(sorted(train_classes)) }
-    return index_to_class_name
+    class_name_to_index = { v[1]: v[0] for v in enumerate(sorted(train_classes)) }
+    return index_to_class_name, class_name_to_index
 
   @staticmethod
   def _get_image_paths(dataset_dir, dataset):
@@ -205,10 +207,9 @@ class VOC:
       new_width = new_scale
     return (int(new_width), int(new_height))
 
-  @staticmethod
-  def _get_image_description(dataset_dir, image_path, scale):
+  def _get_image_description(self, image_path, scale):
     basename = os.path.splitext(os.path.basename(image_path))[0]
-    annotation_file = os.path.join(dataset_dir, "Annotations", basename) + ".xml"
+    annotation_file = os.path.join(self._dataset_dir, "Annotations", basename) + ".xml"
     tree = ET.parse(annotation_file)
     root = tree.getroot()
     assert tree != None, "Failed to parse %s" % annotation_file
@@ -243,7 +244,7 @@ class VOC:
       x_max = original_x_max * scale_factor
       y_max = original_y_max * scale_factor
       #print("width: %d -> %d\theight: %d -> %d\tx_min: %d -> %d\ty_min: %d -> %d" % (original_width, width, original_height, height, original_x_min, x_min, original_y_min, y_min))
-      box = VOC.Box(x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max)
+      box = VOC.Box(x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, class_index = self.class_name_to_index[class_name])
       boxes_by_class_name[class_name].append(box)
     return VOC.ImageDescription(name = basename, path = image_path, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
 
