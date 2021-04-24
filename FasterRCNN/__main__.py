@@ -126,12 +126,50 @@ class TrainingStatistics:
     self.rpn_mean_total_loss = float("inf")
 
   def on_epoch_begin(self):
+    """
+    Must be called at the beginning of each epoch.
+    """
     self._step_number = 0
 
   def on_epoch_end(self):
+    """
+    Must be called at the end of each epoch after the last step.
+    """
+    pass
+
+  def on_step_begin(self):
+    """
+    Must be called at the beginning of each training step before the other step
+    update functions (e.g., on_rpn_step()).
+    """
     pass
 
   def on_rpn_step(self, losses, y_predicted_class, y_predicted_regression, y_true_minibatch, y_true_complete):
+    """
+    Must be called on each training step after the RPN model has been updated.
+    Updates the training statistics for the RPN model.
+
+    Parameters:
+ 
+      losses: RPN model losses from Keras train_on_batch() as a 3-element array,
+        [ total_loss, class_loss, regression_loss ]
+      y_predicted_class: RPN model objectness classification output of shape
+        (1, height, width, k), where k is the number of anchors. Each element
+        indicates the corresponding anchor is an object (>0.5) or background
+        (<0.5).
+      y_predicted_regression: RPN model regression outputs, with shape
+        (1, height, width, k*4).
+      y_true_minibatch: RPN ground truth map for the mini-batch used in this
+        training step. The map contains ground truth regression targets and
+        object classes and, most importantly, a mask indicating which anchors
+        are valid and were used in the mini-batch. See
+        region_proposal_network.compute_anchor_label_assignments() for layout.
+      y_true_complete: Complete RPN ground truth map for all anchors in the
+        image (the anchor valid mask indicates all valid anchors from which
+        mini-batches are drawn). This is used to compute classification
+        accuracy and recall statistics because predictions occur over all
+        possible anchors in the image.
+    """
     y_true_class = y_true_complete[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
     y_valid = y_true_minibatch[:,:,:,:,0].reshape(y_predicted_class.shape)      # valid anchors participating in this mini-batch
     assert np.size(y_true_class) == np.size(y_predicted_class)
@@ -161,10 +199,11 @@ class TrainingStatistics:
     self.rpn_mean_regression_loss = np.mean(self._rpn_regression_losses[0:i+1])
     self.rpn_mean_total_loss = self.rpn_mean_class_loss + self.rpn_mean_regression_loss
 
-  def on_step_begin(self):
-    pass
 
   def on_step_end(self):
+    """
+    Must be called at the end of each training step after all the other step functions.
+    """
     self._step_number += 1
 
 # good test images:
