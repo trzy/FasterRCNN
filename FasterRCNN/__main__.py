@@ -83,9 +83,6 @@ def build_classifier_model(conv_model, learning_rate, clipnorm, weights_filepath
 
   return model
 
-def train(voc):
-  pass
-
 def show_image(voc, filename):
   info = voc.get_image_description(path = voc.get_full_path(filename))
 
@@ -111,6 +108,64 @@ def infer_boxes(model, voc, filename):
   y_true = y_true.reshape((1, y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3]))
   print("class loss=", rpn_class_loss_np(y_true=y_true, y_predicted=y_class))
   visualization.show_proposed_regions(voc = voc, filename = filename, y_true = y_true, y_class = y_class, y_regression = y_regression)
+
+class TrainingStatistics:
+  def __init__(self):
+    self._step_number = 0
+
+    self._rpn_total_losses = np.zeros(num_samples)
+    self._rpn_class_losses = np.zeros(num_samples)
+    self._rpn_regression_losses = np.zeros(num_samples)
+    self._rpn_class_accuracies = np.zeros(num_samples)
+    self._rpn_class_recalls = np.zeros(num_samples)
+
+    self.rpn_mean_class_loss = float("inf")
+    self.rpn_mean_class_accuracy = 0
+    self.rpn_mean_class_recall = 0
+    self.rpn_mean_regression_loss = float("inf")
+    self.rpn_mean_total_loss = float("inf")
+
+  def on_epoch_begin(self):
+    self._step_number = 0
+
+  def on_epoch_end(self):
+    pass
+
+  def on_rpn_step(self, losses, y_predicted_class, y_predicted_regression, y_true_minibatch, y_true_complete):
+    y_true_class = y_true_complete[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
+    y_valid = y_true_minibatch[:,:,:,:,0].reshape(y_predicted_class.shape)      # valid anchors participating in this mini-batch
+    assert np.size(y_true_class) == np.size(y_predicted_class)
+    
+    # Compute class accuracy and recall
+    ground_truth_positives = np.where(y_true_class > 0, True, False)
+    ground_truth_negatives = np.where(y_true_class < 0, True, False)
+    num_ground_truth_positives = np.sum(ground_truth_positives)
+    num_ground_truth_negatives = np.sum(ground_truth_negatives)
+    true_positives = np.sum(np.where(y_predicted_class > 0.5, True, False) * ground_truth_positives)
+    true_negatives = np.sum(np.where(y_predicted_class < 0.5, True, False) * ground_truth_negatives)
+    total_samples = num_ground_truth_positives + num_ground_truth_negatives
+    class_accuracy = (true_positives + true_negatives) / total_samples
+    class_recall = true_positives / num_ground_truth_positives
+
+    # Update progress
+    i = self._step_number
+    self._rpn_total_losses[i] = losses[0]
+    self._rpn_class_losses[i] = losses[1]
+    self._rpn_regression_losses[i] = losses[2]
+    self._rpn_class_accuracies[i] = class_accuracy
+    self._rpn_class_recalls[i] = class_recall
+    
+    self.rpn_mean_class_loss = np.mean(self._rpn_class_losses[0:i+1])
+    self.rpn_mean_class_accuracy = np.mean(self._rpn_class_accuracies[0:i+1])
+    self.rpn_mean_class_recall = np.mean(self._rpn_class_recalls[0:i+1])
+    self.rpn_mean_regression_loss = np.mean(self._rpn_regression_losses[0:i+1])
+    self.rpn_mean_total_loss = self.rpn_mean_class_loss + self.rpn_mean_regression_loss
+
+  def on_step_begin(self):
+    pass
+
+  def on_step_end(self):
+    self._step_number += 1
 
 # good test images:
 # 2010_004041.jpg
@@ -149,19 +204,19 @@ if __name__ == "__main__":
     train_data = voc.train_data(cache_images = True, mini_batch_size = options.mini_batch)
     num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
-    rpn_total_losses = np.zeros(num_samples)
-    class_losses = np.zeros(num_samples)
-    regression_losses = np.zeros(num_samples)
-    class_accuracies = np.zeros(num_samples)
-    class_recalls = np.zeros(num_samples)
+    stats = TrainingStatistics()
 
     for epoch in range(options.epochs):
+      stats.on_epoch_begin()
       progbar = tf.keras.utils.Progbar(num_samples)
       print("Epoch %d/%d" % (epoch + 1, options.epochs))
 
       for i in range(num_samples):
+        stats.on_step_begin()
+
         # Fetch one sample and reshape to batch size of 1
         # TODO: should we just return y_true_complete with a y_batch/y_valid?
+        # TODO: y -> y_minibatch, y_true_complete -> y_all?
         image_path, x, y, anchor_boxes = next(train_data)
         input_image_shape = x.shape
         y_true_complete = voc.get_image_description(image_path).get_complete_ground_truth_regressions_map()
@@ -169,18 +224,13 @@ if __name__ == "__main__":
         y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
 
-        # RPN: back prop one step
-        losses = rpn_model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
-
-        # RPN: predict so we can compute current accuracy
+        # RPN: back prop one step (and then predict so we can evaluate accuracy)
+        rpn_losses = rpn_model.train_on_batch(x = x, y = y) # loss = [sum, loss_cls, loss_regr]
         y_predicted_class, y_predicted_regression = rpn_model.predict_on_batch(x = x)
-        y_true_class = y_true_complete[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
-        y_valid = y[:,:,:,:,0].reshape(y_predicted_class.shape)                     # valid anchors
-        assert np.size(y_true_class) == np.size(y_predicted_class)
 
         # Extract proposals and convert to RPN space
-        #TODO: we could also convert the anchors to feature map space and then, because regressed box parameters are expressed relative to anchor
-        #      dimensions. Parameters converted to absolute values would then be in feature map space.
+        #TODO: we could also convert the anchors to feature map space and operate in that space because regressed box parameters are expressed relative to anchor
+        #      dimensions and therefore independent of scale. Parameters converted to absolute values would then be in feature map space.
         proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y, anchor_boxes = anchor_boxes)
         proposals = proposals[:,0:4]  # strip out class
         proposals = region_proposal_network.convert_box_coordinates_from_image_to_rpn_layer_space(box = proposals)
@@ -199,35 +249,23 @@ if __name__ == "__main__":
           #print(y_final.shape)
           #exit()
 
-        # Compute class accuracy and recall
-        ground_truth_positives = np.where(y_true_class > 0, True, False)
-        ground_truth_negatives = np.where(y_true_class < 0, True, False)
-        num_ground_truth_positives = np.sum(ground_truth_positives)
-        num_ground_truth_negatives = np.sum(ground_truth_negatives)
-        true_positives = np.sum(np.where(y_predicted_class > 0.5, True, False) * ground_truth_positives)
-        true_negatives = np.sum(np.where(y_predicted_class < 0.5, True, False) * ground_truth_negatives)
-        total_samples = num_ground_truth_positives + num_ground_truth_negatives
-        class_accuracy = (true_positives + true_negatives) / total_samples
-        class_recall = true_positives / num_ground_truth_positives
-
         # Update progress
-        rpn_total_losses[i] = losses[0]
-        class_losses[i] = losses[1]
-        regression_losses[i] = losses[2]
-        class_accuracies[i] = class_accuracy
-        class_recalls[i] = class_recall
-        mean_class_loss = np.mean(class_losses[0:i+1])
-        mean_class_recall = np.mean(class_recalls[0:i+1])
-        mean_regression_loss = np.mean(regression_losses[0:i+1])
-        mean_rpn_total_loss = mean_class_loss + mean_regression_loss
-        mean_class_accuracy = np.mean(class_accuracies[0:i+1])
-        progbar.update(current = i, values = [ ("rpn_total_loss", mean_rpn_total_loss), ("class_loss", mean_class_loss), ("regression_loss", mean_regression_loss), ("class_accuracy", mean_class_accuracy), ("class_recall", mean_class_recall) ])
+        stats.on_rpn_step(losses = rpn_losses, y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true_minibatch = y, y_true_complete = y_true_complete)
+        progbar.update(current = i, values = [ 
+          ("rpn_total_loss", stats.rpn_mean_total_loss),
+          ("rpn_class_loss", stats.rpn_mean_class_loss),
+          ("rpn_regression_loss", stats.rpn_mean_regression_loss),
+          ("rpn_class_accuracy", stats.rpn_mean_class_accuracy),
+          ("rpn_class_recall", stats.rpn_mean_class_recall) 
+        ])
+        stats.on_step_end()
 
       # Checkpoint
       print("")
-      checkpoint_filename = "checkpoint-%d-%1.2f.hdf5" % (epoch, mean_rpn_total_loss)
+      checkpoint_filename = "checkpoint-%d-%1.2f.hdf5" % (epoch, stats.rpn_mean_total_loss)
       rpn_model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
       print("Saved checkpoint: %s" % checkpoint_filename)
+      stats.on_epoch_end()
 
     # Save learned model parameters
     if options.save_to is not None:
