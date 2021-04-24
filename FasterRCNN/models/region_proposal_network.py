@@ -298,6 +298,15 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
 
 def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_boxes):
   """
+  Inputs:
+
+    y_predicted_class: Objectness class predictions map from forward pass of
+      RPN model.
+    y_predicted_regression: RPN regression predictions.
+    y_true: Ground truth anchor map (from compute_anchor_label_assignments())
+      containing all anchors for image.
+    anchor_boxes: Anchor boxes (compute_all_anchor_boxes()). 
+
   Returns a map of shape (Nx5) of N proposals from the prediction. Each
   proposal consists of:
 
