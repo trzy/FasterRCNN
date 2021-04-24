@@ -203,12 +203,14 @@ class TrainingStatistics:
     """
     self._step_number += 1
 
-def convert_proposals_to_roi_input_format(proposals, input_image_shape, cnn_output_shape):
+def convert_proposals_to_classifier_network_format(proposals, input_image_shape, cnn_output_shape, ground_truth_object_boxes, num_classes):
   """
   Converts proposals from (N,5) shaped map, containing proposal box corners and
   objectness class score, to (1,M,4) format. Proposals are converted to anchor
   map space from input image pixel space, clipped (hence why M <= N), and
-  converted to (y_min,x_min,height,width) format.
+  converted to (y_min,x_min,height,width) format. Also returns a (1,M,C) shaped
+  tensor of one-hot encoded class labels for each proposal, where C is the
+  number of classes (including the background class, 0).
   """
   # Strip out class score
   proposals = proposals[:,0:4]
@@ -216,10 +218,11 @@ def convert_proposals_to_roi_input_format(proposals, input_image_shape, cnn_outp
   # Perform clipping in RPN map space so that RoI pooling layer is never
   # passed rectangles that exceed the boundaries of its input map
   proposals = region_proposal_network.clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
+
+  # Generate one-hot labels for each proposal
+  y_true_proposal_classes = region_proposal_network.label_proposals(proposals = proposals, ground_truth_object_boxes = ground_truth_object_boxes, num_classes = num_classes)
   
   # Convert to anchor map (RPN output map) space
-  #TODO: we could also convert the anchors to feature map space and operate in that space because regressed box parameters are expressed relative to anchor
-  #      dimensions and therefore independent of scale. Parameters converted to absolute values would then be in feature map space.
   proposals = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = cnn_output_shape)
 
   # Convert from (y_min,x_min,y_max,x_max) -> (y_min,x_min,height,width) as expected by RoI pool layer
@@ -227,7 +230,9 @@ def convert_proposals_to_roi_input_format(proposals, input_image_shape, cnn_outp
 
   # Reshape to batch size of 1
   proposals = proposals.reshape((1, proposals.shape[0], proposals.shape[1]))
-  return proposals
+  y_true_proposal_classes = y_true_proposal_classes.reshape((1, y_true_proposal_classes.shape[0], y_true_proposal_classes.shape[1]))
+
+  return proposals, y_true_proposal_classes
 
 # good test images:
 # 2010_004041.jpg
@@ -281,7 +286,9 @@ if __name__ == "__main__":
         image_path, x, y_true_minibatch, anchor_boxes = next(train_data)
         input_image_shape = x.shape
         cnn_output_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
-        y_true = voc.get_image_description(image_path).get_complete_ground_truth_regressions_map()
+        image_info = voc.get_image_description(image_path)
+        ground_truth_object_boxes = image_info.get_boxes()              #TODO: return this from iterator so we don't need image_info
+        y_true = image_info.get_complete_ground_truth_regressions_map() #TODO: ""
         y_true = y_true.reshape((1, y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3]))
         y_true_minibatch = y_true_minibatch.reshape((1, y_true_minibatch.shape[0], y_true_minibatch.shape[1], y_true_minibatch.shape[2], y_true_minibatch.shape[3]))  # convert to batch size of 1
         x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
@@ -293,8 +300,16 @@ if __name__ == "__main__":
         # Test: run classifier model forward (not yet complete)
         proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true, anchor_boxes = anchor_boxes)
         if proposals.shape[0] > 0:
-          # Classifier forward step
-          proposals = convert_proposals_to_roi_input_format(proposals = proposals, input_image_shape = input_image_shape, cnn_output_shape = cnn_output_shape)
+          # Prepare proposals for input to classifier network and generate
+          # labels
+          proposals, y_true_proposal_classes = convert_proposals_to_classifier_network_format(
+            proposals = proposals,
+            input_image_shape = input_image_shape,
+            cnn_output_shape = cnn_output_shape,
+            ground_truth_object_boxes = ground_truth_object_boxes,
+            num_classes = voc.num_classes)
+
+          # Classifier forward pass
           y_final = classifier_model.predict_on_batch(x = [ x, proposals ])
 
         # Update progress
