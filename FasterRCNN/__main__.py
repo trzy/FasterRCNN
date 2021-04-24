@@ -1,8 +1,5 @@
 # TODO:
 #
-# - Maximum number of proposals in the VOC dataset in a single image is only 157 when training from scratch (and this number drops further
-#   as training progresses)
-#
 # - Test whether K.abs()/tf.abs() fail on Linux
 # - Weight decay, dropout, momentum
 
@@ -269,7 +266,7 @@ if __name__ == "__main__":
         # Extract proposals and convert to RPN space
         #TODO: we could also convert the anchors to feature map space and operate in that space because regressed box parameters are expressed relative to anchor
         #      dimensions and therefore independent of scale. Parameters converted to absolute values would then be in feature map space.
-        proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true_minibatch, anchor_boxes = anchor_boxes)
+        proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true, anchor_boxes = anchor_boxes)
         proposals = proposals[:,0:4]  # strip out class
         proposals = region_proposal_network.convert_box_coordinates_from_image_to_rpn_layer_space(box = proposals)
 
