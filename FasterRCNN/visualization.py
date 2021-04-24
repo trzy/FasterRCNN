@@ -57,7 +57,7 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
         elif y_class[0,y,x,k] < 0.5 and y_true[0,y,x,k,1] > 0.5:  # false negative
           draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (255, 100, 0, 64))
 
-  # Perform NMS on boxes
+  # Extract proposals (which also performs NMS)
   final_proposals = region_proposal_network.extract_proposals(y_predicted_class = y_class, y_predicted_regression = y_regression, y_true = y_true, anchor_boxes = anchor_boxes)
 
   # Draw boxes
@@ -66,8 +66,17 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
     #print("proposal =", y_min, x_min, y_max, x_max)
     draw_rectangle(ctx = ctx, x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, color = (255, 255, 0, 255), thickness = 1)
 
+  # Write out image
   image.show()
   image.save("out.png")
+
+  # Write out each proposal with its class name
+  #y_proposal_classes = region_proposal_network.label_proposals(proposals = final_proposals, ground_truth_object_boxes = info.get_boxes(), num_classes = voc.num_classes) 
+  #for i in range(final_proposals.shape[0]):
+  #  y1, x1, y2, x2 = final_proposals[i,0:4]
+  #  proposal_image = image.crop(box = (x1, y1, x2, y2))
+  #  class_idx = np.argmax(y_proposal_classes[i,:])
+  #  proposal_image.save("out_%d_%s.png" % (i, voc.index_to_class_name[class_idx]))
 
 def _draw_ground_truth_boxes(image, boxes):
   # Draw green boxes
