@@ -112,7 +112,7 @@ class VOC:
     val_classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_val.txt") ])
     assert train_classes == val_classes, "Number of training and validation image sets in ImageSets/Main differs. Does your dataset have missing or extraneous files?"
     assert len(train_classes) > 0, "No classes found in ImageSets/Main"
-    index_to_class_name = { v[0]: v[1] for v in enumerate(train_classes) }
+    index_to_class_name = { v[0]: v[1] for v in enumerate(sorted(train_classes)) }
     return index_to_class_name
 
   @staticmethod
