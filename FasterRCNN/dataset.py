@@ -108,13 +108,18 @@ class VOC:
 
   @staticmethod
   def _get_index_to_class_name(dataset_dir):
+    """
+    Returns mappings between class index and class name. Indices are in the 
+    range [1,N], where N is the number of VOC classes, because index 0 is
+    reserved for use as a background class in the final classifier network.
+    """
     imageset_dir = os.path.join(dataset_dir, "ImageSets", "Main")
     train_classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_train.txt") ])
     val_classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_val.txt") ])
     assert train_classes == val_classes, "Number of training and validation image sets in ImageSets/Main differs. Does your dataset have missing or extraneous files?"
     assert len(train_classes) > 0, "No classes found in ImageSets/Main"
-    index_to_class_name = { v[0]: v[1] for v in enumerate(sorted(train_classes)) }
-    class_name_to_index = { v[1]: v[0] for v in enumerate(sorted(train_classes)) }
+    index_to_class_name = { (1 + v[0]): v[1] for v in enumerate(sorted(train_classes)) }
+    class_name_to_index = { v[1]: (1 + v[0]) for v in enumerate(sorted(train_classes)) }
     return index_to_class_name, class_name_to_index
 
   @staticmethod
