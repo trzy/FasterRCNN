@@ -313,7 +313,6 @@ if __name__ == "__main__":
 
           # Classifier forward pass
           y_final_class, y_final_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
-          print(proposals.shape, y_final_class.shape, y_final_regression.shape)
 
         # Update progress
         stats.on_rpn_step(losses = rpn_losses, y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true_minibatch = y_true_minibatch, y_true = y_true)
