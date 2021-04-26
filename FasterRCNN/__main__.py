@@ -65,13 +65,13 @@ def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3)
     utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2")
   return model, conv_model
 
-def build_classifier_model(conv_model, learning_rate, clipnorm, weights_filepath = None):
+def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, weights_filepath = None):
   proposal_boxes = Input(shape = (None, 4), dtype = tf.int32)
-  classifier_model = classifier_network.layers(input_map = conv_model.outputs[0], proposal_boxes = proposal_boxes)
-  model = Model([conv_model.input, proposal_boxes], [classifier_model])
+  classifier_output, regression_output = classifier_network.layers(num_classes = num_classes, input_map = conv_model.outputs[0], proposal_boxes = proposal_boxes)
+  model = Model([conv_model.input, proposal_boxes], [classifier_output, regression_output])
 
   optimizer = SGD(lr = learning_rate, momentum = 0.9, clipnorm = clipnorm)
-  model.compile(optimizer = optimizer, loss = "binary_crossentropy")  #TODO: just a placeholder loss for now
+  model.compile(optimizer = optimizer, loss = [ "binary_crossentropy", "binary_crossentropy" ])  #TODO: just a placeholder loss for now
 
   # Load weights
   if weights_filepath:
@@ -258,7 +258,7 @@ if __name__ == "__main__":
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
 
   rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
-  classifier_model = build_classifier_model(conv_model = conv_model, learning_rate = options.learning_rate, clipnorm = options.clipnorm)
+  classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, learning_rate = options.learning_rate, clipnorm = options.clipnorm)
   rpn_model.summary()
 
   if options.show_image:
@@ -280,6 +280,8 @@ if __name__ == "__main__":
 
       for i in range(num_samples):
         stats.on_step_begin()
+
+        # TODO: RPN and classifier passes should be put 
 
         # Fetch one sample and reshape to batch size of 1
         # TODO: should we just return complete y_true with a y_batch/y_valid map to define mini-batch?
@@ -310,7 +312,8 @@ if __name__ == "__main__":
             num_classes = voc.num_classes)
 
           # Classifier forward pass
-          y_final = classifier_model.predict_on_batch(x = [ x, proposals ])
+          y_final_class, y_final_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
+          print(proposals.shape, y_final_class.shape, y_final_regression.shape)
 
         # Update progress
         stats.on_rpn_step(losses = rpn_losses, y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true_minibatch = y_true_minibatch, y_true = y_true)
