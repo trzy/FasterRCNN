@@ -274,7 +274,7 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
 
   return truth_map, object_anchors, not_object_anchors
 
-def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_boxes):
+def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_boxes, max_proposals = 0):
   """
   Inputs:
 
@@ -283,7 +283,9 @@ def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_
     y_predicted_regression: RPN regression predictions.
     y_true: Ground truth anchor map (from compute_anchor_label_assignments())
       containing all anchors for image.
-    anchor_boxes: Anchor boxes (compute_all_anchor_boxes()). 
+    anchor_boxes: Anchor boxes (compute_all_anchor_boxes()).
+    max_proposals: Maximum number of proposals to return. If <= 0, returns all
+      proposals, otherwise returns top-N proposals (judged by class score).
 
   Returns a map of shape (Nx5) of N proposals from the prediction. Each
   proposal consists of:
@@ -304,8 +306,16 @@ def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_
     anchor_box = anchor_boxes[y_idx, x_idx, k_idx*4+0 : k_idx*4+4]
     proposals[i,0:4] = convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
     proposals[i,4] = y_predicted_class[0, y_idx, x_idx, k_idx]
+
+  # Perform NMS to cull redundant proposals
   proposal_indices = nms(proposals = proposals, iou_threshold = 0.7)
   proposals = proposals[proposal_indices]
+
+  # Limit to max_proposals
+  if max_proposals > 0:
+    sorted_indices = np.argsort(proposals[:,4])                     # sorts in ascending order of score
+    proposals = proposals[sorted_indices][-1:-(max_proposals+1):-1] # grab the top-N scores in descending order
+
   return proposals
 
 def convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width):
