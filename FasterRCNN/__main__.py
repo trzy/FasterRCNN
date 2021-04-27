@@ -1,5 +1,7 @@
 # TODO:
 #
+# - Optimization: Get complete ground truth map should be pre-calculated in ImageDescription, not generated on the fly each time
+# - Test to make sure that y_true_minibatch and y_true are actually different
 # - Test whether K.abs()/tf.abs() fail on Linux
 # - Weight decay, dropout, momentum
 
