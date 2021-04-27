@@ -356,9 +356,20 @@ def clip_box_coordinates_to_map_boundaries(boxes, map_shape):
   return boxes
 
 def label_proposals(proposals, ground_truth_object_boxes, num_classes):
-  # One hot encoded labels
+  # One hot encoded class labels
   num_proposals = proposals.shape[0]
-  y_labels = np.zeros((num_proposals, num_classes))
+  y_class_labels = np.zeros((num_proposals, num_classes))
+
+  # Regression targets for each proposal and class: ty, tx, th, tw. Background
+  # class 0 does not have a box and is therefore excluded. Class index 1
+  # regression targets are therefore stored at 0*4:0*4+4.
+  y_regression_labels = np.zeros((num_proposals, 4 * (num_classes - 1)))
+
+  # Precompute proposal center points and dimensions
+  proposal_center_y = 0.5 * (proposals[:,0] + proposals[:,2])
+  proposal_center_x = 0.5 * (proposals[:,1] + proposals[:,3])
+  proposal_height = proposals[:,2] - proposals[:,0] + 1
+  proposal_width = proposals[:,3] - proposals[:,1] + 1
 
   # IoU threshold for positive examples as in FasterRCNN paper. Note that older
   # models had a minimum threshold (e.g., 0.1), creating a range for negative
@@ -367,9 +378,11 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
   # from the proposal set, which we do not currently support here.
   iou_threshold = 0.5  
 
+  # Test each proposal against each box to find the best match
   for i in range(num_proposals):
     best_iou = 0
-    best_class_idx = 0  # background 
+    best_class_idx = 0  # background
+    best_box = None
 
     for box in ground_truth_object_boxes:
       proposal_box_coords = proposals[i,0:4]
@@ -378,8 +391,25 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
       if iou > best_iou:
         best_iou = iou
         best_class_idx = box.class_index
+        best_box = box
 
     # Create one-hot encoded label for this proposal
-    y_labels[i,best_class_idx] = 1.0
+    y_class_labels[i,best_class_idx] = 1.0
 
-  return y_labels
+    # Create regression targets if we have a box. At this stage, we do not have
+    # anchors and use the proposal itself as the reference. The proposals will
+    # change shape during the learning process and the model will learn how to
+    # transform a proposal box into an accurate bounding box.
+    if best_class_idx > 0 and best_box is not None:
+      box_center_y = 0.5 * (box.y_min + box.y_max)
+      box_center_x = 0.5 * (box.x_min + box.x_max)
+      box_height = box.y_max - box.y_min + 1
+      box_width = box.x_max - box.x_min + 1
+      ty = (box_center_y - proposal_center_y[i]) / proposal_height[i]
+      tx = (box_center_x - proposal_center_x[i]) / proposal_width[i]
+      th = log(box_height / proposal_height[i])
+      tw = log(box_width / proposal_width[i])
+      index = best_class_idx - 1
+      y_regression_labels[i,4*index:4*index+4] = ty, tx, th, tw
+
+  return y_class_labels, y_regression_labels

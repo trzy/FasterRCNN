@@ -34,7 +34,8 @@ def layers(num_classes, input_map, proposal_boxes):
   classifier = TimeDistributed(Dense(name = "classifier_class", units = num_classes, activation = "softmax", kernel_initializer = "zero"))(fc2)
 
   # Output: box regressions. Unique regression weights for each possible class
-  # excluding background class, hence the use of (num_classes-1).
+  # excluding background class, hence the use of (num_classes-1). Class index 1
+  # regressions are therefore at indices: 0*4:0*4+1.
   regressor = TimeDistributed(Dense(name = "classifier_boxes", units = 4 * (num_classes - 1), activation = "linear", kernel_initializer = "zero"))(fc2)
 
   return [ classifier, regressor ]

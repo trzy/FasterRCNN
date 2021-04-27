@@ -222,7 +222,7 @@ def convert_proposals_to_classifier_network_format(proposals, input_image_shape,
   proposals = region_proposal_network.clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
 
   # Generate one-hot labels for each proposal
-  y_true_proposal_classes = region_proposal_network.label_proposals(proposals = proposals, ground_truth_object_boxes = ground_truth_object_boxes, num_classes = num_classes)
+  y_true_proposal_classes, y_true_proposal_regressions = region_proposal_network.label_proposals(proposals = proposals, ground_truth_object_boxes = ground_truth_object_boxes, num_classes = num_classes)
   
   # Convert to anchor map (RPN output map) space
   proposals = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = cnn_output_shape)
@@ -233,8 +233,9 @@ def convert_proposals_to_classifier_network_format(proposals, input_image_shape,
   # Reshape to batch size of 1
   proposals = proposals.reshape((1, proposals.shape[0], proposals.shape[1]))
   y_true_proposal_classes = y_true_proposal_classes.reshape((1, y_true_proposal_classes.shape[0], y_true_proposal_classes.shape[1]))
+  y_true_proposal_regressions = y_true_proposal_regressions.reshape((1, y_true_proposal_regressions.shape[0], y_true_proposal_regressions.shape[1]))
 
-  return proposals, y_true_proposal_classes
+  return proposals, y_true_proposal_classes, y_true_proposal_regressions
 
 # good test images:
 # 2010_004041.jpg
@@ -306,7 +307,7 @@ if __name__ == "__main__":
         if proposals.shape[0] > 0:
           # Prepare proposals for input to classifier network and generate
           # labels
-          proposals, y_true_proposal_classes = convert_proposals_to_classifier_network_format(
+          proposals, y_true_proposal_classes, y_true_proposal_regressions = convert_proposals_to_classifier_network_format(
             proposals = proposals,
             input_image_shape = input_image_shape,
             cnn_output_shape = cnn_output_shape,
