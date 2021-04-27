@@ -258,8 +258,8 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
           object_box_coords = (box.y_min, box.x_min, box.y_max, box.x_max)
           center_x = 0.5 * (box.x_min + box.x_max)
           center_y = 0.5 * (box.y_min + box.y_max)
-          box_width = box.x_max - box.x_min
-          box_height = box.y_max - box.y_min
+          box_width = box.x_max - box.x_min + 1
+          box_height = box.y_max - box.y_min + 1
           ty = (center_y - anchor_center_y) / anchor_height
           tx = (center_x - anchor_center_x) / anchor_width
           th = log(box_height / anchor_height)
