@@ -78,6 +78,8 @@ class VOC:
       self.height = height
       self.boxes_by_class_name = boxes_by_class_name
 
+      self._ground_truth_regressions = None # computed on-demand and cached
+
     def load_image_data(self):
       data = imageio.imread(self.path, pilmode = "RGB")
       image = Image.fromarray(data, mode = "RGB").resize((self.width, self.height))
@@ -93,16 +95,15 @@ class VOC:
       """
       return list(itertools.chain.from_iterable(self.boxes_by_class_name.values()))
 
+    #TODO: this needs to be renamed and in general, how ground truth maps are named and returned needs to be rethought
     def get_complete_ground_truth_regressions_map(self):
-      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
-      ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
-      for anchor_position in positive_anchors + negative_anchors:
-        y = anchor_position[0]
-        x = anchor_position[1]
-        k = anchor_position[2]
-        ground_truth_regressions[y,x,k,0] = 1.0
-      #print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(ground_truth_regressions[:,:,:,0])))
-      return ground_truth_regressions
+      if self._ground_truth_regressions is None:
+        anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
+        self._ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+        self._ground_truth_regressions[:,:,:,0] = anchor_boxes_valid
+        #print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(self._ground_truth_regressions[:,:,:,0])))
+        #print("anchor_boxes_valid=%f, count=%f" % (np.sum(anchor_boxes_valid), (len(positive_anchors) + len(negative_anchors))))
+      return self._ground_truth_regressions
 
     def __repr__(self):
       return "[name=%s, (%d, %d), boxes=%s]" % (self.name, self.width, self.height, self.boxes_by_class_name)
@@ -131,6 +132,7 @@ class VOC:
     with open(image_list_file) as fp:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(dataset_dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
+    #return image_paths
     # Debug: 60 car training images
     image_paths = [
       "2008_000028",
