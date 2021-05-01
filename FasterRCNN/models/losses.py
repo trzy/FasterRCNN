@@ -105,3 +105,45 @@ def rpn_regression_loss(y_true, y_predicted):
   # Zero out the ones which should not have been included
   relevant_loss_terms = y_mask * loss_all_anchors
   return scale_factor * K.sum(relevant_loss_terms) / N_cls
+
+def classifier_class_loss(y_true, y_predicted):
+  """
+  Keras implementation of classifier network classification loss. The inputs
+  are shaped (M,N,C), where M is the number of batches (i.e., 1), N is the
+  number of proposed RoIs to classify, and C is the number of classes. One-hot
+  encoding is used, hence categorical crossentropy.
+  """
+  scale_factor = 1.0
+  return scale_factor * K.mean(K.categorical_crossentropy(y_true, y_predicted))
+
+def classifier_regression_loss(y_true, y_predicted):
+  scale_factor = 1.0
+  sigma = 3.0
+  sigma_squared = sigma * sigma
+
+  # We want to unpack the regression targets and the mask of valid targets into
+  # tensors each of the same shape as the predicted: 
+  #   (batch_size, num_proposals, 4*(num_classes-1))
+  # y_true has shape:
+  #   (batch_size, num_proposals, 2, 4*(num_classes-1))
+  y_mask = y_true[:,:,0,:]
+  y_true_targets = y_true[:,:,1,:]
+
+  # Compute element-wise loss using robust L1 function for all 4 regression
+  # targets
+  x = y_true_targets - y_predicted
+  x_abs = tf.sqrt(x * x)
+  is_negative_branch = tf.cast(tf.less(x_abs, 1.0), dtype = tf.float32)
+  R_negative_branch = 0.5 * x * x * sigma_squared
+  R_positive_branch = x_abs - 0.5 / sigma_squared
+  losses = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
+
+  # TODO:
+  # Not clear which of these methods of normalization are ideal, or whether it
+  # even matters
+  #N = tf.reduce_sum(y_mask) / 4.0 + K.epsilon()                      # N = number of positive boxes
+  #N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon() # N = number of proposals
+  N = tf.reduce_sum(y_mask) + K.epsilon()                             # N = number of parameters (i.e., number of positive boxes * 4)
+  relevant_loss_terms = y_mask * losses
+  return scale_factor * K.sum(relevant_loss_terms) / N
+  

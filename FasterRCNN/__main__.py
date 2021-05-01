@@ -1,7 +1,14 @@
 # TODO:
+# - FastRCNN paper uses 64 RoIs (25% positive samples) and Rocky Xu's repo uses 4 RoIs (up to 50% positive samples). Try this.
+# - Dump regression stats for each of (ty,tx,th,tw) for both RPN and classifier regression layers and determine whether Std Dev
+#   scaling would be beneficial.
+# - Desperately need to return a separate map indicating anchor validity and then force it to be passed in explicitly, including
+#   to training process, so that y_true becomes a tuple of two maps. 
+# - Desperately need to settle on some better naming conventions for the various y outputs and ground truths, as well as proposal
+#   maps in different formats (e.g., pixel units, map units, etc.)
+
+# TODO:
 #
-# - Optimization: Get complete ground truth map should be pre-calculated in ImageDescription, not generated on the fly each time
-# - Test to make sure that y_true_minibatch and y_true are actually different
 # - Test whether K.abs()/tf.abs() fail on Linux
 # - Weight decay, dropout, momentum
 
@@ -22,8 +29,10 @@ from . import visualization
 from .dataset import VOC
 from .models import vgg16
 from .models import region_proposal_network
-from .models.rpn_loss import rpn_class_loss
-from .models.rpn_loss import rpn_regression_loss
+from .models.losses import rpn_class_loss
+from .models.losses import rpn_regression_loss
+from .models.losses import classifier_class_loss
+from .models.losses import classifier_regression_loss
 from .models import classifier_network
 
 import argparse
@@ -73,13 +82,19 @@ def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, wei
   model = Model([conv_model.input, proposal_boxes], [classifier_output, regression_output])
 
   optimizer = SGD(lr = learning_rate, momentum = 0.9, clipnorm = clipnorm)
-  model.compile(optimizer = optimizer, loss = [ "binary_crossentropy", "binary_crossentropy" ])  #TODO: just a placeholder loss for now
+  loss = [ classifier_class_loss, classifier_regression_loss ]
+  model.compile(optimizer = optimizer, loss = loss)
 
   # Load weights
   if weights_filepath:
     model.load_weights(filepath = weights_filepath, by_name = True)
     print("Loaded classifier model weights from %s" % weights_filepath)
 
+  return model
+
+def build_complete_model(rpn_model, classifier_model):
+  model = Model(classifier_model.inputs, rpn_model.outputs + classifier_model.outputs)
+  model.compile(optimizer = SGD(), loss = "mae")
   return model
 
 def show_image(voc, filename):
@@ -92,12 +107,15 @@ def show_image(voc, filename):
 
   visualization.show_annotated_image(voc = voc, filename = options.show_image, draw_anchor_intersections = True, image_input_map = model.input, anchor_map = classifier_output)
 
-def infer_boxes(model, voc, filename):
-  from .models.rpn_loss import rpn_class_loss_np
+def infer_rpn_boxes(rpn_model, voc, filename):
+  """
+  Run RPN model to find objects and draw their bounding boxes.
+  """
+  from .models.losses import rpn_class_loss_np
   info = voc.get_image_description(path = voc.get_full_path(filename))
   x = info.load_image_data()
   x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
-  y_class, y_regression = model.predict(x)
+  y_class, y_regression = rpn_model.predict(x)
   for yy in range(y_class.shape[1]):
     for xx in range(y_class.shape[2]):
       for kk in range(y_class.shape[3]):
@@ -107,6 +125,35 @@ def infer_boxes(model, voc, filename):
   y_true = y_true.reshape((1, y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3]))
   print("class loss=", rpn_class_loss_np(y_true=y_true, y_predicted=y_class))
   visualization.show_proposed_regions(voc = voc, filename = filename, y_true = y_true, y_class = y_class, y_regression = y_regression)
+
+def show_objects(rpn_model, classifier_model, voc, filename):
+  # TODO: ugh, what a mess! This needs to be streamlined.
+  # TODO: we need a way to get anchor boxes and the valid mask independently from y_true
+  info = voc.get_image_description(path = voc.get_full_path(filename))
+  x = info.load_image_data()
+  y_rpn_true = info.get_complete_ground_truth_regressions_map()
+  input_image_shape = x.shape
+  cnn_output_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
+  anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = input_image_shape)
+  x = np.expand_dims(x, axis = 0)
+  y_rpn_true = np.expand_dims(y_rpn_true, axis = 0)
+  y_rpn_class, y_rpn_regression = rpn_model.predict(x)
+  proposals = region_proposal_network.extract_proposals(y_predicted_class = y_rpn_class, y_predicted_regression = y_rpn_regression, y_true = y_rpn_true, anchor_boxes = anchor_boxes)
+  if proposals.shape[0] > 0:
+    # TODO: convert_proposals_to_classifier_network_format() needs to be modified to work for inference, where ground truth is not needed
+    proposals = proposals[:,0:4]
+    proposals = region_proposal_network.clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
+    proposals_pixels = proposals
+    proposals = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = cnn_output_shape)
+    proposals[:,2:4] = proposals[:,2:4] - proposals[:,0:2] + 1
+    proposals = proposals.astype(np.int32)
+    proposals = np.expand_dims(proposals, axis = 0)
+    # Run prediction
+    y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
+    # Show objects
+    visualization.show_objects(voc = voc, filename = filename, proposals = proposals_pixels, y_classifier_predicted_class = y_classifier_predicted_class, y_classifier_predicted_regression = y_classifier_predicted_regression)
+  else:
+    print("No proposals generated")
 
 class TrainingStatistics:
   def __init__(self):
@@ -118,11 +165,23 @@ class TrainingStatistics:
     self._rpn_class_accuracies = np.zeros(num_samples)
     self._rpn_class_recalls = np.zeros(num_samples)
 
+    self._classifier_total_losses = np.zeros(num_samples)
+    self._classifier_class_losses = np.zeros(num_samples)
+    self._classifier_regression_losses = np.zeros(num_samples)
+    #self._classifier_class_accuracies = np.zeros(num_samples)
+    #self._classifier_class_recalls = np.zeros(num_samples)
+
     self.rpn_mean_class_loss = float("inf")
     self.rpn_mean_class_accuracy = 0
     self.rpn_mean_class_recall = 0
     self.rpn_mean_regression_loss = float("inf")
     self.rpn_mean_total_loss = float("inf")
+    
+    self.classifier_mean_class_loss = float("inf")
+    self.classifier_mean_class_accuracy = 0
+    self.classifier_mean_class_recall = 0
+    self.classifier_mean_regression_loss = float("inf")
+    self.classifier_mean_total_loss = float("inf")
 
   def on_epoch_begin(self):
     """
@@ -173,7 +232,10 @@ class TrainingStatistics:
     y_valid = y_true_minibatch[:,:,:,:,0].reshape(y_predicted_class.shape)      # valid anchors participating in this mini-batch
     assert np.size(y_true_class) == np.size(y_predicted_class)
     
-    # Compute class accuracy and recall
+    # Compute class accuracy and recall. Note that invalid anchor locations
+    # have their corresponding objectness class score set to 0 (neutral). It is
+    # therefore safe to determine the total number of positive and negative
+    # anchors by inspecting the class score.
     ground_truth_positives = np.where(y_true_class > 0, True, False)
     ground_truth_negatives = np.where(y_true_class < 0, True, False)
     num_ground_truth_positives = np.sum(ground_truth_positives)
@@ -199,6 +261,16 @@ class TrainingStatistics:
     self.rpn_mean_total_loss = self.rpn_mean_class_loss + self.rpn_mean_regression_loss
 
 
+  def on_classifier_step(self, losses, y_predicted_class, y_predicted_regression, y_true_classes, y_true_regressions):
+    i = self._step_number
+    self._classifier_total_losses[i] = losses[0]
+    self._classifier_class_losses[i] = losses[1]
+    self._classifier_regression_losses[i] = losses[2]
+
+    self.classifier_mean_class_loss = np.mean(self._classifier_class_losses[0:i+1])
+    self.classifier_mean_regression_loss = np.mean(self._classifier_regression_losses[0:i+1])
+    self.classifier_mean_total_loss = self.classifier_mean_class_loss + self.classifier_mean_regression_loss
+    
   def on_step_end(self):
     """
     Must be called at the end of each training step after all the other step functions.
@@ -230,10 +302,13 @@ def convert_proposals_to_classifier_network_format(proposals, input_image_shape,
   # Convert from (y_min,x_min,y_max,x_max) -> (y_min,x_min,height,width) as expected by RoI pool layer
   proposals[:,2:4] = proposals[:,2:4] - proposals[:,0:2] + 1
 
-  # Reshape to batch size of 1
-  proposals = proposals.reshape((1, proposals.shape[0], proposals.shape[1]))
-  y_true_proposal_classes = y_true_proposal_classes.reshape((1, y_true_proposal_classes.shape[0], y_true_proposal_classes.shape[1]))
-  y_true_proposal_regressions = y_true_proposal_regressions.reshape((1, y_true_proposal_regressions.shape[0], y_true_proposal_regressions.shape[1]))
+  # RoI pooling layer expects tf.int32
+  proposals = proposals.astype(np.int32)
+
+  # Reshape to batch size of 1 (e.g., (N,M) -> (1,N,M))
+  proposals = np.expand_dims(proposals, axis = 0)
+  y_true_proposal_classes = np.expand_dims(y_true_proposal_classes, axis = 0)
+  y_true_proposal_regressions = np.expand_dims(y_true_proposal_regressions, axis = 0)
 
   return proposals, y_true_proposal_classes, y_true_proposal_regressions
 
@@ -243,6 +318,45 @@ def convert_proposals_to_classifier_network_format(proposals, input_image_shape,
 # 2008_000019.jpg
 # 2009_004872.jpg
 if __name__ == "__main__":
+  """
+  y_true = np.array([
+    [1, 0, 0, 0],
+    [1, 0, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1]
+  ]).reshape((2,2,4))
+  y_predicted = np.array([
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [1, 0, 0, 0],
+    [0, 0, 0, 1]
+  ]).reshape((2,2,4))
+
+  loss = K.eval(classifier_class_loss(y_true = K.variable(y_true), y_predicted = K.variable(y_predicted)))
+  print(loss)
+  print("---")
+  for j in range(2):
+    for i in range(2):
+      yt = K.variable(y_true[j,i])
+      yp = K.variable(y_predicted[j,i])
+      print(K.eval(K.categorical_crossentropy(yt, yp)))
+
+  exit()
+  
+  y_true = np.zeros((1,2,2,8))
+  y_true[0,0,0,:] = 1, 1, 1, 1, 0, 0, 0, 0
+  y_true[0,0,1,:] = 1, 2, 3, 3, 2, 2, 2, 2
+  y_true[0,1,0,:] = 0, 0, 0, 0, 0, 0, 0, 0
+  y_true[0,1,1,:] = 0, 3, 0, 0, 3, 2, 1, 0
+  y_predicted = np.array([
+    [1,2,3,4,5,6,7,8],
+    [0,1,2,3,3,2,1,0]
+  ]).reshape((1,2,8))
+
+  loss = K.eval(classifier_regression_loss(y_true = K.variable(y_true), y_predicted = K.variable(y_predicted)))
+  print(loss)
+  exit()
+  """
   parser = argparse.ArgumentParser("FasterRCNN")
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
@@ -253,22 +367,28 @@ if __name__ == "__main__":
   parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = "256", help = "Mini-batch size")
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
   parser.add_argument("--freeze", action = "store_true", help = "Freeze first 2 blocks of VGG-16")
+  parser.add_argument("--rpn-only", action = "store_true", help = "Train only the region proposal network")
   parser.add_argument("--save-to", metavar = "filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
   parser.add_argument("--load-from", metavar="filepath", type = str, action = "store", help = "File to load initial model weights from")
   parser.add_argument("--infer-boxes", metavar = "file", type = str, action = "store", help = "Run inference on image using region proposal network and display bounding boxes")
+  parser.add_argument("--show-objects", metavar = "file", type = str, action = "store", help = "Run inference on image using classifier network and display bounding boxes")
   options = parser.parse_args()
 
   voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
 
   rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
-  classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, learning_rate = options.learning_rate, clipnorm = options.clipnorm)
-  rpn_model.summary()
+  classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm)
+  complete_model = build_complete_model(rpn_model = rpn_model, classifier_model = classifier_model) # contains all weights, used for saving weights
+  complete_model.summary()
 
   if options.show_image:
     show_image(voc = voc, filename = options.show_image)
 
   if options.infer_boxes:
-    infer_boxes(model = rpn_model, voc = voc, filename = options.infer_boxes)
+    infer_rpn_boxes(rpn_model = rpn_model, voc = voc, filename = options.infer_boxes)
+
+  if options.show_objects:
+    show_objects(rpn_model = rpn_model, classifier_model = classifier_model, voc = voc, filename = options.show_objects)
 
   if options.train:
     train_data = voc.train_data(cache_images = True, mini_batch_size = options.mini_batch)
@@ -284,7 +404,7 @@ if __name__ == "__main__":
       for i in range(num_samples):
         stats.on_step_begin()
 
-        # TODO: RPN and classifier passes should be put 
+        # TODO: Better separation of RPN and classifier
 
         # Fetch one sample and reshape to batch size of 1
         # TODO: should we just return complete y_true with a y_batch/y_valid map to define mini-batch?
@@ -294,48 +414,56 @@ if __name__ == "__main__":
         image_info = voc.get_image_description(image_path)
         ground_truth_object_boxes = image_info.get_boxes()              #TODO: return this from iterator so we don't need image_info
         y_true = image_info.get_complete_ground_truth_regressions_map() #TODO: ""
-        y_true = y_true.reshape((1, y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3]))
-        y_true_minibatch = y_true_minibatch.reshape((1, y_true_minibatch.shape[0], y_true_minibatch.shape[1], y_true_minibatch.shape[2], y_true_minibatch.shape[3]))  # convert to batch size of 1
-        x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
+        y_true = np.expand_dims(y_true, axis = 0)
+        y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
+        x = np.expand_dims(x, axis = 0)
 
         # RPN: back prop one step (and then predict so we can evaluate accuracy)
         rpn_losses = rpn_model.train_on_batch(x = x, y = y_true_minibatch) # loss = [sum, loss_cls, loss_regr]
         y_predicted_class, y_predicted_regression = rpn_model.predict_on_batch(x = x)
 
-        # Test: run classifier model forward (not yet complete)
-        proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true, anchor_boxes = anchor_boxes)
-        if proposals.shape[0] > 0:
-          # Prepare proposals for input to classifier network and generate
-          # labels
-          proposals, y_true_proposal_classes, y_true_proposal_regressions = convert_proposals_to_classifier_network_format(
-            proposals = proposals,
-            input_image_shape = input_image_shape,
-            cnn_output_shape = cnn_output_shape,
-            ground_truth_object_boxes = ground_truth_object_boxes,
-            num_classes = voc.num_classes)
+        # Classifier
+        if not options.rpn_only:
+          proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true, anchor_boxes = anchor_boxes)
+          if proposals.shape[0] > 0:
+            # Prepare proposals for input to classifier network and generate
+            # labels
+            proposals, y_true_proposal_classes, y_true_proposal_regressions = convert_proposals_to_classifier_network_format(
+              proposals = proposals,
+              input_image_shape = input_image_shape,
+              cnn_output_shape = cnn_output_shape,
+              ground_truth_object_boxes = ground_truth_object_boxes,
+              num_classes = voc.num_classes)
 
-          # Classifier forward pass
-          y_final_class, y_final_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
+            # Classifier: back prop one step (and then predict)
+            classifier_losses = classifier_model.train_on_batch(x = [ x, proposals ], y = [ y_true_proposal_classes, y_true_proposal_regressions ])
+            y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
 
-        # Update progress
+            # Update classifier progress
+            stats.on_classifier_step(losses = classifier_losses, y_predicted_class = y_classifier_predicted_class, y_predicted_regression = y_classifier_predicted_regression, y_true_classes = y_true_proposal_classes, y_true_regressions = y_true_proposal_regressions)
+
+        # Update RPN progress and progress bar
         stats.on_rpn_step(losses = rpn_losses, y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true_minibatch = y_true_minibatch, y_true = y_true)
         progbar.update(current = i, values = [ 
           ("rpn_total_loss", stats.rpn_mean_total_loss),
           ("rpn_class_loss", stats.rpn_mean_class_loss),
           ("rpn_regression_loss", stats.rpn_mean_regression_loss),
           ("rpn_class_accuracy", stats.rpn_mean_class_accuracy),
-          ("rpn_class_recall", stats.rpn_mean_class_recall) 
+          ("rpn_class_recall", stats.rpn_mean_class_recall),
+          ("classifier_total_loss", stats.classifier_mean_total_loss),
+          ("classifier_class_loss", stats.classifier_mean_class_loss),
+          ("classifier_regression_loss", stats.classifier_mean_regression_loss)
         ])
         stats.on_step_end()
 
       # Checkpoint
       print("")
       checkpoint_filename = "checkpoint-%d-%1.2f.hdf5" % (epoch, stats.rpn_mean_total_loss)
-      rpn_model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
+      complete_model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
       print("Saved checkpoint: %s" % checkpoint_filename)
       stats.on_epoch_end()
 
     # Save learned model parameters
     if options.save_to is not None:
-      rpn_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
+      complete_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
       print("Saved model weights to %s" % options.save_to)

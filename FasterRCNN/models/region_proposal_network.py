@@ -121,7 +121,8 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
 
       0: 0.0 (unused, initialized to 0, for use by caller)
       1: object (1 if this is an object anchor, 0 if either a negative or
-         ignored/unused sample)
+         ignored/unused sample). Set to 0 for invalid anchors (those that
+         overlap image boundaries).
       2: class (negative if not an object, zero if indeterminate and should be
          ignored, and when positive, equal to one plus the ground truth object
          index)                                                                                 <-- TODO: is this useful?
@@ -360,10 +361,12 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
   num_proposals = proposals.shape[0]
   y_class_labels = np.zeros((num_proposals, num_classes))
 
-  # Regression targets for each proposal and class: ty, tx, th, tw. Background
-  # class 0 does not have a box and is therefore excluded. Class index 1
-  # regression targets are therefore stored at 0*4:0*4+4.
-  y_regression_labels = np.zeros((num_proposals, 4 * (num_classes - 1)))
+  # Regression targets and inclusion mask for each proposal and class. Shape
+  # (N,2,4*(C-1)) where [n,0,:] comprises a mask for the corresponding targets
+  # at [n,1,:]. Targets are ordered: ty, tx, th, tw. Background class 0 does
+  # not have a box and is therefore excluded. Class index 1 targets are
+  # therefore stored at [n,1,0*4:0*4+4].
+  y_regression_labels = np.zeros((num_proposals, 2, 4 * (num_classes - 1)))
 
   # Precompute proposal center points and dimensions
   proposal_center_y = 0.5 * (proposals[:,0] + proposals[:,2])
@@ -388,7 +391,7 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
       proposal_box_coords = proposals[i,0:4]
       object_box_coords = np.array([box.y_min, box.x_min, box.y_max, box.x_max])
       iou = intersection_over_union(box1 = proposal_box_coords, box2 = object_box_coords)
-      if iou > best_iou:
+      if iou > iou_threshold and iou > best_iou:
         best_iou = iou
         best_class_idx = box.class_index
         best_box = box
@@ -410,6 +413,7 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
       th = log(box_height / proposal_height[i])
       tw = log(box_width / proposal_width[i])
       index = best_class_idx - 1
-      y_regression_labels[i,4*index:4*index+4] = ty, tx, th, tw
+      y_regression_labels[i,0,4*index:4*index+4] = 1, 1, 1, 1       # mask indicating which targets are valid
+      y_regression_labels[i,1,4*index:4*index+4] = ty, tx, th, tw
 
   return y_class_labels, y_regression_labels

@@ -35,6 +35,35 @@ def show_annotated_image(voc, filename, draw_anchor_points = True, draw_anchor_i
   image.show()
   image.save("out_gt.png")
 
+def show_objects(voc, filename, proposals, y_classifier_predicted_class, y_classifier_predicted_regression):
+  # Load image and scale appropriately
+  filepath = voc.get_full_path(filename = filename)
+  info = voc.get_image_description(path = filepath)
+  data = imageio.imread(filepath, pilmode = "RGB")
+  image = Image.fromarray(data, mode = "RGB")
+  image = image.resize((info.width, info.height), resample = Image.BILINEAR)
+  ctx = ImageDraw.Draw(image, mode = "RGBA")
+
+  # Iterate all predictions (assume batch size of 1)
+  assert y_classifier_predicted_class.shape[1] == y_classifier_predicted_regression.shape[1]
+  assert y_classifier_predicted_class.shape[1] == proposals.shape[0]
+  assert y_classifier_predicted_class.shape[0] == 1 
+  assert y_classifier_predicted_class.shape[0] == 1
+  
+  for i in range(y_classifier_predicted_class.shape[1]):
+    class_idx = np.argmax(y_classifier_predicted_class[0,i])
+    if class_idx > 0:
+      print(voc.index_to_class_name[class_idx])
+      idx = class_idx - 1
+      box_params = y_classifier_predicted_regression[0, i, idx*4+0 : idx*4+4]
+      proposal_center_y = 0.5 * (proposals[i,0] + proposals[i,2])
+      proposal_center_x = 0.5 * (proposals[i,1] + proposals[i,3])
+      proposal_height = proposals[i,2] - proposals[i,0] + 1
+      proposal_width = proposals[i,3] - proposals[i,1] + 1
+      y1, x1, y2, x2 = region_proposal_network.convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = proposal_center_y, anchor_center_x = proposal_center_x, anchor_height = proposal_height, anchor_width = proposal_width)
+      draw_rectangle(ctx = ctx, x_min = x1, y_min = y1, x_max = x2, y_max = y2, color = (255, 255, 0, 255), thickness = 1)
+  image.show() 
+
 def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Load image and scale appropriately
   filepath = voc.get_full_path(filename = filename)

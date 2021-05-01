@@ -27,15 +27,15 @@ def layers(num_classes, input_map, proposal_boxes):
   #TODO: dropout layers
   pool = RoIPoolingLayer(pool_size = 7)([input_map, proposal_boxes])
   flattened = TimeDistributed(Flatten())(pool)
-  fc1 = TimeDistributed(Dense(name = "classifier_fc1", units = 4096, activation = "relu"))(flattened)
-  fc2 = TimeDistributed(Dense(name = "classifier_fc2", units = 4096, activation = "relu"))(fc1)
+  fc1 = TimeDistributed(name = "classifier_fc1", layer = Dense(units = 4096, activation = "relu"))(flattened)
+  fc2 = TimeDistributed(name = "classifier_fc2", layer = Dense(units = 4096, activation = "relu"))(fc1)
 
   # Output: classifier
-  classifier = TimeDistributed(Dense(name = "classifier_class", units = num_classes, activation = "softmax", kernel_initializer = "zero"))(fc2)
+  classifier = TimeDistributed(name = "classifier_class", layer = Dense(units = num_classes, activation = "softmax", kernel_initializer = "zero"))(fc2)
 
   # Output: box regressions. Unique regression weights for each possible class
   # excluding background class, hence the use of (num_classes-1). Class index 1
   # regressions are therefore at indices: 0*4:0*4+1.
-  regressor = TimeDistributed(Dense(name = "classifier_boxes", units = 4 * (num_classes - 1), activation = "linear", kernel_initializer = "zero"))(fc2)
+  regressor = TimeDistributed(name = "classifier_boxes", layer = Dense(units = 4 * (num_classes - 1), activation = "linear", kernel_initializer = "zero"))(fc2)
 
   return [ classifier, regressor ]
