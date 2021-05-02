@@ -404,10 +404,10 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
     # change shape during the learning process and the model will learn how to
     # transform a proposal box into an accurate bounding box.
     if best_class_idx > 0 and best_box is not None:
-      box_center_y = 0.5 * (box.y_min + box.y_max)
-      box_center_x = 0.5 * (box.x_min + box.x_max)
-      box_height = box.y_max - box.y_min + 1
-      box_width = box.x_max - box.x_min + 1
+      box_center_y = 0.5 * (best_box.y_min + best_box.y_max)
+      box_center_x = 0.5 * (best_box.x_min + best_box.x_max)
+      box_height = best_box.y_max - best_box.y_min + 1
+      box_width = best_box.x_max - best_box.x_min + 1
       ty = (box_center_y - proposal_center_y[i]) / proposal_height[i]
       tx = (box_center_x - proposal_center_x[i]) / proposal_width[i]
       th = log(box_height / proposal_height[i])

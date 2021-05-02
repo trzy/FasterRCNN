@@ -1,7 +1,4 @@
 # TODO:
-# - FastRCNN paper uses 64 RoIs (25% positive samples) and Rocky Xu's repo uses 4 RoIs (up to 50% positive samples). Try this.
-# - Dump regression stats for each of (ty,tx,th,tw) for both RPN and classifier regression layers and determine whether Std Dev
-#   scaling would be beneficial.
 # - Desperately need to return a separate map indicating anchor validity and then force it to be passed in explicitly, including
 #   to training process, so that y_true becomes a tuple of two maps. 
 # - Desperately need to settle on some better naming conventions for the various y outputs and ground truths, as well as proposal
@@ -37,6 +34,7 @@ from .models import classifier_network
 
 import argparse
 import numpy as np
+from math import exp
 import os
 import random
 import tensorflow as tf
@@ -169,8 +167,10 @@ class TrainingStatistics:
     self._classifier_total_losses = np.zeros(num_samples)
     self._classifier_class_losses = np.zeros(num_samples)
     self._classifier_regression_losses = np.zeros(num_samples)
-    #self._classifier_class_accuracies = np.zeros(num_samples)
-    #self._classifier_class_recalls = np.zeros(num_samples)
+
+    self._rpn_regression_targets = np.zeros((0,4))
+    self._classifier_regression_targets = np.zeros((0,4))
+    self._classifier_regression_predictions = np.zeros((0,4))
 
     self.rpn_mean_class_loss = float("inf")
     self.rpn_mean_class_accuracy = 0
@@ -189,11 +189,28 @@ class TrainingStatistics:
     Must be called at the beginning of each epoch.
     """
     self._step_number = 0
+    self._rpn_regression_targets = np.zeros((0,4))
+    self._classifier_regression_targets = np.zeros((0,4))
+    self._classifier_regression_predictions = np.zeros((0,4))
 
   def on_epoch_end(self):
     """
     Must be called at the end of each epoch after the last step.
     """
+    # Print stats for RPN regression targets
+    mean_ty, mean_tx, mean_th, mean_tw = np.mean(self._rpn_regression_targets, axis = 0)
+    std_ty, std_tx, std_th, std_tw = np.std(self._rpn_regression_targets, axis = 0)
+    print("RPN Regression Target Means : %1.2f %1.2f %1.2f %1.2f" % (mean_ty, mean_tx, mean_th, mean_tw))
+    print("RPN Regression Target StdDev: %1.2f %1.2f %1.2f %1.2f" % (std_ty, std_tx, std_th, std_tw))
+    # Print stats for classifier regression targets
+    mean_ty, mean_tx, mean_th, mean_tw = np.mean(self._classifier_regression_targets, axis = 0)
+    std_ty, std_tx, std_th, std_tw = np.std(self._classifier_regression_targets, axis = 0)
+    print("Classifier Regression Target Means : %1.2f %1.2f %1.2f %1.2f" % (mean_ty, mean_tx, mean_th, mean_tw))
+    print("Classifier Regression Target StdDev: %1.2f %1.2f %1.2f %1.2f" % (std_ty, std_tx, std_th, std_tw))
+    mean_ty, mean_tx, mean_th, mean_tw = np.mean(self._classifier_regression_predictions, axis = 0)
+    std_ty, std_tx, std_th, std_tw = np.std(self._classifier_regression_predictions, axis = 0)
+    print("Classifier Regression Prediction Means : %1.2f %1.2f %1.2f %1.2f" % (mean_ty, mean_tx, mean_th, mean_tw))
+    print("Classifier Regression Prediction StdDev: %1.2f %1.2f %1.2f %1.2f" % (std_ty, std_tx, std_th, std_tw))
     pass
 
   def on_step_begin(self):
@@ -261,6 +278,15 @@ class TrainingStatistics:
     self.rpn_mean_regression_loss = np.mean(self._rpn_regression_losses[0:i+1])
     self.rpn_mean_total_loss = self.rpn_mean_class_loss + self.rpn_mean_regression_loss
 
+    # Extract all ground truth regression targets for RPN
+    for i in range(y_true.shape[0]):
+      for y in range(y_true.shape[1]):
+        for x in range(y_true.shape[2]):
+          for k in range(y_true.shape[3]):
+            if y_true[i,y,x,k,2] > 0:
+              targets = y_true[i,y,x,k,4:8]
+              self._rpn_regression_targets = np.vstack([self._rpn_regression_targets, targets])  
+
 
   def on_classifier_step(self, losses, y_predicted_class, y_predicted_regression, y_true_classes, y_true_regressions):
     i = self._step_number
@@ -271,7 +297,25 @@ class TrainingStatistics:
     self.classifier_mean_class_loss = np.mean(self._classifier_class_losses[0:i+1])
     self.classifier_mean_regression_loss = np.mean(self._classifier_regression_losses[0:i+1])
     self.classifier_mean_total_loss = self.classifier_mean_class_loss + self.classifier_mean_regression_loss
-    
+
+    # Extract all ground truth regression targets: ty, tx, th, tw
+    assert len(y_true_regressions.shape) == 4 and y_true_regressions.shape[0] == 1  # only batch size of 1 currently supported
+    for n in range(y_true_regressions.shape[1]):
+      indices = np.nonzero(y_true_regressions[0,n,0,:])[0]  # valid mask
+      assert indices.size == 4 or indices.size == 0
+      if indices.size == 4:
+        targets = y_true_regressions[0,n,1][indices]        # ty, tx, th, tw
+        self._classifier_regression_targets = np.vstack([self._classifier_regression_targets, targets])
+    # Do the same for predictions
+    assert len(y_predicted_regression.shape) == 3 and y_predicted_regression.shape[0] == 1
+    assert len(y_predicted_class.shape) == 3 and y_predicted_class.shape[0] == 1
+    for n in range(y_predicted_regression.shape[1]):
+      class_idx = np.argmax(y_predicted_class[0,n])
+      if class_idx > 0:
+        idx = class_idx - 1
+        predictions = y_predicted_regression[0,n,idx*4:idx*4+4]
+        self._classifier_regression_predictions = np.vstack([self._classifier_regression_predictions, predictions])       
+      
   def on_step_end(self):
     """
     Must be called at the end of each training step after all the other step functions.
@@ -291,7 +335,6 @@ def sample_proposals(proposals, y_true_proposal_classes, y_true_proposal_regress
   
   # Select positive and negative samples, if there are enough
   num_samples = min(max_proposals, len(class_indices))
-  #print("\n", max_proposals, num_samples)
   num_positive_samples = min(round(num_samples * positive_fraction), num_positive_proposals)
   num_negative_samples = min(num_samples - num_positive_samples, num_negative_proposals)
 
@@ -300,7 +343,6 @@ def sample_proposals(proposals, y_true_proposal_classes, y_true_proposal_regress
     return proposals[[]], y_true_proposal_classes[[]], y_true_proposal_regressions[[]]  # return 0-length tensors
 
   # Sample randomly
-  #print(num_positive_samples, num_negative_samples, len(positive_indices), len(negative_indices))
   positive_sample_indices = np.random.choice(positive_indices, size = num_positive_samples, replace = False)
   negative_sample_indices = np.random.choice(negative_indices, size = num_negative_samples, replace = False)
   indices = np.concatenate([ positive_sample_indices, negative_sample_indices ])
@@ -309,6 +351,28 @@ def sample_proposals(proposals, y_true_proposal_classes, y_true_proposal_regress
   return proposals[indices], y_true_proposal_classes[indices], y_true_proposal_regressions[indices]
 
    
+def dump(proposals, ground_truth_object_boxes, y_true_proposal_classes, y_true_proposal_regressions):
+  print("--")
+  for box in ground_truth_object_boxes:
+    print("Box: (%d) %d %d %d %d" % (box.class_index, box.y_min, box.x_min, box.y_max, box.x_max))
+  for i in range(proposals.shape[0]):
+    class_idx = np.argmax(y_true_proposal_classes[i])
+    if class_idx > 0:
+      idx = class_idx - 1
+      ty, tx, th, tw = y_true_proposal_regressions[i,1,idx*4:idx*4+4]
+      proposal_width = proposals[i,3] - proposals[i,1] + 1
+      proposal_height = proposals[i,2] - proposals[i,0] + 1
+      proposal_center_x = 0.5 * (proposals[i,1] + proposals[i,3])
+      proposal_center_y = 0.5 * (proposals[i,0] + proposals[i,2])
+      center_y = ty * proposal_height + proposal_center_y
+      center_x = tx * proposal_width + proposal_center_x
+      width = exp(tw) * proposal_width
+      height = exp(th) * proposal_height
+      y1, x1, y2, x2 = (center_y - 0.5 * height, center_x - 0.5 * width, center_y + 0.5 * height, center_x + 0.5 * width)
+      print("Proposal %d %d %d %d -> (%d) %d %d %d %d" % (proposals[i,0], proposals[i,1], proposals[i,2], proposals[i,3], class_idx, y1, x1, y2, x2)) 
+    else:
+      print("Proposal %d %d %d %d -> (%d)" % (proposals[i,0], proposals[i,1], proposals[i,2], proposals[i,3], 0)) 
+
 def convert_proposals_to_classifier_network_format(proposals, input_image_shape, cnn_output_shape, ground_truth_object_boxes, num_classes):
   """
   Converts proposals from (N,5) shaped map, containing proposal box corners and
@@ -327,9 +391,10 @@ def convert_proposals_to_classifier_network_format(proposals, input_image_shape,
 
   # Generate one-hot labels for each proposal
   y_true_proposal_classes, y_true_proposal_regressions = region_proposal_network.label_proposals(proposals = proposals, ground_truth_object_boxes = ground_truth_object_boxes, num_classes = num_classes)
+  #dump(proposals, ground_truth_object_boxes, y_true_proposal_classes, y_true_proposal_regressions)
 
   # Sample from proposals
-  proposals, y_true_proposal_classes, y_true_proposal_regressions = sample_proposals(proposals = proposals, y_true_proposal_classes = y_true_proposal_classes, y_true_proposal_regressions = y_true_proposal_regressions, max_proposals = 64, positive_fraction = 0.5)
+  proposals, y_true_proposal_classes, y_true_proposal_regressions = sample_proposals(proposals = proposals, y_true_proposal_classes = y_true_proposal_classes, y_true_proposal_regressions = y_true_proposal_regressions, max_proposals = 4, positive_fraction = 0.5)
   
   # Convert to anchor map (RPN output map) space
   proposals = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = cnn_output_shape)
