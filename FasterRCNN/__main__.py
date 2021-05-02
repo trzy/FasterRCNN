@@ -38,6 +38,7 @@ from .models import classifier_network
 import argparse
 import numpy as np
 import os
+import random
 import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import Model
@@ -277,6 +278,37 @@ class TrainingStatistics:
     """
     self._step_number += 1
 
+def sample_proposals(proposals, y_true_proposal_classes, y_true_proposal_regressions, max_proposals, positive_fraction):
+  if max_proposals <= 0:
+    return proposals, y_true_proposal_classes, y_true_proposal_regressions
+
+  # Get positive and negative (background) proposals
+  class_indices = np.argmax(y_true_proposal_classes, axis = 1)  # [N,num_classes] -> [N], where each element is the class index (highest score from its row)
+  positive_indices = np.argwhere(class_indices > 0)[:,0]
+  negative_indices = np.argwhere(class_indices <= 0)[:,0]
+  num_positive_proposals = len(positive_indices)
+  num_negative_proposals = len(negative_indices)
+  
+  # Select positive and negative samples, if there are enough
+  num_samples = min(max_proposals, len(class_indices))
+  #print("\n", max_proposals, num_samples)
+  num_positive_samples = min(round(num_samples * positive_fraction), num_positive_proposals)
+  num_negative_samples = min(num_samples - num_positive_samples, num_negative_proposals)
+
+  # Do we have enough?
+  if num_positive_samples <= 0 or num_negative_samples <= 0:
+    return proposals[[]], y_true_proposal_classes[[]], y_true_proposal_regressions[[]]  # return 0-length tensors
+
+  # Sample randomly
+  #print(num_positive_samples, num_negative_samples, len(positive_indices), len(negative_indices))
+  positive_sample_indices = np.random.choice(positive_indices, size = num_positive_samples, replace = False)
+  negative_sample_indices = np.random.choice(negative_indices, size = num_negative_samples, replace = False)
+  indices = np.concatenate([ positive_sample_indices, negative_sample_indices ])
+
+  # Return
+  return proposals[indices], y_true_proposal_classes[indices], y_true_proposal_regressions[indices]
+
+   
 def convert_proposals_to_classifier_network_format(proposals, input_image_shape, cnn_output_shape, ground_truth_object_boxes, num_classes):
   """
   Converts proposals from (N,5) shaped map, containing proposal box corners and
@@ -295,6 +327,9 @@ def convert_proposals_to_classifier_network_format(proposals, input_image_shape,
 
   # Generate one-hot labels for each proposal
   y_true_proposal_classes, y_true_proposal_regressions = region_proposal_network.label_proposals(proposals = proposals, ground_truth_object_boxes = ground_truth_object_boxes, num_classes = num_classes)
+
+  # Sample from proposals
+  proposals, y_true_proposal_classes, y_true_proposal_regressions = sample_proposals(proposals = proposals, y_true_proposal_classes = y_true_proposal_classes, y_true_proposal_regressions = y_true_proposal_regressions, max_proposals = 64, positive_fraction = 0.5)
   
   # Convert to anchor map (RPN output map) space
   proposals = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = cnn_output_shape)
@@ -435,12 +470,14 @@ if __name__ == "__main__":
               ground_truth_object_boxes = ground_truth_object_boxes,
               num_classes = voc.num_classes)
 
-            # Classifier: back prop one step (and then predict)
-            classifier_losses = classifier_model.train_on_batch(x = [ x, proposals ], y = [ y_true_proposal_classes, y_true_proposal_regressions ])
-            y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
+            # Do we have any proposals to process?
+            if proposals.size > 0:
+              # Classifier: back prop one step (and then predict)
+              classifier_losses = classifier_model.train_on_batch(x = [ x, proposals ], y = [ y_true_proposal_classes, y_true_proposal_regressions ])
+              y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
 
-            # Update classifier progress
-            stats.on_classifier_step(losses = classifier_losses, y_predicted_class = y_classifier_predicted_class, y_predicted_regression = y_classifier_predicted_regression, y_true_classes = y_true_proposal_classes, y_true_regressions = y_true_proposal_regressions)
+              # Update classifier progress
+              stats.on_classifier_step(losses = classifier_losses, y_predicted_class = y_classifier_predicted_class, y_predicted_regression = y_classifier_predicted_regression, y_true_classes = y_true_proposal_classes, y_true_regressions = y_true_proposal_regressions)
 
         # Update RPN progress and progress bar
         stats.on_rpn_step(losses = rpn_losses, y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true_minibatch = y_true_minibatch, y_true = y_true)
