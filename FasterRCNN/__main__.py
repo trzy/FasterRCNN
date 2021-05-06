@@ -31,8 +31,10 @@ from .models.losses import rpn_regression_loss
 from .models.losses import classifier_class_loss
 from .models.losses import classifier_regression_loss
 from .models import classifier_network
+from .models.nms import nms
 
 import argparse
+from collections import defaultdict
 import numpy as np
 from math import exp
 import os
@@ -125,6 +127,39 @@ def infer_rpn_boxes(rpn_model, voc, filename):
   print("class loss=", rpn_class_loss_np(y_true=y_true, y_predicted=y_class))
   visualization.show_proposed_regions(voc = voc, filename = filename, y_true = y_true, y_class = y_class, y_regression = y_regression)
 
+def filter_classifier_results(proposals, classes, regressions, voc, iou_threshold = 0.5):
+
+  # Inputs must all be a single sample (no batches)
+  assert len(classes.shape) == 2
+  assert len(regressions.shape) == 2
+  assert classes.shape[0] == regressions.shape[0]
+  assert classes.shape[0] == proposals.shape[0]
+
+  # Separate out results per class: class_name -> (y1, x1, y2, x2, score)
+  result_by_class_name = defaultdict(list)
+  for i in range(classes.shape[0]):
+    class_idx = np.argmax(classes[i,:])
+    if class_idx > 0:
+      class_name = voc.index_to_class_name[class_idx]
+      regression_idx = (class_idx - 1) * 4
+      box_params = regressions[i, regression_idx+0 : regression_idx+4]
+      proposal_center_y = 0.5 * (proposals[i,0] + proposals[i,2])
+      proposal_center_x = 0.5 * (proposals[i,1] + proposals[i,3])
+      proposal_height = proposals[i,2] - proposals[i,0] + 1
+      proposal_width = proposals[i,3] - proposals[i,1] + 1
+      y1, x1, y2, x2 = region_proposal_network.convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = proposal_center_y, anchor_center_x = proposal_center_x, anchor_height = proposal_height, anchor_width = proposal_width)
+      result_by_class_name[class_name].append((y1, x1, y2, x2, classes[i,class_idx]))
+
+  # Perform NMS for each class
+  boxes_by_class_name = {}
+  for class_name, results in result_by_class_name.items():
+    results = np.vstack(results)
+    indices = nms(proposals = results, iou_threshold = iou_threshold)
+    results = results[indices]
+    boxes_by_class_name[class_name] = results[:,0:4]  # strip off the score
+
+  return boxes_by_class_name
+
 def show_objects(rpn_model, classifier_model, voc, filename):
   # TODO: ugh, what a mess! This needs to be streamlined.
   # TODO: we need a way to get anchor boxes and the valid mask independently from y_true
@@ -149,8 +184,13 @@ def show_objects(rpn_model, classifier_model, voc, filename):
     proposals = np.expand_dims(proposals, axis = 0)
     # Run prediction
     y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
+    # Filter the results by performing NMS per class and returning final boxes by class name 
+    boxes_by_class_name = filter_classifier_results(proposals = proposals_pixels, classes = y_classifier_predicted_class[0,:,:], regressions = y_classifier_predicted_regression[0,:,:], voc = voc)
+    for class_name, boxes in boxes_by_class_name.items():
+      for box in boxes:
+        print("%s -> %d, %d, %d, %d" % (class_name, round(box[0]), round(box[1]), round(box[2]), round(box[3])))
     # Show objects
-    visualization.show_objects(voc = voc, filename = filename, proposals = proposals_pixels, y_classifier_predicted_class = y_classifier_predicted_class, y_classifier_predicted_regression = y_classifier_predicted_regression)
+    visualization.show_objects(voc = voc, filename = filename, boxes_by_class_name = boxes_by_class_name)
   else:
     print("No proposals generated")
 

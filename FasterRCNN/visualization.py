@@ -4,8 +4,10 @@ from .models import intersection_over_union
 from .models.nms import nms
 
 import imageio
+import itertools
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
+import random
 
 def draw_rectangle(ctx, x_min, y_min, x_max, y_max, color, thickness = 4):
   ctx.rectangle(xy = [(x_min, y_min), (x_max, y_max)], outline = color, width = thickness)
@@ -35,7 +37,22 @@ def show_annotated_image(voc, filename, draw_anchor_points = True, draw_anchor_i
   image.show()
   image.save("out_gt.png")
 
-def show_objects(voc, filename, proposals, y_classifier_predicted_class, y_classifier_predicted_regression):
+def draw_text(image, text, position, color, scale = 1.0, offset_lines = 0):
+  """
+  position:     Location of top-left corner of string in pixels.
+  offset_lines: Number of lines (a line being the text height in pixels) to
+                offset the y position by.
+  """
+  font = ImageFont.load_default()
+  text_size = font.getsize(text)
+  text_image = Image.new(mode = "RGBA", size = text_size, color = (0, 0, 0, 0))
+  ctx = ImageDraw.Draw(text_image)
+  ctx.text(xy = (0, 0), text = text, font = font, fill = color)
+  scaled = text_image.resize((round(text_image.width * scale), round(text_image.height * scale)))
+  position = (round(position[0]), round(position[1] + offset_lines * scaled.height))
+  image.paste(im = scaled, box = position, mask = scaled)
+
+def show_objects(voc, filename, boxes_by_class_name):
   # Load image and scale appropriately
   filepath = voc.get_full_path(filename = filename)
   info = voc.get_image_description(path = filepath)
@@ -44,25 +61,30 @@ def show_objects(voc, filename, proposals, y_classifier_predicted_class, y_class
   image = image.resize((info.width, info.height), resample = Image.BILINEAR)
   ctx = ImageDraw.Draw(image, mode = "RGBA")
 
-  # Iterate all predictions (assume batch size of 1)
-  assert y_classifier_predicted_class.shape[1] == y_classifier_predicted_regression.shape[1]
-  assert y_classifier_predicted_class.shape[1] == proposals.shape[0]
-  assert y_classifier_predicted_class.shape[0] == 1 
-  assert y_classifier_predicted_class.shape[0] == 1
-  
-  for i in range(y_classifier_predicted_class.shape[1]):
-    class_idx = np.argmax(y_classifier_predicted_class[0,i])
-    if class_idx > 0:
-      print(voc.index_to_class_name[class_idx])
-      idx = class_idx - 1
-      box_params = y_classifier_predicted_regression[0, i, idx*4+0 : idx*4+4]
-      proposal_center_y = 0.5 * (proposals[i,0] + proposals[i,2])
-      proposal_center_x = 0.5 * (proposals[i,1] + proposals[i,3])
-      proposal_height = proposals[i,2] - proposals[i,0] + 1
-      proposal_width = proposals[i,3] - proposals[i,1] + 1
-      y1, x1, y2, x2 = region_proposal_network.convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = proposal_center_y, anchor_center_x = proposal_center_x, anchor_height = proposal_height, anchor_width = proposal_width)
-      draw_rectangle(ctx = ctx, x_min = x1, y_min = y1, x_max = x2, y_max = y2, color = (255, 255, 0, 255), thickness = 1)
-  image.show() 
+  # Create a selection of colors
+  colors = [
+    (0, 255, 0),    # green
+    (0, 255, 255),  # yellow
+    (0, 0, 255),    # red
+    (255, 0, 0),    # blue
+    (255, 255, 0),  # cyan
+    (255, 0, 255),  # purple
+    (0, 128, 255),  # orange
+    (128, 255, 0),
+    (128, 0, 255),
+    (0, 255, 128),
+    (255, 0, 128)
+  ]
+
+  # Draw all results
+  color_idx = 0
+  for class_name, boxes in boxes_by_class_name.items():
+    for box in boxes:
+      color = colors[color_idx]
+      color_idx = (color_idx + 1) % len(colors)
+      draw_rectangle(ctx = ctx, x_min = box[1], y_min = box[0], x_max = box[3], y_max = box[2], color = color, thickness = 2)
+      draw_text(image = image, text = class_name, position = (box[1], box[0]), color = color, scale = 2.5, offset_lines = -1)
+  image.show()
 
 def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Load image and scale appropriately
