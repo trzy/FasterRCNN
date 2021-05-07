@@ -3,6 +3,7 @@
 #   to training process, so that y_true becomes a tuple of two maps. 
 # - Desperately need to settle on some better naming conventions for the various y outputs and ground truths, as well as proposal
 #   maps in different formats (e.g., pixel units, map units, etc.)
+# - Clip final boxes? See: 2010_004041.jpg
 
 # TODO:
 #
