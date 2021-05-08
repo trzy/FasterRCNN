@@ -342,12 +342,18 @@ class VOC:
 
   # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
   def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
+    return self._data_iterator(dataset = "train", mini_batch_size = mini_batch_size, shuffle = shuffle, num_threads = num_threads, limit_samples = limit_samples, cache_images = cache_images)
+
+  def validation_data(self, mini_batch_size = 256, num_threads = 16, limit_samples = None):
+    return self._data_iterator(dataset = "val", mini_batch_size = mini_batch_size, shuffle = False, num_threads = num_threads, limit_samples = limit_samples, cache_images = False)
+
+  def _data_iterator(self, dataset, mini_batch_size, shuffle, num_threads, limit_samples, cache_images):
     import concurrent.futures
 
     # Precache anchor label assignments
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
-    image_paths = list(self._descriptions_per_image_path["train"].keys())
+    image_paths = list(self._descriptions_per_image_path[dataset].keys())
     if limit_samples:
       image_paths = image_paths[0:limit_samples]
     batch_size = len(image_paths) // num_threads + 1
@@ -379,7 +385,7 @@ class VOC:
         if cache_images and image_path in cached_image_by_path:
           image_data = cached_image_by_path[image_path]
         if image_data is None:  # NumPy array -- cannot test for == None or "is None"
-          image_data = self._descriptions_per_image_path["train"][image_path].load_image_data()
+          image_data = self._descriptions_per_image_path[dataset][image_path].load_image_data()
           if cache_images:
             cached_image_by_path[image_path] = image_data
 
