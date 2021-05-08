@@ -141,7 +141,7 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
 
   anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = input_image_shape)
 
-  ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = ground_truth_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+  ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = ground_truth_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
 
   for y in range(anchor_boxes.shape[0]):
     for x in range(anchor_boxes.shape[1]):
@@ -162,7 +162,7 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
         # Draw anchor center pos
         if draw_anchor_points:
           size = 1
-          any_positive = True in [ ground_truth_regressions[y,x,k,2] > 0 for k in range(ground_truth_regressions.shape[2]) ]
+          any_positive = True in [ ground_truth_map[y,x,k,2] > 0 for k in range(ground_truth_map.shape[2]) ]
           color = (0, 255, 0, 255) if any_positive else (255, 0, 0, 255)
           draw_filled_rectangle(ctx, y_min = center_y - size, x_min = center_x - size, y_max = center_y + size, x_max = center_x + size, color = color)
 

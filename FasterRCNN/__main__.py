@@ -123,7 +123,7 @@ def infer_rpn_boxes(rpn_model, voc, filename):
       for kk in range(y_class.shape[3]):
         if y_class[0,yy,xx,kk] > 0.5:
           print("%d,%d,%d -> %f" % (yy, xx, kk, y_class[0,yy,xx,kk]))
-  y_true = info.get_complete_ground_truth_regressions_map()
+  y_true = info.get_ground_truth_map()
   y_true = y_true.reshape((1, y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3]))
   print("class loss=", rpn_class_loss_np(y_true=y_true, y_predicted=y_class))
   visualization.show_proposed_regions(voc = voc, filename = filename, y_true = y_true, y_class = y_class, y_regression = y_regression)
@@ -166,7 +166,7 @@ def show_objects(rpn_model, classifier_model, voc, filename):
   # TODO: we need a way to get anchor boxes and the valid mask independently from y_true
   info = voc.get_image_description(path = voc.get_full_path(filename))
   x = info.load_image_data()
-  y_rpn_true = info.get_complete_ground_truth_regressions_map()
+  y_rpn_true = info.get_ground_truth_map()
   input_image_shape = x.shape
   cnn_output_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
   anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = input_image_shape)
@@ -280,7 +280,7 @@ class TrainingStatistics:
         training step. The map contains ground truth regression targets and
         object classes and, most importantly, a mask indicating which anchors
         are valid and were used in the mini-batch. See
-        region_proposal_network.compute_anchor_label_assignments() for layout.
+        region_proposal_network.compute_ground_truth_map() for layout.
       y_true: Complete RPN ground truth map for all anchors in the image (the
         anchor valid mask indicates all valid anchors from which mini-batches
         are drawn). This is used to compute classification accuracy and recall
@@ -460,6 +460,7 @@ def convert_proposals_to_classifier_network_format(proposals, input_image_shape,
 # 2009_004872.jpg
 if __name__ == "__main__":
   """
+  TODO: convert to unit test
   y_true = np.array([
     [1, 0, 0, 0],
     [1, 0, 0, 0],
@@ -553,8 +554,8 @@ if __name__ == "__main__":
         input_image_shape = x.shape
         cnn_output_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
         image_info = voc.get_image_description(image_path)
-        ground_truth_object_boxes = image_info.get_boxes()              #TODO: return this from iterator so we don't need image_info
-        y_true = image_info.get_complete_ground_truth_regressions_map() #TODO: ""
+        ground_truth_object_boxes = image_info.get_boxes()    #TODO: return this from iterator so we don't need image_info
+        y_true = image_info.get_ground_truth_map()            #TODO: ""
         y_true = np.expand_dims(y_true, axis = 0)
         y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
         x = np.expand_dims(x, axis = 0)

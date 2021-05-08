@@ -78,7 +78,7 @@ class VOC:
       self.height = height
       self.boxes_by_class_name = boxes_by_class_name
 
-      self._ground_truth_regressions = None # computed on-demand and cached
+      self._ground_truth_map = None # computed on-demand and cached
 
     def load_image_data(self):
       data = imageio.imread(self.path, pilmode = "RGB")
@@ -96,14 +96,13 @@ class VOC:
       return list(itertools.chain.from_iterable(self.boxes_by_class_name.values()))
 
     #TODO: this needs to be renamed and in general, how ground truth maps are named and returned needs to be rethought
-    def get_complete_ground_truth_regressions_map(self):
-      if self._ground_truth_regressions is None:
+    def get_ground_truth_map(self):
+      if self._ground_truth_map is None:
         anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
-        self._ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
-        self._ground_truth_regressions[:,:,:,0] = anchor_boxes_valid
-        #print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(self._ground_truth_regressions[:,:,:,0])))
+        self._ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+        #print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(self._ground_truth_map[:,:,:,0])))
         #print("anchor_boxes_valid=%f, count=%f" % (np.sum(anchor_boxes_valid), (len(positive_anchors) + len(negative_anchors))))
-      return self._ground_truth_regressions
+      return self._ground_truth_map
 
     def __repr__(self):
       return "[name=%s, (%d, %d), boxes=%s]" % (self.name, self.width, self.height, self.boxes_by_class_name)
@@ -283,14 +282,15 @@ class VOC:
 
   @staticmethod
   def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
+#TODO: use ImageDescription functions to create anchor map and ground truth map, and then clone them here
     print("VOC dataset: Thread %d started" % thread_num)
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
     for image_path in image_paths:
       description = descriptions_per_image_path[image_path]
       anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
-      ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
-      y_per_image_path[image_path] = (ground_truth_regressions, positive_anchors, negative_anchors)
+      ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+      y_per_image_path[image_path] = (ground_truth_map, positive_anchors, negative_anchors)
       anchor_boxes_per_image_path[image_path] = anchor_boxes
     print("VOC dataset: Thread %d finished" % thread_num)
     return y_per_image_path, anchor_boxes_per_image_path
@@ -303,16 +303,16 @@ class VOC:
     tw = []
 
     # Extract all regression components for every single positive anchor
-    for _, (ground_truth_regressions, _, _) in y_per_image_path.items():
-      for y in range(ground_truth_regressions.shape[0]):
-        for x in range(ground_truth_regressions.shape[1]):
-          for k in range(ground_truth_regressions.shape[2]):
-            is_object = ground_truth_regressions[y,x,k,1] > 0
+    for _, (ground_truth_map, _, _) in y_per_image_path.items():
+      for y in range(ground_truth_map.shape[0]):
+        for x in range(ground_truth_map.shape[1]):
+          for k in range(ground_truth_map.shape[2]):
+            is_object = ground_truth_map[y,x,k,1] > 0
             if is_object:
-              ty.append(ground_truth_regressions[y,x,k,4])
-              tx.append(ground_truth_regressions[y,x,k,5])
-              th.append(ground_truth_regressions[y,x,k,6])
-              tw.append(ground_truth_regressions[y,x,k,7])
+              ty.append(ground_truth_map[y,x,k,4])
+              tx.append(ground_truth_map[y,x,k,5])
+              th.append(ground_truth_map[y,x,k,6])
+              tw.append(ground_truth_map[y,x,k,7])
 
     # Compute mean and standard deviation for each
     ty = np.array(ty)
@@ -337,9 +337,9 @@ class VOC:
     # Standardize the ground truth data
     means = np.array([ ty_mean, tx_mean, th_mean, tw_mean ])
     stdevs = np.array([ ty_stdev, tx_stdev, th_stdev, tw_stdev ])
-    for _, (ground_truth_regressions, _, _) in y_per_image_path.items():
-      ground_truth_regressions[:,:,:,4:8] -= means
-      ground_truth_regressions[:,:,:,4:8] /= stdevs
+    for _, (ground_truth_map, _, _) in y_per_image_path.items():
+      ground_truth_map[:,:,:,4:8] -= means
+      ground_truth_map[:,:,:,4:8] /= stdevs
 
   # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
   def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
@@ -391,6 +391,7 @@ class VOC:
 
       # Return one image at a time
       for image_path in image_paths:
+        # Retrieve ground truth 
         # Load image
         image_data = None
         if cache_images and image_path in cached_image_by_path:
@@ -401,7 +402,7 @@ class VOC:
             cached_image_by_path[image_path] = image_data
 
         # Retrieve pre-computed y value and anchor boxes
-        ground_truth_regressions, positive_anchors, negative_anchors = y_per_image_path[image_path]
+        ground_truth_map, positive_anchors, negative_anchors = y_per_image_path[image_path]
         anchor_boxes = anchor_boxes_per_image_path[image_path]
 
         # Observed: the maximum number of positive anchors in in a VOC image is 102.
@@ -411,11 +412,11 @@ class VOC:
         positive_anchors, negative_anchors = self._create_anchor_minibatch(positive_anchors = positive_anchors, negative_anchors = negative_anchors, mini_batch_size = mini_batch_size, image_path = image_path)
 
         # Mark which anchors to use in the map
-        ground_truth_regressions[:,:,:,0] = 0.0 # clear out previous (we re-use the same object)
+        ground_truth_map[:,:,:,0] = 0.0 # clear out previous (we re-use the same object)
         for anchor_position in positive_anchors + negative_anchors:
           y = anchor_position[0]
           x = anchor_position[1]
           k = anchor_position[2]
-          ground_truth_regressions[y,x,k,0] = 1.0
+          ground_truth_map[y,x,k,0] = 1.0
 
-        yield image_path, image_data, ground_truth_regressions, anchor_boxes
+        yield image_path, image_data, ground_truth_map, anchor_boxes

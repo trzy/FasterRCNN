@@ -111,15 +111,17 @@ def compute_all_anchor_boxes(input_image_shape):
 
   return anchor_boxes, anchor_boxes_valid
 
-def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, anchor_boxes_valid):
+def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_boxes_valid):
   """
   Returns:
 
-  - Map of shape (height, width, k, 8), where height, width, and k refer to
-    anchor map shape and number of anchors at each location. The last dimension
-    contains:
+  - Ground truth map of shape (height, width, k, 8), where height, width, and k
+    refer to anchor map shape and number of anchors at each location. The last
+    dimension contains:
 
-      0: 0.0 (unused, initialized to 0, for use by caller)
+      0: valid -- 0 if anchor is not valid (because it crosses image bounds),
+         otherwise 1 if it can be used to generate object proposals. This is
+         just a copy of anchor_boxes_valid passed into this function.
       1: object (1 if this is an object anchor, 0 if either a negative or
          ignored/unused sample). Set to 0 for invalid anchors (those that
          overlap image boundaries).
@@ -148,6 +150,9 @@ def compute_anchor_label_assignments(ground_truth_object_boxes, anchor_boxes, an
   width = anchor_boxes.shape[1]
   num_anchors = anchor_boxes_valid.shape[2]
   truth_map = np.zeros((height, width, num_anchors, 8))
+  
+  # Initialize the validity field
+  truth_map[:,:,:,0] = anchor_boxes_valid
 
   # Compute IoU of each anchor with each box and store the results in a map of
   # shape: (height, width, num_anchors, num_ground_truth_boxes)
@@ -282,7 +287,7 @@ def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_
     y_predicted_class: Objectness class predictions map from forward pass of
       RPN model.
     y_predicted_regression: RPN regression predictions.
-    y_true: Ground truth anchor map (from compute_anchor_label_assignments())
+    y_true: Ground truth anchor map (from compute_ground_truth_map())
       containing all anchors for image.
     anchor_boxes: Anchor boxes (compute_all_anchor_boxes()).
     max_proposals: Maximum number of proposals to return. If <= 0, returns all
