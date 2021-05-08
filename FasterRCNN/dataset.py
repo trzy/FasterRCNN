@@ -1,4 +1,7 @@
+#TODO: use BILINEAR resizing in load_image_data() and test. The default is BICUBIC which may not perform as well. Unify with utils.load_image()
+
 from .models import region_proposal_network
+from . import utils
 
 from collections import defaultdict
 import itertools
@@ -16,11 +19,11 @@ import tensorflow as tf
 
 class VOC:
   """
-  Loads the VOC dataset at `dataset_dir`. If `scale` is provided, resizes all
+  Loads the VOC dataset at `dataset_dir`. If `min_dimension_pixels` is provided, resizes all
   images and associated metadata (e.g., box coordinates) such that the smallest
-  dimension is equal to `scale`.
+  dimension is equal to `min_dimension_pixels`.
   """
-  def __init__(self, dataset_dir, scale = None):
+  def __init__(self, dataset_dir, min_dimension_pixels = None):
     print("VOC dataset: Parsing metadata...")
     self._dataset_dir = dataset_dir
     self.index_to_class_name, self.class_name_to_index = self._get_index_to_class_name(dataset_dir)
@@ -29,8 +32,8 @@ class VOC:
     val_image_paths = self._get_image_paths(dataset_dir, dataset = "val")
     self.num_samples = { "train": len(train_image_paths), "val": len(val_image_paths) }
     self._descriptions_per_image_path = {}
-    self._descriptions_per_image_path["train"] = { image_path: self._get_image_description(image_path = image_path, scale = scale) for image_path in train_image_paths }
-    self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(image_path = image_path, scale = scale) for image_path in val_image_paths }
+    self._descriptions_per_image_path["train"] = { image_path: self._get_image_description(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in train_image_paths }
+    self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in val_image_paths }
 
   def get_full_path(self, filename):
     return os.path.join(self._dataset_dir, "JPEGImages", filename)
@@ -67,7 +70,7 @@ class VOC:
     def __str__(self):
       return repr(self)
 
-  #TODO: rename to ImageInfo
+  #TODO: rename to ImageInfo or Image?
   class ImageDescription:
     def __init__(self, name, path, original_width, original_height, width, height, boxes_by_class_name):
       self.name = name
@@ -80,10 +83,19 @@ class VOC:
 
       self._ground_truth_map = None # computed on-demand and cached
 
-    def load_image_data(self):
+    def load_image(self):
+      """
+      Loads image as PIL object, resized to new dimensions.
+      """
       data = imageio.imread(self.path, pilmode = "RGB")
       image = Image.fromarray(data, mode = "RGB").resize((self.width, self.height))
-      image = np.array(image)
+      return image
+      
+    def load_image_data(self):
+      """
+      Loads image and returns a tensor of shape (height,width,3).
+      """
+      image = np.array(self.load_image())
       return tf.keras.applications.vgg16.preprocess_input(x = image)
 
     def shape(self):
@@ -199,24 +211,12 @@ class VOC:
     return image_paths
 
   @staticmethod
-  def _compute_scale_factor(original_width, original_height, new_scale):
-    if not new_scale:
+  def _compute_scale_factor(original_width, original_height, min_dimension_pixels):
+    if not min_dimension_pixels:
       return 1.0
-    return (new_scale / original_height) if original_width > original_height else (new_scale / original_width)
+    return (min_dimension_pixels / original_height) if original_width > original_height else (min_dimension_pixels / original_width)
 
-  @staticmethod
-  def _compute_new_scale(original_width, original_height, new_scale):
-    if not new_scale:
-      return (original_width, original_height)
-    if original_width > original_height:
-      new_width = (original_width / original_height) * new_scale
-      new_height = new_scale
-    else:
-      new_height = (original_height / original_width) * new_scale
-      new_width = new_scale
-    return (int(new_width), int(new_height))
-
-  def _get_image_description(self, image_path, scale):
+  def _get_image_description(self, image_path, min_dimension_pixels):
     basename = os.path.splitext(os.path.basename(image_path))[0]
     annotation_file = os.path.join(self._dataset_dir, "Annotations", basename) + ".xml"
     tree = ET.parse(annotation_file)
@@ -229,8 +229,8 @@ class VOC:
     assert len(size.findall("depth")) == 1
     original_width = int(size.find("width").text)
     original_height = int(size.find("height").text)
-    width, height = VOC._compute_new_scale(original_width = original_width, original_height = original_height, new_scale = scale)
-    scale_factor = VOC._compute_scale_factor(original_width = original_width, original_height = original_height, new_scale = scale)
+    width, height = utils.compute_new_image_dimensions(original_width = original_width, original_height = original_height, min_dimension_pixels = min_dimension_pixels)
+    scale_factor = VOC._compute_scale_factor(original_width = original_width, original_height = original_height, min_dimension_pixels = min_dimension_pixels)
     depth = int(size.find("depth").text)
     assert depth == 3
     boxes_by_class_name = defaultdict(list)

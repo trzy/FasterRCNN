@@ -1,9 +1,22 @@
+#
+# FasterRCNN for Keras
+# Copyright 2021 Bart Trzynadlowski
+#
+# __main__.py
+#
+# Main module.
+#
+
+#TODO: try max_proposals=64 training
+
 # TODO:
+# - Standardize on notation for y_true maps and return complete ground truth map alongside mini-batch from iterator
 # - Desperately need to return a separate map indicating anchor validity and then force it to be passed in explicitly, including
 #   to training process, so that y_true becomes a tuple of two maps. 
 # - Desperately need to settle on some better naming conventions for the various y outputs and ground truths, as well as proposal
 #   maps in different formats (e.g., pixel units, map units, etc.)
 # - Clip final boxes? See: 2010_004041.jpg
+# - Comment every non-trivial function and reformat code to 4-space tabs
 
 # TODO:
 #
@@ -48,6 +61,35 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.optimizers import SGD
 from tensorflow.keras import backend as K
 import time
+
+def load_image(url, min_dimension_pixels, voc = None):
+  """
+  Loads image and returns NumPy tensor of shape (height,width,3). Image data is
+  pre-processed for VGG-16.
+  
+  Parameters
+  ----------
+    url : str
+      File to load. May be a file name or URL. If 'voc' dataset is provided,
+      will first attempt to interpret 'url' as a filename from the dataset
+      before falling back to treating it as a true URL.
+    min_dimension_pixels: int
+      New size of the image's minimum dimension. The other dimension will be
+      scaled proportionally.
+    voc : dataset.VOC, optional
+      VOC dataset. If provided, allows files from the training and validation
+      sets to be loaded by name only (rather than full path).
+
+  Returns
+  -------
+  np.ndarray, PIL.Image 
+    Image data as a NumPy tensor and PIL object.
+  """
+  if voc is not None:
+    path = voc.get_full_path(filename = url)
+    if os.path.exists(path):
+      url = path
+  return utils.load_image(url = url, min_dimension_pixels = min_dimension_pixels), utils.load_image_data_vgg16(url = url, min_dimension_pixels = min_dimension_pixels)
 
 def print_weights(model):
   for layer in model.layers:
@@ -161,27 +203,18 @@ def filter_classifier_results(proposals, classes, regressions, voc, iou_threshol
 
   return boxes_by_class_name
 
-def show_objects(rpn_model, classifier_model, voc, filename):
-  # TODO: ugh, what a mess! This needs to be streamlined.
-  # TODO: we need a way to get anchor boxes and the valid mask independently from y_true
-  info = voc.get_image_description(path = voc.get_full_path(filename))
-  x = info.load_image_data()
-  y_rpn_true = info.get_ground_truth_map()
+def show_objects(rpn_model, classifier_model, image, image_data):
+  # TODO: streamline further and clean up
+  x = image_data
   input_image_shape = x.shape
-  cnn_output_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
+  rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
   anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = input_image_shape)
   x = np.expand_dims(x, axis = 0)
-  y_rpn_true = np.expand_dims(y_rpn_true, axis = 0)
+  anchor_boxes_valid = np.expand_dims(anchor_boxes_valid, axis = 0)
   y_rpn_class, y_rpn_regression = rpn_model.predict(x)
-  proposals = region_proposal_network.extract_proposals(y_predicted_class = y_rpn_class, y_predicted_regression = y_rpn_regression, y_true = y_rpn_true, anchor_boxes = anchor_boxes)
-  if proposals.shape[0] > 0:
-    # TODO: convert_proposals_to_classifier_network_format() needs to be modified to work for inference, where ground truth is not needed
-    proposals = proposals[:,0:4]
-    proposals = region_proposal_network.clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
-    proposals_pixels = proposals
-    proposals = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = cnn_output_shape)
-    proposals[:,2:4] = proposals[:,2:4] - proposals[:,0:2] + 1
-    proposals = proposals.astype(np.int32)
+  proposals_pixels = region_proposal_network.extract_proposals(y_predicted_class = y_rpn_class, y_predicted_regression = y_rpn_regression, input_image_shape = input_image_shape, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+  if proposals_pixels.shape[0] > 0:
+    proposals = convert_proposals_to_classifier_network_format(proposals = proposals_pixels, rpn_shape = rpn_shape)
     proposals = np.expand_dims(proposals, axis = 0)
     # Run prediction
     y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
@@ -191,7 +224,7 @@ def show_objects(rpn_model, classifier_model, voc, filename):
       for box in boxes:
         print("%s -> %d, %d, %d, %d" % (class_name, round(box[0]), round(box[1]), round(box[2]), round(box[3])))
     # Show objects
-    visualization.show_objects(voc = voc, filename = filename, boxes_by_class_name = boxes_by_class_name)
+    visualization.show_objects(image = image, boxes_by_class_name = boxes_by_class_name)
   else:
     print("No proposals generated")
 
@@ -390,68 +423,87 @@ def sample_proposals(proposals, y_true_proposal_classes, y_true_proposal_regress
 
   # Return
   return proposals[indices], y_true_proposal_classes[indices], y_true_proposal_regressions[indices]
-
    
-def dump(proposals, ground_truth_object_boxes, y_true_proposal_classes, y_true_proposal_regressions):
-  print("--")
-  for box in ground_truth_object_boxes:
-    print("Box: (%d) %d %d %d %d" % (box.class_index, box.y_min, box.x_min, box.y_max, box.x_max))
-  for i in range(proposals.shape[0]):
-    class_idx = np.argmax(y_true_proposal_classes[i])
-    if class_idx > 0:
-      idx = class_idx - 1
-      ty, tx, th, tw = y_true_proposal_regressions[i,1,idx*4:idx*4+4]
-      proposal_width = proposals[i,3] - proposals[i,1] + 1
-      proposal_height = proposals[i,2] - proposals[i,0] + 1
-      proposal_center_x = 0.5 * (proposals[i,1] + proposals[i,3])
-      proposal_center_y = 0.5 * (proposals[i,0] + proposals[i,2])
-      center_y = ty * proposal_height + proposal_center_y
-      center_x = tx * proposal_width + proposal_center_x
-      width = exp(tw) * proposal_width
-      height = exp(th) * proposal_height
-      y1, x1, y2, x2 = (center_y - 0.5 * height, center_x - 0.5 * width, center_y + 0.5 * height, center_x + 0.5 * width)
-      print("Proposal %d %d %d %d -> (%d) %d %d %d %d" % (proposals[i,0], proposals[i,1], proposals[i,2], proposals[i,3], class_idx, y1, x1, y2, x2)) 
-    else:
-      print("Proposal %d %d %d %d -> (%d)" % (proposals[i,0], proposals[i,1], proposals[i,2], proposals[i,3], 0)) 
-
-def convert_proposals_to_classifier_network_format(proposals, input_image_shape, cnn_output_shape, ground_truth_object_boxes, num_classes):
+def select_proposals_for_training(proposals, ground_truth_object_boxes, num_classes, max_proposals, positive_fraction):
   """
-  Converts proposals from (N,5) shaped map, containing proposal box corners and
-  objectness class score, to (1,M,4) format. Proposals are converted to anchor
-  map space from input image pixel space, clipped (hence why M <= N), and
-  converted to (y_min,x_min,height,width) format. Also returns a (1,M,C) shaped
-  tensor of one-hot encoded class labels for each proposal, where C is the
-  number of classes (including the background class, 0).
+  Parameters
+  ----------
+    proposals : np.ndarray
+      List of object proposals obtained from forward pass of RPN model, with
+      shape (N,4). Proposals are box coordinates in image space: (y_min, x_min,
+      y_max, x_max).
+    ground_truth_object_boxes : list(VOC.Box)
+      A list of ground truth box data.
+    num_classes : int
+      Total number of object classes in classifier model, including background
+      class 0.
+    max_proposals : int
+      Maximum number of proposals to use for training. If <= 0, all proposals
+      are used.
+    positive_fraction : int
+      Desired fraction of positive proposals. Determines the maximimum number
+      of positive samples to use. Less may be used.
+
+  Returns
+  -------
+  np.ndarray, np.ndarray, np.ndarray
+    1. Proposals, shape (N,4), where N <= max_proposals if max_proposals given.
+    2. Ground truth proposal classes, shape (N,num_classes), where each
+       proposal is one-hot encoded.
+    3. Ground truth proposal regression targets, shape (N,(num_classes-1)*4).
+       Each row contains parameterized regression targets for each possible
+       non-background class (that is, (N,0:4) corresponds to class 1). Only the
+       4 values corresponding to the ground truth class are valid and the rest
+       of the row will be 0. For example:
+        classes = [ 0, 0, 1, 0, ..., 0 ]
+        regressions = [ 0, 0, 0, 0, ty, tx, th, tw, 0, 0, 0, 0, ... 0 ]
   """
-  # Strip out class score
-  proposals = proposals[:,0:4]
-
-  # Perform clipping in RPN map space so that RoI pooling layer is never
-  # passed rectangles that exceed the boundaries of its input map
-  proposals = region_proposal_network.clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
-
   # Generate one-hot labels for each proposal
-  y_true_proposal_classes, y_true_proposal_regressions = region_proposal_network.label_proposals(proposals = proposals, ground_truth_object_boxes = ground_truth_object_boxes, num_classes = num_classes)
-  #dump(proposals, ground_truth_object_boxes, y_true_proposal_classes, y_true_proposal_regressions)
+  y_true_proposal_classes, y_true_proposal_regressions = region_proposal_network.label_proposals(
+    proposals = proposals,
+    ground_truth_object_boxes = ground_truth_object_boxes,
+    num_classes = num_classes)
 
   # Sample from proposals
-  proposals, y_true_proposal_classes, y_true_proposal_regressions = sample_proposals(proposals = proposals, y_true_proposal_classes = y_true_proposal_classes, y_true_proposal_regressions = y_true_proposal_regressions, max_proposals = 4, positive_fraction = 0.5)
-  
-  # Convert to anchor map (RPN output map) space
-  proposals = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = cnn_output_shape)
-
-  # Convert from (y_min,x_min,y_max,x_max) -> (y_min,x_min,height,width) as expected by RoI pool layer
-  proposals[:,2:4] = proposals[:,2:4] - proposals[:,0:2] + 1
-
-  # RoI pooling layer expects tf.int32
-  proposals = proposals.astype(np.int32)
-
-  # Reshape to batch size of 1 (e.g., (N,M) -> (1,N,M))
-  proposals = np.expand_dims(proposals, axis = 0)
-  y_true_proposal_classes = np.expand_dims(y_true_proposal_classes, axis = 0)
-  y_true_proposal_regressions = np.expand_dims(y_true_proposal_regressions, axis = 0)
+  proposals, y_true_proposal_classes, y_true_proposal_regressions = sample_proposals(
+    proposals = proposals,
+    y_true_proposal_classes = y_true_proposal_classes,
+    y_true_proposal_regressions = y_true_proposal_regressions,
+    max_proposals = max_proposals,
+    positive_fraction = positive_fraction)
 
   return proposals, y_true_proposal_classes, y_true_proposal_regressions
+
+def convert_proposals_to_classifier_network_format(proposals, rpn_shape):
+  """
+  Parameters
+  ----------
+    proposals : np.ndarray
+      Proposals with shape (N,4), as box coordinates in image space: (y_min,
+      x_min, y_max, x_max).
+    rpn_shape : (int, int, int)
+      The shape of the output map of the convolutional network stage and the
+      input to the RPN.
+
+  Returns
+  -------
+  np.ndarray
+    A map of shape (N,4) in the format expected by the  RoI pooling layer,
+    where each box is now: (y_min, x_min, height, width), in RPN map units.
+  """
+  # Remove class score and leave boxes only, converting from (N,5) -> (N,4)
+  boxes = proposals[:,0:4]
+
+  # Convert to anchor map (RPN map) space
+  boxes = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = boxes, output_map_shape = rpn_shape)
+
+  # Convert from (y_min,x_min,y_max,x_max) -> (y_min,x_min,height,width) as expected by RoI pool layer
+  boxes[:,2:4] = boxes[:,2:4] - boxes[:,0:2] + 1
+
+  # RoI pooling layer expects tf.int32
+  rois = boxes.astype(np.int32)
+  return rois
+  
 
 # good test images:
 # 2010_004041.jpg
@@ -506,7 +558,8 @@ if __name__ == "__main__":
   parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "rate", type = float, action = "store", default = "0.001", help = "Learning rate")
   parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = "1.0", help = "Clip gradient norm to value")
-  parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = "256", help = "Mini-batch size")
+  parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = 256, help = "Anchor mini-batch size (per image) for region proposal network")
+  parser.add_argument("--proposal-batch", metavar = "size", type = utils.positive_int, action = "store", default = 4, help = "Proposal batch size (per image) for classifier network")
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
   parser.add_argument("--freeze", action = "store_true", help = "Freeze first 2 blocks of VGG-16")
   parser.add_argument("--rpn-only", action = "store_true", help = "Train only the region proposal network")
@@ -516,7 +569,7 @@ if __name__ == "__main__":
   parser.add_argument("--show-objects", metavar = "file", type = str, action = "store", help = "Run inference on image using classifier network and display bounding boxes")
   options = parser.parse_args()
 
-  voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
+  voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600)
 
   rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
   classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm)
@@ -530,7 +583,8 @@ if __name__ == "__main__":
     infer_rpn_boxes(rpn_model = rpn_model, voc = voc, filename = options.infer_boxes)
 
   if options.show_objects:
-    show_objects(rpn_model = rpn_model, classifier_model = classifier_model, voc = voc, filename = options.show_objects)
+    image, image_data = load_image(url = options.show_objects, min_dimension_pixels = 600, voc = voc)
+    show_objects(rpn_model = rpn_model, classifier_model = classifier_model, image = image, image_data = image_data)
 
   if options.train:
     train_data = voc.train_data(cache_images = True, mini_batch_size = options.mini_batch)
@@ -552,7 +606,7 @@ if __name__ == "__main__":
         # TODO: should we just return complete y_true with a y_batch/y_valid map to define mini-batch?
         image_path, x, y_true_minibatch, anchor_boxes = next(train_data)
         input_image_shape = x.shape
-        cnn_output_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
+        rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
         image_info = voc.get_image_description(image_path)
         ground_truth_object_boxes = image_info.get_boxes()    #TODO: return this from iterator so we don't need image_info
         y_true = image_info.get_ground_truth_map()            #TODO: ""
@@ -566,16 +620,30 @@ if __name__ == "__main__":
 
         # Classifier
         if not options.rpn_only:
-          proposals = region_proposal_network.extract_proposals(y_predicted_class = y_predicted_class, y_predicted_regression = y_predicted_regression, y_true = y_true, anchor_boxes = anchor_boxes)
+          proposals = region_proposal_network.extract_proposals(
+            y_predicted_class = y_predicted_class,
+            y_predicted_regression = y_predicted_regression,
+            input_image_shape = input_image_shape,
+            anchor_boxes = anchor_boxes,
+            anchor_boxes_valid = y_true[:,:,:,:,0]
+          )
+
           if proposals.shape[0] > 0:
-            # Prepare proposals for input to classifier network and generate
-            # labels
-            proposals, y_true_proposal_classes, y_true_proposal_regressions = convert_proposals_to_classifier_network_format(
+            # Prepare proposals and ground truth data for classifier network 
+            proposals, y_true_proposal_classes, y_true_proposal_regressions = select_proposals_for_training(
               proposals = proposals,
-              input_image_shape = input_image_shape,
-              cnn_output_shape = cnn_output_shape,
               ground_truth_object_boxes = ground_truth_object_boxes,
-              num_classes = voc.num_classes)
+              num_classes = voc.num_classes,
+              max_proposals = options.proposal_batch,
+              positive_fraction = 0.5
+            )
+            proposals = convert_proposals_to_classifier_network_format(
+              proposals = proposals,
+              rpn_shape = rpn_shape
+            )
+            proposals = np.expand_dims(proposals, axis = 0)
+            y_true_proposal_classes = np.expand_dims(y_true_proposal_classes, axis = 0)
+            y_true_proposal_regressions = np.expand_dims(y_true_proposal_regressions, axis = 0)
 
             # Do we have any proposals to process?
             if proposals.size > 0:

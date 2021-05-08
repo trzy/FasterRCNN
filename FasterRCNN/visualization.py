@@ -16,15 +16,11 @@ def draw_filled_rectangle(ctx, x_min, y_min, x_max, y_max, color):
   ctx.rectangle(xy = [(x_min, y_min), (x_max, y_max)], fill = color)
 
 def show_annotated_image(voc, filename, draw_anchor_points = True, draw_anchor_intersections = False, image_input_map = None, anchor_map = None):
-  # Load image
+  # Load image (automatically re-scaled)
   filepath = voc.get_full_path(filename = filename)
   info = voc.get_image_description(path = filepath)
-  data = imageio.imread(filepath, pilmode = "RGB")
-  image = Image.fromarray(data, mode = "RGB")
+  image = info.load_image()
   boxes = info.get_boxes()
-
-  # Because we loaded it ourselves, we are responsible for rescaling it
-  image = image.resize((info.width, info.height), resample = Image.BILINEAR)
 
   # Draw ground truth boxes
   _draw_ground_truth_boxes(image = image, boxes = boxes)
@@ -52,15 +48,7 @@ def draw_text(image, text, position, color, scale = 1.0, offset_lines = 0):
   position = (round(position[0]), round(position[1] + offset_lines * scaled.height))
   image.paste(im = scaled, box = position, mask = scaled)
 
-def show_objects(voc, filename, boxes_by_class_name):
-  # Load image and scale appropriately
-  filepath = voc.get_full_path(filename = filename)
-  info = voc.get_image_description(path = filepath)
-  data = imageio.imread(filepath, pilmode = "RGB")
-  image = Image.fromarray(data, mode = "RGB")
-  image = image.resize((info.width, info.height), resample = Image.BILINEAR)
-  ctx = ImageDraw.Draw(image, mode = "RGBA")
-
+def show_objects(image, boxes_by_class_name):
   # Create a selection of colors
   colors = [
     (0, 255, 0),    # green
@@ -77,6 +65,7 @@ def show_objects(voc, filename, boxes_by_class_name):
   ]
 
   # Draw all results
+  ctx = ImageDraw.Draw(image, mode = "RGBA")
   color_idx = 0
   for class_name, boxes in boxes_by_class_name.items():
     for box in boxes:
@@ -90,9 +79,7 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Load image and scale appropriately
   filepath = voc.get_full_path(filename = filename)
   info = voc.get_image_description(path = filepath)
-  data = imageio.imread(filepath, pilmode = "RGB")
-  image = Image.fromarray(data, mode = "RGB")
-  image = image.resize((info.width, info.height), resample = Image.BILINEAR)
+  image = info.load_image()
   ctx = ImageDraw.Draw(image, mode = "RGBA")
 
   # Get all anchors for this image size

@@ -280,30 +280,57 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
 
   return truth_map, object_anchors, not_object_anchors
 
-def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_boxes, max_proposals = 0):
+def extract_proposals(y_predicted_class, y_predicted_regression, input_image_shape, anchor_boxes, anchor_boxes_valid, max_proposals = 0):
   """
-  Inputs:
+  Extracts object proposals from the outputs of the region proposal network.
 
-    y_predicted_class: Objectness class predictions map from forward pass of
-      RPN model.
-    y_predicted_regression: RPN regression predictions.
-    y_true: Ground truth anchor map (from compute_ground_truth_map())
-      containing all anchors for image.
-    anchor_boxes: Anchor boxes (compute_all_anchor_boxes()).
-    max_proposals: Maximum number of proposals to return. If <= 0, returns all
-      proposals, otherwise returns top-N proposals (judged by class score).
+  Parameters
+  ----------
+    y_predicted_class : np.ndarray
+      Object predictions map from forward pass of RPN model with shape
+      shape (1,h,w,k), where h and w are the height and width, respectively, in
+      terms of anchors (i.e., the RPN output map dimensions) and k is the
+      number of anchors (i.e., 9). Batch size must be 1. A score of 0 indicates
+      background and 1 is an object.
+    y_predicted_regression : np.ndarray
+      Predicted bounding box regression parameters for each possible anchor.
+      Has shape (1,h,w,k*4), where the last dimension holds the values (ty, tx,
+      tw, th).
+    input_image_shape : (int, int, int)
+      Shape of input image in pixels, (height, width, channels). Used to clip
+      proposals against image boundaries.
+    anchor_boxes : np.ndarray
+      Map of shape (h,w,k*4) describing all possible anchors, where the last
+      dimension is a series of 4-tuples of (center_y,center_x,height,width), in
+      input image pixel units, of each of the k anchors.
+    anchor_boxes_valid : np.ndarray
+      Mask of valid anchors available for use during inference or training.
+      Has shape (h,w,k). A value of 1.0 is valid and 0.0 is invalid.
+    max_proposals : int
+      Maximum number of proposals to extract. The top proposals, sorted by
+      descending object scores, are selected. If <= 0, all proposals are used.
 
-  Returns a map of shape (Nx5) of N proposals from the prediction. Each
-  proposal consists of:
+  Returns
+  -------
+  np.ndarray
+    A map of shape (N,4) of N object proposals from the prediction. Each 
+    proposal consists of box coordinates in input image pixel space:
 
-    0: y_min
-    1: x_min
-    2: y_max
-    3: x_max
-    4: class score (0=background, 1=object)
+      0: y_min
+      1: x_min
+      2: y_max
+      3: x_max
   """
-  y_valid = y_true[:,:,:,:,0] # make sure to filter by valid anchors
-  positive_indices = np.argwhere(y_valid * y_predicted_class > 0.5)
+  #
+  # Find all valid proposals (object score > 0.5 and at a valid anchor) and
+  # construct a proposal map of shape (N,5), containing the proposal box 
+  # coordinates and objectness score.
+  #
+  # Note that because we assume a batch size of 1, it is safe to multiply
+  # anchor_boxes_valid, with shape (y,x,k), with a map of shape (1,y,x,k),
+  # without needing to expand its dimensions.
+  #
+  positive_indices = np.argwhere(anchor_boxes_valid * y_predicted_class > 0.5)  # positive indices at valid anchor locations
   num_proposals = positive_indices.shape[0]
   proposals = np.empty((num_proposals, 5))
   for i in range(proposals.shape[0]):
@@ -322,7 +349,11 @@ def extract_proposals(y_predicted_class, y_predicted_regression, y_true, anchor_
     sorted_indices = np.argsort(proposals[:,4])                     # sorts in ascending order of score
     proposals = proposals[sorted_indices][-1:-(max_proposals+1):-1] # grab the top-N scores in descending order
 
-  return proposals
+  # Strip out score leaving only the box coordinates
+  proposals = proposals[:,0:4]
+
+  # Return results clipped to image boundaries
+  return _clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
 
 def convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width):
   ty, tx, th, tw = box_params
@@ -336,7 +367,7 @@ def convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_cent
   x_max = center_x + 0.5 * width
   return (y_min, x_min, y_max, x_max)
 
-def clip_box_coordinates_to_map_boundaries(boxes, map_shape):
+def _clip_box_coordinates_to_map_boundaries(boxes, map_shape):
   """
   Clips an array of image-space boxes provided as an (Nx4) tensor against the
   image boundaries.

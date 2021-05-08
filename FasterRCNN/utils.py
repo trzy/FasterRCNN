@@ -1,12 +1,16 @@
 #
-# FasterRCNN
+# FasterRCNN for Keras
+# Copyright 2021 Bart Trzynadlowski
+#
 # utils.py
-# Copyright 2020-2021 Bart Trzynadlowski
 #
 # Miscellaneous utilities.
 #
 
 import argparse
+import imageio
+from PIL import Image
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 
@@ -25,6 +29,46 @@ def int_range_str(value):
   values = [ int(parts[0]), int(parts[1]) ]
   values = [ min(values), max(values) ]
   return values
+
+def compute_new_image_dimensions(original_width, original_height, min_dimension_pixels):
+  if not min_dimension_pixels:
+    return (original_width, original_height)
+  if original_width > original_height:
+    new_width = (original_width / original_height) * min_dimension_pixels
+    new_height = min_dimension_pixels
+  else:
+    new_height = (original_height / original_width) * min_dimension_pixels
+    new_width = min_dimension_pixels
+  return (int(new_width), int(new_height))
+
+def load_image(url, min_dimension_pixels):
+  data = imageio.imread(url, pilmode = "RGB")
+  image = Image.fromarray(data, mode = "RGB")
+  width, height = compute_new_image_dimensions(original_width = image.width, original_height = image.height, min_dimension_pixels = min_dimension_pixels)
+  image = image.resize((width, height), resample = Image.BILINEAR)
+  return image
+
+def load_image_data_vgg16(url, min_dimension_pixels):
+  """
+  Loads an image and returns a NumPy tensor of shape (height,width,3), pre-
+  processed for VGG-16: BGR order and ImageNet component-wise mean pre-
+  subtracted.
+
+  Parameters
+  ----------
+  url : str
+    URL or path of file to load.
+  min_dimension_pixels: int
+    New size of the image's minimum dimension. The other dimension will be
+    scaled proportionally. Bilinear sampling is used.
+
+  Returns
+  -------
+  np.ndarray
+    Image data.
+  """
+  image = np.array(load_image(url = url, min_dimension_pixels = min_dimension_pixels))
+  return tf.keras.applications.vgg16.preprocess_input(x = image)
 
 def freeze_layers(model, layers):
   """
