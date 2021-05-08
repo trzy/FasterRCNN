@@ -287,7 +287,7 @@ class VOC:
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
     for image_path in image_paths:
-      description = descriptions_per_image_path["train"][image_path]
+      description = descriptions_per_image_path[image_path]
       anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
       ground_truth_regressions, positive_anchors, negative_anchors = region_proposal_network.compute_anchor_label_assignments(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
       y_per_image_path[image_path] = (ground_truth_regressions, positive_anchors, negative_anchors)
@@ -295,6 +295,7 @@ class VOC:
     print("VOC dataset: Thread %d finished" % thread_num)
     return y_per_image_path, anchor_boxes_per_image_path
 
+  # TODO: remove this
   def _standardize_regressions(self, y_per_image_path):
     ty = []
     tx = []
@@ -350,7 +351,7 @@ class VOC:
   def _data_iterator(self, dataset, mini_batch_size, shuffle, num_threads, limit_samples, cache_images):
     import concurrent.futures
 
-    # Precache anchor label assignments
+    # Precache ground truth maps (y) for each image
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
     image_paths = list(self._descriptions_per_image_path[dataset].keys())
@@ -359,9 +360,19 @@ class VOC:
     batch_size = len(image_paths) // num_threads + 1
     print("VOC dataset: Spawning %d worker threads to process %d training samples..." % (num_threads, len(image_paths)))
 
+    # Run multiple threads to compute the maps
     tic = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor() as executor:
-      futures = [ executor.submit(self._prepare_data, i, image_paths[i * batch_size : i * batch_size + batch_size], self._descriptions_per_image_path) for i in range(num_threads) ]
+      # Start each thread
+      futures = []
+      for i in range(num_threads):
+        # Create a sub-map just to be safe in case our Python implementation
+        # does not guarantee thread-safe dicts
+        subset_image_paths = image_paths[i*batch_size : i*batch_size + batch_size]
+        subset_descriptions_per_image_path = { image_path: self._descriptions_per_image_path[dataset][image_path] for image_path in subset_image_paths }
+        # Start thread
+        futures.append( executor.submit(self._prepare_data, i, subset_image_paths, subset_descriptions_per_image_path) )
+      # Wait for threads to finish and then assemble results
       results = [ f.result() for f in futures ]
       for subset_y_per_image_path, subset_anchor_boxes_per_image_path in results:
         y_per_image_path.update(subset_y_per_image_path)
