@@ -7,6 +7,9 @@
 # Main module.
 #
 
+#TODO: assert that our ground truth class map never sums to > 1 (only one class should ever be 1)
+#TODO: print number of RoIs before and after NMS. Maybe threshold should apply post-NMS
+
 #TODO: try max_proposals=64 training
 
 # TODO:
