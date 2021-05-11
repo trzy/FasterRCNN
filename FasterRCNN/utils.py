@@ -41,10 +41,13 @@ def compute_new_image_dimensions(original_width, original_height, min_dimension_
     new_width = min_dimension_pixels
   return (int(new_width), int(new_height))
 
-def load_image(url, min_dimension_pixels):
+def load_image(url, min_dimension_pixels = None, width = None, height = None):
   data = imageio.imread(url, pilmode = "RGB")
   image = Image.fromarray(data, mode = "RGB")
-  width, height = compute_new_image_dimensions(original_width = image.width, original_height = image.height, min_dimension_pixels = min_dimension_pixels)
+  if min_dimension_pixels is not None:
+    if width is not None or height is not None:
+      raise ValueError("Ambiguous arguments to load_image(): 'width' and 'height' must be None when 'min_dimension_pixels' is specified")
+    width, height = compute_new_image_dimensions(original_width = image.width, original_height = image.height, min_dimension_pixels = min_dimension_pixels)
   image = image.resize((width, height), resample = Image.BILINEAR)
   return image
 

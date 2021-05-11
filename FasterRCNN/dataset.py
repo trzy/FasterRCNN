@@ -87,9 +87,7 @@ class VOC:
       """
       Loads image as PIL object, resized to new dimensions.
       """
-      data = imageio.imread(self.path, pilmode = "RGB")
-      image = Image.fromarray(data, mode = "RGB").resize((self.width, self.height))
-      return image
+      return utils.load_image(url = self.path, width = self.width, height = self.height)
       
     def load_image_data(self):
       """
@@ -143,7 +141,7 @@ class VOC:
     with open(image_list_file) as fp:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(dataset_dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
-    #return image_paths
+    return image_paths
     # Debug: 60 car training images
     image_paths = [
       "2008_000028",
