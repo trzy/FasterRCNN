@@ -340,14 +340,14 @@ def extract_proposals(y_predicted_class, y_predicted_regression, input_image_sha
     proposals[i,0:4] = convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
     proposals[i,4] = y_predicted_class[0, y_idx, x_idx, k_idx]
 
-  # Perform NMS to cull redundant proposals
-  proposal_indices = nms(proposals = proposals, iou_threshold = 0.7)
-  proposals = proposals[proposal_indices]
-
   # Limit to max_proposals
   if max_proposals > 0:
     sorted_indices = np.argsort(proposals[:,4])                     # sorts in ascending order of score
     proposals = proposals[sorted_indices][-1:-(max_proposals+1):-1] # grab the top-N scores in descending order
+
+  # Perform NMS to cull redundant proposals
+  proposal_indices = nms(proposals = proposals, iou_threshold = 0.7)
+  proposals = proposals[proposal_indices]
 
   # Strip out score leaving only the box coordinates
   proposals = proposals[:,0:4]
