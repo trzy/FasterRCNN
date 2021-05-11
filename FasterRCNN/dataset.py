@@ -23,7 +23,7 @@ class VOC:
   images and associated metadata (e.g., box coordinates) such that the smallest
   dimension is equal to `min_dimension_pixels`.
   """
-  def __init__(self, dataset_dir, min_dimension_pixels = None):
+  def __init__(self, dataset_dir, min_dimension_pixels = None, fixed_shape_mode = False):
     print("VOC dataset: Parsing metadata...")
     self._dataset_dir = dataset_dir
     self.index_to_class_name, self.class_name_to_index = self._get_index_to_class_name(dataset_dir)
@@ -34,6 +34,18 @@ class VOC:
     self._descriptions_per_image_path = {}
     self._descriptions_per_image_path["train"] = { image_path: self._get_image_description(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in train_image_paths }
     self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in val_image_paths }
+
+    # If fixed shape mode, find the minimum dimension that will fit any image
+    self.fixed_input_shape = (None, None, 3)
+    max_width = 0
+    max_height = 0
+    if fixed_shape_mode:
+      for dataset in [ "train", "val" ]:
+        for image in self._descriptions_per_image_path[dataset].values():
+          max_width = max(image.width, max_width)
+          max_height = max(image.height, max_height)
+      self.fixed_input_shape = (max_height, max_width, 3)
+      print("VOC dataset: Fixed input shape is: %s" % str(self.fixed_input_shape))
 
   def get_full_path(self, filename):
     return os.path.join(self._dataset_dir, "JPEGImages", filename)
@@ -88,7 +100,7 @@ class VOC:
       Loads image as PIL object, resized to new dimensions.
       """
       return utils.load_image(url = self.path, width = self.width, height = self.height)
-      
+
     def load_image_data(self):
       """
       Loads image and returns a tensor of shape (height,width,3).
@@ -120,7 +132,7 @@ class VOC:
   @staticmethod
   def _get_index_to_class_name(dataset_dir):
     """
-    Returns mappings between class index and class name. Indices are in the 
+    Returns mappings between class index and class name. Indices are in the
     range [1,N], where N is the number of VOC classes, because index 0 is
     reserved for use as a background class in the final classifier network.
     """
@@ -141,7 +153,7 @@ class VOC:
     with open(image_list_file) as fp:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(dataset_dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
-    return image_paths
+    #return image_paths
     # Debug: 60 car training images
     image_paths = [
       "2008_000028",
@@ -389,7 +401,7 @@ class VOC:
 
       # Return one image at a time
       for image_path in image_paths:
-        # Retrieve ground truth 
+        # Retrieve ground truth
         # Load image
         image_data = None
         if cache_images and image_path in cached_image_by_path:

@@ -50,7 +50,7 @@ def _compute_anchor_sizes():
   return heights, widths
 
 
-def compute_all_anchor_boxes(input_image_shape):
+def compute_all_anchor_boxes(input_image_shape, fixed_input_shape = None):
   """
   Returns a map of shape (height, width, k*4) where height and width are the
   same as the anchor map and k = 9 different anchor boxes. The anchor boxes are
@@ -69,11 +69,14 @@ def compute_all_anchor_boxes(input_image_shape):
   Also returns a map of shape (height, width, k) indicating valid anchors.
   Anchors that would intersect image boundaries are not valid.
   """
+  if fixed_input_shape is None:
+    fixed_input_shape = input_image_shape
+
   image_height = input_image_shape[0]
   image_width = input_image_shape[1]
 
   anchors_per_location = 9  # this is k
-  anchor_map_height, anchor_map_width = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
+  anchor_map_height, anchor_map_width = vgg16.compute_output_map_shape(input_image_shape = fixed_input_shape)
 
   # Generate two matrices of same shape as anchor map containing the center coordinate in anchor map space
   anchor_center_x = np.repeat(np.arange(anchor_map_width).reshape((1,anchor_map_width)), repeats = anchor_map_height, axis = 0)
@@ -150,7 +153,7 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
   width = anchor_boxes.shape[1]
   num_anchors = anchor_boxes_valid.shape[2]
   truth_map = np.zeros((height, width, num_anchors, 8))
-  
+
   # Initialize the validity field
   truth_map[:,:,:,0] = anchor_boxes_valid
 
@@ -313,7 +316,7 @@ def extract_proposals(y_predicted_class, y_predicted_regression, input_image_sha
   Returns
   -------
   np.ndarray
-    A map of shape (N,4) of N object proposals from the prediction. Each 
+    A map of shape (N,4) of N object proposals from the prediction. Each
     proposal consists of box coordinates in input image pixel space:
 
       0: y_min
@@ -323,7 +326,7 @@ def extract_proposals(y_predicted_class, y_predicted_regression, input_image_sha
   """
   #
   # Find all valid proposals (object score > 0.5 and at a valid anchor) and
-  # construct a proposal map of shape (N,5), containing the proposal box 
+  # construct a proposal map of shape (N,5), containing the proposal box
   # coordinates and objectness score.
   #
   # Note that because we assume a batch size of 1, it is safe to multiply
@@ -415,7 +418,7 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
   # (background) labels. Presumably proposals that scored even lower than this
   # against all ground truth boxes would have been ignored entirely and removed
   # from the proposal set, which we do not currently support here.
-  iou_threshold = 0.5  
+  iou_threshold = 0.5
 
   # Test each proposal against each box to find the best match
   for i in range(num_proposals):

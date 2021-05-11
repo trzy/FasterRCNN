@@ -12,7 +12,7 @@
 # TODO:
 # - Standardize on notation for y_true maps and return complete ground truth map alongside mini-batch from iterator
 # - Desperately need to return a separate map indicating anchor validity and then force it to be passed in explicitly, including
-#   to training process, so that y_true becomes a tuple of two maps. 
+#   to training process, so that y_true becomes a tuple of two maps.
 # - Desperately need to settle on some better naming conventions for the various y outputs and ground truths, as well as proposal
 #   maps in different formats (e.g., pixel units, map units, etc.)
 # - Clip final boxes? See: 2010_004041.jpg
@@ -67,7 +67,7 @@ def load_image(url, min_dimension_pixels, voc = None):
   """
   Loads image and returns NumPy tensor of shape (height,width,3). Image data is
   pre-processed for VGG-16.
-  
+
   Parameters
   ----------
     url : str
@@ -83,7 +83,7 @@ def load_image(url, min_dimension_pixels, voc = None):
 
   Returns
   -------
-  np.ndarray, PIL.Image 
+  np.ndarray, PIL.Image
     Image data as a NumPy tensor and PIL object.
   """
   if voc is not None:
@@ -219,7 +219,7 @@ def show_objects(rpn_model, classifier_model, image, image_data):
     proposals = np.expand_dims(proposals, axis = 0)
     # Run prediction
     y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
-    # Filter the results by performing NMS per class and returning final boxes by class name 
+    # Filter the results by performing NMS per class and returning final boxes by class name
     boxes_by_class_name = filter_classifier_results(proposals = proposals_pixels, classes = y_classifier_predicted_class[0,:,:], regressions = y_classifier_predicted_regression[0,:,:], voc = voc)
     for class_name, boxes in boxes_by_class_name.items():
       for box in boxes:
@@ -239,7 +239,7 @@ def sample_proposals(proposals, y_true_proposal_classes, y_true_proposal_regress
   negative_indices = np.argwhere(class_indices <= 0)[:,0]
   num_positive_proposals = len(positive_indices)
   num_negative_proposals = len(negative_indices)
-  
+
   # Select positive and negative samples, if there are enough
   num_samples = min(max_proposals, len(class_indices))
   num_positive_samples = min(round(num_samples * positive_fraction), num_positive_proposals)
@@ -256,7 +256,7 @@ def sample_proposals(proposals, y_true_proposal_classes, y_true_proposal_regress
 
   # Return
   return proposals[indices], y_true_proposal_classes[indices], y_true_proposal_regressions[indices]
-   
+
 def select_proposals_for_training(proposals, ground_truth_object_boxes, num_classes, max_proposals, positive_fraction):
   """
   Parameters
@@ -336,7 +336,7 @@ def convert_proposals_to_classifier_network_format(proposals, rpn_shape):
   # RoI pooling layer expects tf.int32
   rois = boxes.astype(np.int32)
   return rois
-  
+
 
 # good test images:
 # 2010_004041.jpg
@@ -369,7 +369,7 @@ if __name__ == "__main__":
       print(K.eval(K.categorical_crossentropy(yt, yp)))
 
   exit()
-  
+
   y_true = np.zeros((1,2,2,8))
   y_true[0,0,0,:] = 1, 1, 1, 1, 0, 0, 0, 0
   y_true[0,0,1,:] = 1, 2, 3, 3, 2, 2, 2, 2
@@ -388,6 +388,7 @@ if __name__ == "__main__":
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
   parser.add_argument("--train", action = "store_true", help = "Train the region proposal network")
+  parser.add_argument("--fixed-shape", action = "store_true", help = "Use a fixed input shape large enough to hold any image in dataset")
   parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "rate", type = float, action = "store", default = "0.001", help = "Learning rate")
   parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = "1.0", help = "Clip gradient norm to value")
@@ -403,9 +404,11 @@ if __name__ == "__main__":
   parser.add_argument("--show-objects", metavar = "file", type = str, action = "store", help = "Run inference on image using classifier network and display bounding boxes")
   options = parser.parse_args()
 
-  voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600)
+  #tf.compat.v1.disable_eager_execution()
 
-  rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
+  voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600, fixed_shape_mode = options.fixed_shape)
+
+  rpn_model, conv_model = build_rpn_model(input_image_shape = voc.fixed_input_shape, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
   classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm)
   complete_model = build_complete_model(rpn_model = rpn_model, classifier_model = classifier_model) # contains all weights, used for saving weights
   complete_model.summary()
@@ -468,7 +471,7 @@ if __name__ == "__main__":
           extract_proposals_time = time.perf_counter() - extract_proposals_t0
 
           if proposals.shape[0] > 0:
-            # Prepare proposals and ground truth data for classifier network 
+            # Prepare proposals and ground truth data for classifier network
             prepare_proposals_t0 = time.perf_counter()
             proposals, y_true_proposal_classes, y_true_proposal_regressions = select_proposals_for_training(
               proposals = proposals,
@@ -513,7 +516,7 @@ if __name__ == "__main__":
           y_true = y_true,
           timing_samples = { "rpn_train": rpn_train_time }
         )
-        progbar.update(current = i, values = [ 
+        progbar.update(current = i, values = [
           ("rpn_total_loss", stats.rpn_mean_total_loss),
           ("rpn_class_loss", stats.rpn_mean_class_loss),
           ("rpn_regression_loss", stats.rpn_mean_regression_loss),
