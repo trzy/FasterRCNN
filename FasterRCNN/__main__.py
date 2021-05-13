@@ -400,6 +400,7 @@ if __name__ == "__main__":
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
   parser.add_argument("--freeze", action = "store_true", help = "Freeze first 2 blocks of VGG-16")
   parser.add_argument("--rpn-only", action = "store_true", help = "Train only the region proposal network")
+  parser.add_argument("--log", metavar = "filepath", type = str, action = "store", default = "out.csv", help = "Log metrics to csv file")
   parser.add_argument("--save-to", metavar = "filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
   parser.add_argument("--load-from", metavar="filepath", type = str, action = "store", help = "File to load initial model weights from")
   parser.add_argument("--infer-boxes", metavar = "file", type = str, action = "store", help = "Run inference on image using region proposal network and display bounding boxes")
@@ -428,6 +429,7 @@ if __name__ == "__main__":
     num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
     stats = TrainingStatistics(num_samples = num_samples)
+    logger = utils.CSVLogCallback(filename = options.log, log_epoch_number = False, log_learning_rate = False)
 
     for epoch in range(options.epochs):
       stats.on_epoch_begin()
@@ -527,6 +529,24 @@ if __name__ == "__main__":
           ("classifier_regression_loss", stats.classifier_mean_regression_loss)
         ])
         stats.on_step_end()
+
+      # Log
+      logger.on_epoch_end(epoch = epoch, logs = {
+        "epoch": epoch,
+        "learning_rate": options.learning_rate,
+        "clipnorm": options.clipnorm,
+        "mini_batch": options.mini_batch,
+        "max_proposals": options.max_proposals,
+        "proposal_batch": options.proposal_batch,
+        "rpn_total_loss": stats.rpn_mean_total_loss,
+        "rpn_class_loss": stats.rpn_mean_class_loss,
+        "rpn_regression_loss": stats.rpn_mean_regression_loss,
+        "rpn_class_accuracy": stats.rpn_mean_class_accuracy,
+        "rpn_class_recall": stats.rpn_mean_class_recall,
+        "classifier_total_loss": stats.classifier_mean_total_loss,
+        "classifier_class_loss": stats.classifier_mean_class_loss,
+        "classifier_regression_loss": stats.classifier_mean_regression_loss
+      })
 
       # Checkpoint
       print("")
