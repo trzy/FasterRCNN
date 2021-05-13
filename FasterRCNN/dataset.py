@@ -36,7 +36,7 @@ class VOC:
     self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in val_image_paths }
 
     # If fixed shape mode, find the minimum dimension that will fit any image
-    self.fixed_input_shape = (None, None, 3)
+    self.fixed_shape = (None, None, 3)
     max_width = 0
     max_height = 0
     if fixed_shape_mode:
@@ -44,8 +44,8 @@ class VOC:
         for image in self._descriptions_per_image_path[dataset].values():
           max_width = max(image.width, max_width)
           max_height = max(image.height, max_height)
-      self.fixed_input_shape = (max_height, max_width, 3)
-      print("VOC dataset: Fixed input shape is: %s" % str(self.fixed_input_shape))
+      self.fixed_shape = (max_height, max_width, 3)
+      print("VOC dataset: Fixed input shape is: %s" % str(self.fixed_shape))
 
   def get_full_path(self, filename):
     return os.path.join(self._dataset_dir, "JPEGImages", filename)
@@ -87,10 +87,10 @@ class VOC:
     def __init__(self, name, path, original_width, original_height, width, height, boxes_by_class_name):
       self.name = name
       self.path = path
-      self.original_width = original_width
-      self.original_height = original_height
-      self.width = width
-      self.height = height
+      self.original_width = original_width      # original width of image before scaling to model dimensions
+      self.original_height = original_height    # "" height ""
+      self.width = width                        # width of image after scaling
+      self.height = height                      # height ""
       self.boxes_by_class_name = boxes_by_class_name
 
       self._ground_truth_map = None # computed on-demand and cached
@@ -101,11 +101,18 @@ class VOC:
       """
       return utils.load_image(url = self.path, width = self.width, height = self.height)
 
-    def load_image_data(self):
+    def load_image_data(self, fixed_shape):
       """
       Loads image and returns a tensor of shape (height,width,3).
       """
       image = np.array(self.load_image())
+      if fixed_shape[0] is not None and fixed_shape[1] is not None:
+        # If we have a fixed shape to conform to, paste the image into the top-
+        # left corner of it
+        fixed_shape_image = Image.new("RGB", fixed_shape[0:2])
+        fixed_shape_image.paste(image, (0, 0))
+        image.close()
+        image = fixed_shape_image
       return tf.keras.applications.vgg16.preprocess_input(x = image)
 
     def shape(self):
@@ -407,7 +414,7 @@ class VOC:
         if cache_images and image_path in cached_image_by_path:
           image_data = cached_image_by_path[image_path]
         if image_data is None:  # NumPy array -- cannot test for == None or "is None"
-          image_data = self._descriptions_per_image_path[dataset][image_path].load_image_data()
+          image_data = self._descriptions_per_image_path[dataset][image_path].load_image_data(fixed_shape = self.fixed_shape)
           if cache_images:
             cached_image_by_path[image_path] = image_data
 

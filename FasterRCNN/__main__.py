@@ -408,7 +408,7 @@ if __name__ == "__main__":
 
   voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600, fixed_shape_mode = options.fixed_shape)
 
-  rpn_model, conv_model = build_rpn_model(input_image_shape = voc.fixed_input_shape, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
+  rpn_model, conv_model = build_rpn_model(input_image_shape = voc.fixed_shape, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
   classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm)
   complete_model = build_complete_model(rpn_model = rpn_model, classifier_model = classifier_model) # contains all weights, used for saving weights
   complete_model.summary()
