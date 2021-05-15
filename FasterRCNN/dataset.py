@@ -109,7 +109,8 @@ class VOC:
       if fixed_shape[0] is not None and fixed_shape[1] is not None:
         # If we have a fixed shape to conform to, paste the image into the top-
         # left corner of it
-        fixed_shape_image = Image.new("RGB", fixed_shape[0:2])
+        fixed_height, fixed_width = fixed_shape[0:2]
+        fixed_shape_image = Image.new("RGB", (fixed_width, fixed_height))
         fixed_shape_image.paste(image, (0, 0))
         image.close()
         image = fixed_shape_image
