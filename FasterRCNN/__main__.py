@@ -86,11 +86,13 @@ def load_image(url, min_dimension_pixels, voc = None):
   np.ndarray, PIL.Image
     Image data as a NumPy tensor and PIL object.
   """
+  fixed_shape = (None, None, 3)
   if voc is not None:
     path = voc.get_full_path(filename = url)
     if os.path.exists(path):
       url = path
-  return utils.load_image(url = url, min_dimension_pixels = min_dimension_pixels), utils.load_image_data_vgg16(url = url, min_dimension_pixels = min_dimension_pixels)
+    fixed_shape = voc.fixed_shape
+  return utils.load_image(url = url, min_dimension_pixels = min_dimension_pixels, fixed_shape = fixed_shape), utils.load_image_data_vgg16(url = url, min_dimension_pixels = min_dimension_pixels, fixed_shape = fixed_shape)
 
 def print_weights(model):
   for layer in model.layers:
