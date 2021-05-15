@@ -448,8 +448,8 @@ if __name__ == "__main__":
         input_image_shape = x.shape
         rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
         image_info = voc.get_image_description(image_path)
-        ground_truth_object_boxes = image_info.get_boxes()    #TODO: return this from iterator so we don't need image_info
-        y_true = image_info.get_ground_truth_map()            #TODO: ""
+        ground_truth_object_boxes = image_info.get_boxes()                      #TODO: return this from iterator so we don't need image_info
+        y_true = image_info.get_ground_truth_map(fixed_shape = voc.fixed_shape) #TODO: ""
         y_true = np.expand_dims(y_true, axis = 0)
         y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
         x = np.expand_dims(x, axis = 0)

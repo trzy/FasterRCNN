@@ -95,25 +95,17 @@ class VOC:
 
       self._ground_truth_map = None # computed on-demand and cached
 
-    def load_image(self):
+    def load_image(self, fixed_shape):
       """
       Loads image as PIL object, resized to new dimensions.
       """
-      return utils.load_image(url = self.path, width = self.width, height = self.height)
+      return utils.load_image(url = self.path, width = self.width, height = self.height, fixed_shape = fixed_shape)
 
     def load_image_data(self, fixed_shape):
       """
       Loads image and returns a tensor of shape (height,width,3).
       """
-      image = np.array(self.load_image())
-      if fixed_shape[0] is not None and fixed_shape[1] is not None:
-        # If we have a fixed shape to conform to, paste the image into the top-
-        # left corner of it
-        fixed_height, fixed_width = fixed_shape[0:2]
-        fixed_shape_image = Image.new("RGB", (fixed_width, fixed_height))
-        fixed_shape_image.paste(image, (0, 0))
-        image.close()
-        image = fixed_shape_image
+      image = np.array(self.load_image(fixed_shape = fixed_shape))
       return tf.keras.applications.vgg16.preprocess_input(x = image)
 
     def shape(self):
@@ -126,9 +118,9 @@ class VOC:
       return list(itertools.chain.from_iterable(self.boxes_by_class_name.values()))
 
     #TODO: this needs to be renamed and in general, how ground truth maps are named and returned needs to be rethought
-    def get_ground_truth_map(self):
+    def get_ground_truth_map(self, fixed_shape):
       if self._ground_truth_map is None:
-        anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
+        anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape(), fixed_input_shape = fixed_shape)
         self._ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
         #print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(self._ground_truth_map[:,:,:,0])))
         #print("anchor_boxes_valid=%f, count=%f" % (np.sum(anchor_boxes_valid), (len(positive_anchors) + len(negative_anchors))))
@@ -299,14 +291,14 @@ class VOC:
     return positive_samples, negative_samples
 
   @staticmethod
-  def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
+  def _prepare_data(thread_num, image_paths, descriptions_per_image_path, fixed_shape):
 #TODO: use ImageDescription functions to create anchor map and ground truth map, and then clone them here
     print("VOC dataset: Thread %d started" % thread_num)
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
     for image_path in image_paths:
       description = descriptions_per_image_path[image_path]
-      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
+      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape(), fixed_input_shape = fixed_shape)
       ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
       y_per_image_path[image_path] = (ground_truth_map, positive_anchors, negative_anchors)
       anchor_boxes_per_image_path[image_path] = anchor_boxes
@@ -389,7 +381,7 @@ class VOC:
         subset_image_paths = image_paths[i*batch_size : i*batch_size + batch_size]
         subset_descriptions_per_image_path = { image_path: self._descriptions_per_image_path[dataset][image_path] for image_path in subset_image_paths }
         # Start thread
-        futures.append( executor.submit(self._prepare_data, i, subset_image_paths, subset_descriptions_per_image_path) )
+        futures.append( executor.submit(self._prepare_data, i, subset_image_paths, subset_descriptions_per_image_path, self.fixed_shape) )
       # Wait for threads to finish and then assemble results
       results = [ f.result() for f in futures ]
       for subset_y_per_image_path, subset_anchor_boxes_per_image_path in results:

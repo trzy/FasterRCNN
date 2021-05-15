@@ -50,7 +50,7 @@ def load_image(url, min_dimension_pixels = None, width = None, height = None, fi
     width, height = compute_new_image_dimensions(original_width = image.width, original_height = image.height, min_dimension_pixels = min_dimension_pixels)
   image = image.resize((width, height), resample = Image.BILINEAR)
   
-  if fixed_shape[0] is not None and fixed_shape[1] is not None:
+  if not (None in fixed_shape):
     # If we have a fixed shape to conform to, paste the image into the top-
     # left corner of it
     fixed_height, fixed_width = fixed_shape[0:2]
@@ -74,6 +74,12 @@ def load_image_data_vgg16(url, min_dimension_pixels, fixed_shape = (None, None, 
   min_dimension_pixels: int
     New size of the image's minimum dimension. The other dimension will be
     scaled proportionally. Bilinear sampling is used.
+  fixed_shape : (int, int, int)
+    A tuple of (height, width, channels) (channels should be 3) indicating the
+    dimensions of the image data to return. Must be larger than or equal to the
+    rescaled image size. The rescaled image will be pasted into the top left
+    corner while the rest is initialized to 0. If either of the fixed
+    dimensions are None, the resized image data is returned as-is.
 
   Returns
   -------

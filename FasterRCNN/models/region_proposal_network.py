@@ -50,7 +50,7 @@ def _compute_anchor_sizes():
   return heights, widths
 
 
-def compute_all_anchor_boxes(input_image_shape, fixed_input_shape = None):
+def compute_all_anchor_boxes(input_image_shape, fixed_input_shape = (None, None, 3)):
   """
   Returns a map of shape (height, width, k*4) where height and width are the
   same as the anchor map and k = 9 different anchor boxes. The anchor boxes are
@@ -69,7 +69,7 @@ def compute_all_anchor_boxes(input_image_shape, fixed_input_shape = None):
   Also returns a map of shape (height, width, k) indicating valid anchors.
   Anchors that would intersect image boundaries are not valid.
   """
-  if fixed_input_shape is None:
+  if None in fixed_input_shape:
     fixed_input_shape = input_image_shape
 
   image_height = input_image_shape[0]
