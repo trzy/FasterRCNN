@@ -1,4 +1,4 @@
-#
+
 # FasterRCNN for Keras
 # Copyright 2021 Bart Trzynadlowski
 #
@@ -340,7 +340,7 @@ def convert_proposals_to_classifier_network_format(proposals, rpn_shape):
     where each box is now: (y_min, x_min, height, width), in RPN map units.
   """
   # Convert to anchor map (RPN map) space
-  boxes = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = boxes, output_map_shape = rpn_shape)
+  boxes = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = rpn_shape)
 
   # Convert from (y_min,x_min,y_max,x_max) -> (y_min,x_min,height,width) as expected by RoI pool layer
   boxes[:,2:4] = boxes[:,2:4] - boxes[:,0:2] + 1
