@@ -41,7 +41,7 @@ def compute_new_image_dimensions(original_width, original_height, min_dimension_
     new_width = min_dimension_pixels
   return (int(new_width), int(new_height))
 
-def load_image(url, min_dimension_pixels = None, width = None, height = None):
+def load_image(url, min_dimension_pixels = None, width = None, height = None, fixed_shape = (None, None, 3)):
   data = imageio.imread(url, pilmode = "RGB")
   image = Image.fromarray(data, mode = "RGB")
   if min_dimension_pixels is not None:
@@ -49,9 +49,19 @@ def load_image(url, min_dimension_pixels = None, width = None, height = None):
       raise ValueError("Ambiguous arguments to load_image(): 'width' and 'height' must be None when 'min_dimension_pixels' is specified")
     width, height = compute_new_image_dimensions(original_width = image.width, original_height = image.height, min_dimension_pixels = min_dimension_pixels)
   image = image.resize((width, height), resample = Image.BILINEAR)
+  
+  if fixed_shape[0] is not None and fixed_shape[1] is not None:
+    # If we have a fixed shape to conform to, paste the image into the top-
+    # left corner of it
+    fixed_height, fixed_width = fixed_shape[0:2]
+    fixed_shape_image = Image.new("RGB", (fixed_width, fixed_height))
+    fixed_shape_image.paste(image, (0, 0))
+    image.close()
+    image = fixed_shape_image
+
   return image
 
-def load_image_data_vgg16(url, min_dimension_pixels):
+def load_image_data_vgg16(url, min_dimension_pixels, fixed_shape = (None, None, 3)):
   """
   Loads an image and returns a NumPy tensor of shape (height,width,3), pre-
   processed for VGG-16: BGR order and ImageNet component-wise mean pre-
@@ -70,7 +80,7 @@ def load_image_data_vgg16(url, min_dimension_pixels):
   np.ndarray
     Image data.
   """
-  image = np.array(load_image(url = url, min_dimension_pixels = min_dimension_pixels))
+  image = np.array(load_image(url = url, min_dimension_pixels = min_dimension_pixels, fixed_shape = fixed_shape))
   return tf.keras.applications.vgg16.preprocess_input(x = image)
 
 def freeze_layers(model, layers):
