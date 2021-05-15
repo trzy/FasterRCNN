@@ -11,7 +11,7 @@ from collections import defaultdict
 import numpy as np
 
 
-class TrainingStatistics:
+class Statistics:
   def __init__(self, num_samples):
     self._step_number = 0
 

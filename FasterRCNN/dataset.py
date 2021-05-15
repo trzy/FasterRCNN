@@ -349,6 +349,8 @@ class VOC:
   def _data_iterator(self, dataset, mini_batch_size, shuffle, num_threads, limit_samples, cache_images):
     import concurrent.futures
 
+    dataset_name = "training" if dataset == "train" else "validation"
+
     # Precache ground truth maps (y) for each image
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
@@ -356,7 +358,7 @@ class VOC:
     if limit_samples:
       image_paths = image_paths[0:limit_samples]
     batch_size = len(image_paths) // num_threads + 1
-    print("VOC dataset: Spawning %d worker threads to process %d training samples..." % (num_threads, len(image_paths)))
+    print("VOC dataset: Spawning %d worker threads to process %d %s samples..." % (num_threads, len(image_paths), dataset_name))
 
     # Run multiple threads to compute the maps
     tic = time.perf_counter()
@@ -376,7 +378,7 @@ class VOC:
         y_per_image_path.update(subset_y_per_image_path)
         anchor_boxes_per_image_path.update(subset_anchor_boxes_per_image_path)
     toc = time.perf_counter()
-    print("VOC dataset: Processed %d training samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
+    print("VOC dataset: Processed %d %s samples in %1.1f minutes" % (len(y_per_image_path), dataset_name, ((toc - tic) / 60.0)))
 
     # Image cache
     cached_image_by_path = {}
