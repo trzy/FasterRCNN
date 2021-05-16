@@ -313,13 +313,15 @@ def extract_proposals(y_predicted_class, y_predicted_regression, input_image_sha
   Returns
   -------
   np.ndarray
-    A map of shape (N,4) of N object proposals from the prediction. Each 
-    proposal consists of box coordinates in input image pixel space:
+    A map of shape (N,5) of N object proposals from the prediction. Each 
+    proposal consists of box coordinates in input image pixel space and
+    the objectness score:
 
       0: y_min
       1: x_min
       2: y_max
       3: x_max
+      4: score
   """
   #
   # Find all valid proposals (object score > 0.5 and at a valid anchor) and
@@ -349,9 +351,6 @@ def extract_proposals(y_predicted_class, y_predicted_regression, input_image_sha
   proposal_indices = nms(proposals = proposals, iou_threshold = 0.7)
   proposals = proposals[proposal_indices]
 
-  # Strip out score leaving only the box coordinates
-  proposals = proposals[:,0:4]
-
   # Return results clipped to image boundaries
   return _clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
 
@@ -377,6 +376,8 @@ def _clip_box_coordinates_to_map_boundaries(boxes, map_shape):
   1: x_min
   2: y_max
   3: x_max
+
+  Additional elements are preserved.
   """
   # First, remove boxes that are entirely out of bounds
   out_of_bounds = (boxes[:,0] >= map_shape[0]) + (boxes[:,2] < 0) + \
@@ -387,8 +388,8 @@ def _clip_box_coordinates_to_map_boundaries(boxes, map_shape):
   # Next, clip to boundaries
   y_max = map_shape[0] - 1
   x_max = map_shape[1] - 1
-  boxes = np.maximum(boxes, [ 0, 0, 0, 0 ])                 # clip to x=0 and y=0
-  boxes = np.minimum(boxes, [ y_max, x_max, y_max, x_max ]) # clip to maximum dimension
+  boxes[:,0:4] = np.maximum(boxes[:,0:4], [ 0, 0, 0, 0 ])                 # clip to x=0 and y=0
+  boxes[:,0:4] = np.minimum(boxes[:,0:4], [ y_max, x_max, y_max, x_max ]) # clip to maximum dimension
 
   return boxes
 

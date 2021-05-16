@@ -7,10 +7,10 @@
 # Main module.
 #
 
-#TODO: assert that our ground truth class map never sums to > 1 (only one class should ever be 1)
-#TODO: print number of RoIs before and after NMS. Maybe threshold should apply post-NMS
+#TODO:
+# - In dataset, remove y_min/x_min/etc. and only use corners 
 
-#TODO: try max_proposals=64 training
+
 
 # TODO:
 # - Standardize on notation for y_true maps and return complete ground truth map alongside mini-batch from iterator
@@ -175,7 +175,41 @@ def infer_rpn_boxes(rpn_model, voc, filename):
   visualization.show_proposed_regions(voc = voc, filename = filename, y_true = y_true, y_class = y_class, y_regression = y_regression)
 
 def filter_classifier_results(proposals, classes, regressions, voc, iou_threshold = 0.5):
+  """
+  Given proposals (in input image space) and the final predictions from the
+  classifier network, returns a final set of boxes and their confidence scores 
+  organized by class name. Redundant predictions are removed using non-maximum
+  suppression. The results can directly be visualized atop the input image.
 
+  Parameters
+  ----------
+    proposals : np.ndarray
+      An (N,5) tensor of object proposals from the RPN network, where each 
+      proposal is of the form (y_min, x_min, y_max, x_max, score). Coordinates
+      are in input image (pixel) space and the score is the objectness class
+      score.
+    classes : np.ndarray
+      An (N,num_classes) tensor of class predictions for each proposal. Classes
+      are one-hot encoded with 0 being the background class.
+    regressions : np.ndarray
+      An (N,(num_classes-1)*4) tensor of predicted box regression parameters
+      for the non-background classes. Index 0 corresponds to class index 1,
+      index 4 to class index 2, etc. There are 4 parameters (ty, tx, th, tw)
+      for each class. Only the 4 parameters for the predicted class (the
+      highest scoring class index in the equivalent row of 'classes') are
+      valid.
+    voc : dataset.VOC
+      VOC dataset, which contains a mapping of class index to name.
+    iou_threshold : float
+      IoU threshold for non-maximum supression. Used to remove redundant
+      predictions.
+    
+  Returns
+  -------
+  dict
+  Lists of boxes and their score, (y_min, x_min, y_max, x_max, score), by class
+  name (str).
+  """
   # Inputs must all be a single sample (no batches)
   assert len(classes.shape) == 2
   assert len(regressions.shape) == 2
@@ -198,14 +232,14 @@ def filter_classifier_results(proposals, classes, regressions, voc, iou_threshol
       result_by_class_name[class_name].append((y1, x1, y2, x2, classes[i,class_idx]))
 
   # Perform NMS for each class
-  boxes_by_class_name = {}
+  scored_boxes_by_class_name = {}
   for class_name, results in result_by_class_name.items():
     results = np.vstack(results)
     indices = nms(proposals = results, iou_threshold = iou_threshold)
     results = results[indices]
-    boxes_by_class_name[class_name] = results[:,0:4]  # strip off the score
+    scored_boxes_by_class_name[class_name] = results
 
-  return boxes_by_class_name
+  return scored_boxes_by_class_name
 
 def show_objects(rpn_model, classifier_model, image, image_data):
   # TODO: streamline further and clean up
@@ -223,12 +257,12 @@ def show_objects(rpn_model, classifier_model, image, image_data):
     # Run prediction
     y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
     # Filter the results by performing NMS per class and returning final boxes by class name 
-    boxes_by_class_name = filter_classifier_results(proposals = proposals_pixels, classes = y_classifier_predicted_class[0,:,:], regressions = y_classifier_predicted_regression[0,:,:], voc = voc)
-    for class_name, boxes in boxes_by_class_name.items():
+    scored_boxes_by_class_name = filter_classifier_results(proposals = proposals_pixels, classes = y_classifier_predicted_class[0,:,:], regressions = y_classifier_predicted_regression[0,:,:], voc = voc)
+    for class_name, boxes in scored_boxes_by_class_name.items():
       for box in boxes:
-        print("%s -> %d, %d, %d, %d" % (class_name, round(box[0]), round(box[1]), round(box[2]), round(box[3])))
+        print("%s -> %d, %d, %d, %d (score=%f)" % (class_name, round(box[0]), round(box[1]), round(box[2]), round(box[3]), box[4]))
     # Show objects
-    visualization.show_objects(image = image, boxes_by_class_name = boxes_by_class_name)
+    visualization.show_objects(image = image, boxes_by_class_name = scored_boxes_by_class_name)
   else:
     print("No proposals generated")
 
@@ -327,8 +361,8 @@ def convert_proposals_to_classifier_network_format(proposals, rpn_shape):
   Parameters
   ----------
     proposals : np.ndarray
-      Proposals with shape (N,4), as box coordinates in image space: (y_min,
-      x_min, y_max, x_max).
+      Proposals with shape (N,5), as box coordinates in image space and an
+      objectness score: (y_min, x_min, y_max, x_max, score).
     rpn_shape : (int, int, int)
       The shape of the output map of the convolutional network stage and the
       input to the RPN.
@@ -338,7 +372,11 @@ def convert_proposals_to_classifier_network_format(proposals, rpn_shape):
   np.ndarray
     A map of shape (N,4) in the format expected by the  RoI pooling layer,
     where each box is now: (y_min, x_min, height, width), in RPN map units.
+    The score is stripped out.
   """
+  # Strip out score leaving only the box coordinates
+  proposals = proposals[:,0:4]
+
   # Convert to anchor map (RPN map) space
   boxes = vgg16.convert_box_coordinates_from_image_to_output_map_space(box = proposals, output_map_shape = rpn_shape)
 
