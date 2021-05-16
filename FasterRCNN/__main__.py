@@ -49,7 +49,8 @@ from .models.losses import classifier_class_loss
 from .models.losses import classifier_regression_loss
 from .models import classifier_network
 from .models.nms import nms
-from .statistics import Statistics
+from .statistics import AveragePrecision
+from .statistics import ModelStatistics
 
 import argparse
 from collections import defaultdict
@@ -174,7 +175,7 @@ def infer_rpn_boxes(rpn_model, voc, filename):
   print("class loss=", rpn_class_loss_np(y_true=y_true, y_predicted=y_class))
   visualization.show_proposed_regions(voc = voc, filename = filename, y_true = y_true, y_class = y_class, y_regression = y_regression)
 
-def filter_classifier_results(proposals, classes, regressions, voc, iou_threshold = 0.5):
+def filter_detections(proposals, classes, regressions, iou_threshold = 0.5):
   """
   Given proposals (in input image space) and the final predictions from the
   classifier network, returns a final set of boxes and their confidence scores 
@@ -198,8 +199,6 @@ def filter_classifier_results(proposals, classes, regressions, voc, iou_threshol
       for each class. Only the 4 parameters for the predicted class (the
       highest scoring class index in the equivalent row of 'classes') are
       valid.
-    voc : dataset.VOC
-      VOC dataset, which contains a mapping of class index to name.
     iou_threshold : float
       IoU threshold for non-maximum supression. Used to remove redundant
       predictions.
@@ -208,7 +207,7 @@ def filter_classifier_results(proposals, classes, regressions, voc, iou_threshol
   -------
   dict
   Lists of boxes and their score, (y_min, x_min, y_max, x_max, score), by class
-  name (str).
+  index.
   """
   # Inputs must all be a single sample (no batches)
   assert len(classes.shape) == 2
@@ -217,11 +216,10 @@ def filter_classifier_results(proposals, classes, regressions, voc, iou_threshol
   assert classes.shape[0] == proposals.shape[0]
 
   # Separate out results per class: class_name -> (y1, x1, y2, x2, score)
-  result_by_class_name = defaultdict(list)
+  result_by_class_idx = defaultdict(list)
   for i in range(classes.shape[0]):
     class_idx = np.argmax(classes[i,:])
     if class_idx > 0:
-      class_name = voc.index_to_class_name[class_idx]
       regression_idx = (class_idx - 1) * 4
       box_params = regressions[i, regression_idx+0 : regression_idx+4]
       proposal_center_y = 0.5 * (proposals[i,0] + proposals[i,2])
@@ -229,17 +227,17 @@ def filter_classifier_results(proposals, classes, regressions, voc, iou_threshol
       proposal_height = proposals[i,2] - proposals[i,0] + 1
       proposal_width = proposals[i,3] - proposals[i,1] + 1
       y1, x1, y2, x2 = region_proposal_network.convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = proposal_center_y, anchor_center_x = proposal_center_x, anchor_height = proposal_height, anchor_width = proposal_width)
-      result_by_class_name[class_name].append((y1, x1, y2, x2, classes[i,class_idx]))
+      result_by_class_idx[class_idx].append((y1, x1, y2, x2, classes[i,class_idx]))
 
   # Perform NMS for each class
-  scored_boxes_by_class_name = {}
-  for class_name, results in result_by_class_name.items():
+  scored_boxes_by_class_idx = {}
+  for class_idx, results in result_by_class_idx.items():
     results = np.vstack(results)
     indices = nms(proposals = results, iou_threshold = iou_threshold)
     results = results[indices]
-    scored_boxes_by_class_name[class_name] = results
+    scored_boxes_by_class_idx[class_idx] = results
 
-  return scored_boxes_by_class_name
+  return scored_boxes_by_class_idx
 
 def show_objects(rpn_model, classifier_model, image, image_data):
   # TODO: streamline further and clean up
@@ -257,7 +255,8 @@ def show_objects(rpn_model, classifier_model, image, image_data):
     # Run prediction
     y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
     # Filter the results by performing NMS per class and returning final boxes by class name 
-    scored_boxes_by_class_name = filter_classifier_results(proposals = proposals_pixels, classes = y_classifier_predicted_class[0,:,:], regressions = y_classifier_predicted_regression[0,:,:], voc = voc)
+    scored_boxes_by_class_idx = filter_detections(proposals = proposals_pixels, classes = y_classifier_predicted_class[0,:,:], regressions = y_classifier_predicted_regression[0,:,:])
+    scored_boxes_by_class_name = { voc.index_to_class_name[class_idx]: boxes for class_idx, boxes in scored_boxes_by_class_idx.items() }
     for class_name, boxes in scored_boxes_by_class_name.items():
       for box in boxes:
         print("%s -> %d, %d, %d, %d (score=%f)" % (class_name, round(box[0]), round(box[1]), round(box[2]), round(box[3]), box[4]))
@@ -391,7 +390,8 @@ def validate(rpn_model, classifier_model, voc):
   val_data = voc.validation_data(mini_batch_size = options.mini_batch)
   num_samples = voc.num_samples["val"]
 
-  stats = Statistics(num_samples = num_samples)
+  mAP = AveragePrecision()
+  stats = ModelStatistics(num_samples = num_samples)
   stats.on_epoch_begin()
   progbar = tf.keras.utils.Progbar(num_samples)
   
@@ -423,6 +423,8 @@ def validate(rpn_model, classifier_model, voc):
       anchor_boxes = anchor_boxes, 
       anchor_boxes_valid = anchor_boxes_valid)
 
+    scored_boxes_by_class_index = {}
+
     if proposals.shape[0] > 0:
       # Get proposal labels as we would do during training but try to use all
       # proposals
@@ -433,6 +435,7 @@ def validate(rpn_model, classifier_model, voc):
         max_proposals = 0,  # use all of them
         positive_fraction = 0.5
       )
+      proposals_pixels = proposals  # save proposals in input image space
       proposals = convert_proposals_to_classifier_network_format(proposals = proposals, rpn_shape = rpn_shape)
       proposals = np.expand_dims(proposals, axis = 0)
       y_true_proposal_classes = np.expand_dims(y_true_proposal_classes, axis = 0)
@@ -441,6 +444,10 @@ def validate(rpn_model, classifier_model, voc):
       # Classifier prediction step
       y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
       classifier_losses = classifier_model.evaluate(x = [ x, proposals ], y = [ y_true_proposal_classes, y_true_proposal_regressions ], verbose = False)
+      scored_boxes_by_class_index = filter_detections(
+        proposals = proposals_pixels,
+        classes = y_classifier_predicted_class[0,:,:],
+        regressions = y_classifier_predicted_regression[0,:,:])
       
       # Update classifier stats
       stats.on_classifier_step(
@@ -451,6 +458,9 @@ def validate(rpn_model, classifier_model, voc):
         y_true_regressions = y_true_proposal_regressions,
         timing_samples = {}
       )
+
+    # Update mAP calculation
+    mAP.add_image_results(scored_boxes_by_class_index = scored_boxes_by_class_index, ground_truth_object_boxes = ground_truth_object_boxes)
 
     # Update RPN progress and progress bar
     stats.on_rpn_step(
@@ -466,20 +476,23 @@ def validate(rpn_model, classifier_model, voc):
       ("rpn_total_loss", stats.rpn_mean_total_loss),
       ("rpn_class_loss", stats.rpn_mean_class_loss),
       ("rpn_regression_loss", stats.rpn_mean_regression_loss),
-      ("rpn_class_accuracy", stats.rpn_mean_class_accuracy),
-      ("rpn_class_recall", stats.rpn_mean_class_recall),
+      ("rpn_class_accuracy", stats.rpn_class_accuracy),
+      ("rpn_class_recall", stats.rpn_class_recall),
       ("classifier_total_loss", stats.classifier_mean_total_loss),
       ("classifier_class_loss", stats.classifier_mean_class_loss),
       ("classifier_regression_loss", stats.classifier_mean_regression_loss)
     ])
     stats.on_step_end()
   stats.on_epoch_end()
+  
+  # Print mAP
+  print("Mean Average Precision: %1.2f%%" % (100.0 * mAP.compute_mean_average_precision()))
 
 def train(rpn_model, classifier_model, voc):
   train_data = voc.train_data(cache_images = True, mini_batch_size = options.mini_batch)
   num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
-  stats = Statistics(num_samples = num_samples)
+  stats = ModelStatistics(num_samples = num_samples)
   logger = utils.CSVLogCallback(filename = options.log, log_epoch_number = False, log_learning_rate = False)
 
   for epoch in range(options.epochs):
@@ -573,8 +586,8 @@ def train(rpn_model, classifier_model, voc):
         ("rpn_total_loss", stats.rpn_mean_total_loss),
         ("rpn_class_loss", stats.rpn_mean_class_loss),
         ("rpn_regression_loss", stats.rpn_mean_regression_loss),
-        ("rpn_class_accuracy", stats.rpn_mean_class_accuracy),
-        ("rpn_class_recall", stats.rpn_mean_class_recall),
+        ("rpn_class_accuracy", stats.rpn_class_accuracy),
+        ("rpn_class_recall", stats.rpn_class_recall),
         ("classifier_total_loss", stats.classifier_mean_total_loss),
         ("classifier_class_loss", stats.classifier_mean_class_loss),
         ("classifier_regression_loss", stats.classifier_mean_regression_loss)
@@ -592,8 +605,8 @@ def train(rpn_model, classifier_model, voc):
       "rpn_total_loss": stats.rpn_mean_total_loss,
       "rpn_class_loss": stats.rpn_mean_class_loss,
       "rpn_regression_loss": stats.rpn_mean_regression_loss,
-      "rpn_class_accuracy": stats.rpn_mean_class_accuracy,
-      "rpn_class_recall": stats.rpn_mean_class_recall,
+      "rpn_class_accuracy": stats.rpn_class_accuracy,
+      "rpn_class_recall": stats.rpn_class_recall,
       "classifier_total_loss": stats.classifier_mean_total_loss,
       "classifier_class_loss": stats.classifier_mean_class_loss,
       "classifier_regression_loss": stats.classifier_mean_regression_loss

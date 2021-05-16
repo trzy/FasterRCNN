@@ -62,6 +62,7 @@ class VOC:
       self.x_max = x_max
       self.y_min = y_min
       self.y_max = y_max
+      self.corners = np.array([ y_min, x_min, y_max, x_max ])
       self.class_index = class_index
 
     def __repr__(self):
@@ -141,7 +142,7 @@ class VOC:
     with open(image_list_file) as fp:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(dataset_dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
-    return image_paths
+    #return image_paths
     # Debug: 60 car training images
     image_paths = [
       "2008_000028",
