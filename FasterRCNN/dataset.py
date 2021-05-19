@@ -1,5 +1,3 @@
-#TODO: use BILINEAR resizing in load_image_data() and test. The default is BICUBIC which may not perform as well. Unify with utils.load_image()
-
 from .models import region_proposal_network
 from . import utils
 
@@ -277,7 +275,6 @@ class VOC:
 
   @staticmethod
   def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
-#TODO: use ImageDescription functions to create anchor map and ground truth map, and then clone them here
     print("VOC dataset: Thread %d started" % thread_num)
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
@@ -294,52 +291,6 @@ class VOC:
       anchor_boxes_per_image_path[image_path] = anchor_boxes
     print("VOC dataset: Thread %d finished" % thread_num)
     return y_per_image_path, anchor_boxes_per_image_path
-
-  # TODO: remove this
-  def _standardize_regressions(self, y_per_image_path):
-    ty = []
-    tx = []
-    th = []
-    tw = []
-
-    # Extract all regression components for every single positive anchor
-    for _, (ground_truth_map, _, _) in y_per_image_path.items():
-      for y in range(ground_truth_map.shape[0]):
-        for x in range(ground_truth_map.shape[1]):
-          for k in range(ground_truth_map.shape[2]):
-            is_object = ground_truth_map[y,x,k,1] > 0
-            if is_object:
-              ty.append(ground_truth_map[y,x,k,4])
-              tx.append(ground_truth_map[y,x,k,5])
-              th.append(ground_truth_map[y,x,k,6])
-              tw.append(ground_truth_map[y,x,k,7])
-
-    # Compute mean and standard deviation for each
-    ty = np.array(ty)
-    tx = np.array(tx)
-    th = np.array(th)
-    tw = np.array(tw)
-    ty_mean = np.mean(ty)
-    tx_mean = np.mean(tx)
-    th_mean = np.mean(th)
-    tw_mean = np.mean(tw)
-    ty_stdev = np.std(ty)
-    tx_stdev = np.std(tx)
-    th_stdev = np.std(th)
-    tw_stdev = np.std(tw)
-
-    # TODO: figure out where to properly store these
-    means = { "tx": tx_mean, "ty": ty_mean, "tw": tw_mean, "th": th_mean }
-    stdevs = { "tx": tx_stdev, "ty": ty_stdev, "tw": tw_stdev, "th": th_stdev }
-    print("means = ", means)
-    print("stdevs = ", stdevs)
-
-    # Standardize the ground truth data
-    means = np.array([ ty_mean, tx_mean, th_mean, tw_mean ])
-    stdevs = np.array([ ty_stdev, tx_stdev, th_stdev, tw_stdev ])
-    for _, (ground_truth_map, _, _) in y_per_image_path.items():
-      ground_truth_map[:,:,:,4:8] -= means
-      ground_truth_map[:,:,:,4:8] /= stdevs
 
   # TODO: add note cautioning against mutation of any of the returned objects because they are reused 
   def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, cache_images = False):
