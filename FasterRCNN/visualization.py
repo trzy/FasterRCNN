@@ -18,7 +18,7 @@ def draw_filled_rectangle(ctx, x_min, y_min, x_max, y_max, color):
 def show_annotated_image(voc, filename, draw_anchor_points = True, draw_anchor_intersections = False, image_input_map = None, anchor_map = None):
   # Load image (automatically re-scaled)
   filepath = voc.get_full_path(filename = filename)
-  info = voc.get_image_description(path = filepath)
+  info = voc.get_image_info(path = filepath)
   image = info.load_image()
   boxes = info.get_boxes()
 
@@ -78,7 +78,7 @@ def show_objects(image, boxes_by_class_name):
 def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Load image and scale appropriately
   filepath = voc.get_full_path(filename = filename)
-  info = voc.get_image_description(path = filepath)
+  info = voc.get_image_info(path = filepath)
   image = info.load_image()
   ctx = ImageDraw.Draw(image, mode = "RGBA")
 

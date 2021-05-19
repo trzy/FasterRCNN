@@ -29,30 +29,20 @@ class VOC:
     train_image_paths = self._get_image_paths(dataset_dir, dataset = "train")
     val_image_paths = self._get_image_paths(dataset_dir, dataset = "val")
     self.num_samples = { "train": len(train_image_paths), "val": len(val_image_paths) }
-    self._descriptions_per_image_path = {}
-    self._descriptions_per_image_path["train"] = { image_path: self._get_image_description(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in train_image_paths }
-    self._descriptions_per_image_path["val"] = { image_path: self._get_image_description(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in val_image_paths }
+    self._image_info_per_path = {}
+    self._image_info_per_path["train"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in train_image_paths }
+    self._image_info_per_path["val"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in val_image_paths }
 
   def get_full_path(self, filename):
     return os.path.join(self._dataset_dir, "JPEGImages", filename)
 
-  def get_image_description(self, path):
+  def get_image_info(self, path):
     # Image names are unique, so we don't need to specify the dataset
-    if path in self._descriptions_per_image_path["train"]:
-      return self._descriptions_per_image_path["train"][path]
-    if path in self._descriptions_per_image_path["val"]:
-      return self._descriptions_per_image_path["val"][path]
+    if path in self._image_info_per_path["train"]:
+      return self._image_info_per_path["train"][path]
+    if path in self._image_info_per_path["val"]:
+      return self._image_info_per_path["val"][path]
     raise Exception("Image path not found: %s" % path)
-
-  def get_boxes_per_image_path(self, dataset):
-    """
-    Returns a dictionary where the key is image path and the value is a list of
-    Box structures.
-    """
-    assert dataset == "train" or dataset == "val"
-    # For each image, get the values from boxes_by_class_name and join them into a single list
-    boxes_per_image_path = { path: image_description.get_boxes() for path, image_description in self._descriptions_per_image_path[dataset].items() }
-    return boxes_per_image_path
 
   class Box:
     def __init__(self, x_min, y_min, x_max, y_max, class_index):
@@ -66,7 +56,7 @@ class VOC:
       return repr(self)
 
   #TODO: rename to ImageInfo or Image?
-  class ImageDescription:
+  class ImageInfo:
     def __init__(self, name, path, original_width, original_height, width, height, boxes_by_class_name):
       self.name = name
       self.path = path
@@ -209,7 +199,7 @@ class VOC:
       return 1.0
     return (min_dimension_pixels / original_height) if original_width > original_height else (min_dimension_pixels / original_width)
 
-  def _get_image_description(self, image_path, min_dimension_pixels):
+  def _get_image_info(self, image_path, min_dimension_pixels):
     basename = os.path.splitext(os.path.basename(image_path))[0]
     annotation_file = os.path.join(self._dataset_dir, "Annotations", basename) + ".xml"
     tree = ET.parse(annotation_file)
@@ -248,7 +238,7 @@ class VOC:
       #print("width: %d -> %d\theight: %d -> %d\tx_min: %d -> %d\ty_min: %d -> %d" % (original_width, width, original_height, height, original_x_min, x_min, original_y_min, y_min))
       box = VOC.Box(x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, class_index = self.class_name_to_index[class_name])
       boxes_by_class_name[class_name].append(box)
-    return VOC.ImageDescription(name = basename, path = image_path, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
+    return VOC.ImageInfo(name = basename, path = image_path, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
 
   @staticmethod
   def _create_anchor_minibatch(positive_anchors, negative_anchors, mini_batch_size, image_path):
@@ -307,7 +297,7 @@ class VOC:
     # Precache ground truth maps (y) for each image
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
-    image_paths = list(self._descriptions_per_image_path[dataset].keys())
+    image_paths = list(self._image_info_per_path[dataset].keys())
     batch_size = len(image_paths) // num_threads + 1
     print("VOC dataset: Spawning %d worker threads to process %d %s samples..." % (num_threads, len(image_paths), dataset_name))
 
@@ -320,9 +310,9 @@ class VOC:
         # Create a sub-map just to be safe in case our Python implementation
         # does not guarantee thread-safe dicts
         subset_image_paths = image_paths[i*batch_size : i*batch_size + batch_size]
-        subset_descriptions_per_image_path = { image_path: self._descriptions_per_image_path[dataset][image_path] for image_path in subset_image_paths }
+        subset_image_info_per_path = { image_path: self._image_info_per_path[dataset][image_path] for image_path in subset_image_paths }
         # Start thread
-        futures.append( executor.submit(self._prepare_data, i, subset_image_paths, subset_descriptions_per_image_path) )
+        futures.append( executor.submit(self._prepare_data, i, subset_image_paths, subset_image_info_per_path) )
       # Wait for threads to finish and then assemble results
       results = [ f.result() for f in futures ]
       for subset_y_per_image_path, subset_anchor_boxes_per_image_path in results:
@@ -347,7 +337,7 @@ class VOC:
         if cache_images and image_path in cached_image_by_path:
           image_data = cached_image_by_path[image_path]
         if image_data is None:  # NumPy array -- cannot test for == None or "is None"
-          image_data = self._descriptions_per_image_path[dataset][image_path].load_image_data()
+          image_data = self._image_info_per_path[dataset][image_path].load_image_data()
           if cache_images:
             cached_image_by_path[image_path] = image_data
 
