@@ -120,7 +120,7 @@ def _draw_ground_truth_boxes(image, boxes):
   # Draw green boxes
   ctx = ImageDraw.Draw(image)
   for box in boxes:
-    draw_rectangle(ctx, x_min = box.x_min, y_min = box.y_min, x_max = box.x_max, y_max = box.y_max, color = (0, 255, 0, 255))
+    draw_rectangle(ctx, x_min = box.corners[1], y_min = box.corners[0], x_max = box.corners[3], y_max = box.corners[2], color = (0, 255, 0, 255))
     print("box=%s" % str(box))
 
 def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points, input_image_shape):

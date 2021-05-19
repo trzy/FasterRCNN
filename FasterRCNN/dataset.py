@@ -58,15 +58,11 @@ class VOC:
 
   class Box:
     def __init__(self, x_min, y_min, x_max, y_max, class_index):
-      self.x_min = x_min
-      self.x_max = x_max
-      self.y_min = y_min
-      self.y_max = y_max
       self.corners = np.array([ y_min, x_min, y_max, x_max ])
       self.class_index = class_index
 
     def __repr__(self):
-      return "[x=%d, y=%d, width=%d, height=%d, class=%d]" % (self.x_min, self.y_min, self.x_max - self.x_min + 1, self.y_max - self.y_min + 1, self.class_index)
+      return "[x=%d, y=%d, width=%d, height=%d, class=%d]" % (self.corners[1], self.corners[0], self.corners[3] - self.corners[1] + 1, self.corners[2] - self.corners[0] + 1, self.class_index)
 
     def __str__(self):
       return repr(self)

@@ -173,7 +173,7 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
 
           # Compute IoU with ground truth box
           box = ground_truth_object_boxes[box_idx]
-          object_box_coords = (box.y_min, box.x_min, box.y_max, box.x_max)
+          object_box_coords = box.corners
           ious[y,x,k,box_idx] = intersection_over_union(box1 = anchor_box_coords, box2 = object_box_coords)
 
   # Keep track of how many anchors have been assigned to represent each box
@@ -261,11 +261,10 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
           anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
           anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
           box = ground_truth_object_boxes[box_idx]
-          object_box_coords = (box.y_min, box.x_min, box.y_max, box.x_max)
-          center_x = 0.5 * (box.x_min + box.x_max)
-          center_y = 0.5 * (box.y_min + box.y_max)
-          box_width = box.x_max - box.x_min + 1
-          box_height = box.y_max - box.y_min + 1
+          center_x = 0.5 * (box.corners[1] + box.corners[3])  # 0.5 * (x_min + x_max)
+          center_y = 0.5 * (box.corners[0] + box.corners[2])  # 0.5 * (y_min + y_max)
+          box_width = box.corners[3] - box.corners[1] + 1     # x_max - x_min + 1
+          box_height = box.corners[2] - box.corners[0] + 1    # y_max - y_min + 1
           ty = (center_y - anchor_center_y) / anchor_height
           tx = (center_x - anchor_center_x) / anchor_width
           th = log(box_height / anchor_height)
@@ -426,7 +425,7 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
 
     for box in ground_truth_object_boxes:
       proposal_box_coords = proposals[i,0:4]
-      object_box_coords = np.array([box.y_min, box.x_min, box.y_max, box.x_max])
+      object_box_coords = box.corners
       iou = intersection_over_union(box1 = proposal_box_coords, box2 = object_box_coords)
       if iou > iou_threshold and iou > best_iou:
         best_iou = iou
@@ -441,10 +440,10 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
     # change shape during the learning process and the model will learn how to
     # transform a proposal box into an accurate bounding box.
     if best_class_idx > 0 and best_box is not None:
-      box_center_y = 0.5 * (best_box.y_min + best_box.y_max)
-      box_center_x = 0.5 * (best_box.x_min + best_box.x_max)
-      box_height = best_box.y_max - best_box.y_min + 1
-      box_width = best_box.x_max - best_box.x_min + 1
+      box_center_y = 0.5 * (best_box.corners[0] + best_box.corners[2])  # 0.5 * (y_min + y_max)
+      box_center_x = 0.5 * (best_box.corners[1] + best_box.corners[3])  # 0.5 * (x_min + x_max)
+      box_height = best_box.corners[2] - best_box.corners[0] + 1        # y_max - y_min + 1
+      box_width = best_box.corners[3] - best_box.corners[1] + 1         # x_max - x_min + 1
       ty = (box_center_y - proposal_center_y[i]) / proposal_height[i]
       tx = (box_center_x - proposal_center_x[i]) / proposal_width[i]
       th = log(box_height / proposal_height[i])

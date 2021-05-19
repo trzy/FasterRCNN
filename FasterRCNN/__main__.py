@@ -7,15 +7,8 @@
 # Main module.
 #
 
-#TODO:
-# - In dataset, remove y_min/x_min/etc. and only use corners 
-
-
-
 # TODO:
-# - Standardize on notation for y_true maps and return complete ground truth map alongside mini-batch from iterator
-# - Desperately need to return a separate map indicating anchor validity and then force it to be passed in explicitly, including
-#   to training process, so that y_true becomes a tuple of two maps. 
+# - Standardize on notation for y_true maps
 # - Desperately need to settle on some better naming conventions for the various y outputs and ground truths, as well as proposal
 #   maps in different formats (e.g., pixel units, map units, etc.)
 # - Clip final boxes? See: 2010_004041.jpg
@@ -30,12 +23,6 @@
 # Faster R-CNN in Keras: https://towardsdatascience.com/faster-r-cnn-object-detection-implemented-by-keras-for-custom-data-from-googles-open-images-125f62b9141a
 # Understanding RoI pooling: https://towardsdatascience.com/understanding-region-of-interest-part-1-roi-pooling-e4f5dd65bb44
 # NMS for object detection: https://towardsdatascience.com/non-maximum-suppression-nms-93ce178e177c
-#
-
-#
-# TODO:
-# - Observed: the maximum number of positive anchors in in a VOC image is 102.
-#   Is this a bug in our code? Paper talks about a 1:1 (128:128) ratio.
 #
 
 from . import utils
