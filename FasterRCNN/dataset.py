@@ -55,7 +55,6 @@ class VOC:
     def __str__(self):
       return repr(self)
 
-  #TODO: rename to ImageInfo or Image?
   class ImageInfo:
     def __init__(self, name, path, original_width, original_height, width, height, boxes_by_class_name):
       self.name = name
@@ -90,7 +89,6 @@ class VOC:
       """
       return list(itertools.chain.from_iterable(self.boxes_by_class_name.values()))
 
-    #TODO: this needs to be renamed and in general, how ground truth maps are named and returned needs to be rethought
     def get_ground_truth_map(self):
       if self._ground_truth_map is None:
         anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
