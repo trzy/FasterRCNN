@@ -284,8 +284,13 @@ class VOC:
     for image_path in image_paths:
       description = descriptions_per_image_path[image_path]
       anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
-      ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = description.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
-      y_per_image_path[image_path] = (ground_truth_map, positive_anchors, negative_anchors)
+      ground_truth_object_boxes = description.get_boxes()
+      # Create two copies of the ground truth map: one with all valid anchors
+      # and a second one that will be used by the dataset iterator to define
+      # new mini-batches each epoch.
+      complete_ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = ground_truth_object_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+      minibatch_ground_truth_map = np.copy(complete_ground_truth_map)
+      y_per_image_path[image_path] = (complete_ground_truth_map, minibatch_ground_truth_map, positive_anchors, negative_anchors, ground_truth_object_boxes)
       anchor_boxes_per_image_path[image_path] = anchor_boxes
     print("VOC dataset: Thread %d finished" % thread_num)
     return y_per_image_path, anchor_boxes_per_image_path
@@ -336,14 +341,14 @@ class VOC:
       ground_truth_map[:,:,:,4:8] -= means
       ground_truth_map[:,:,:,4:8] /= stdevs
 
-  # TODO: remove limit_samples. It is not correct because self.num_samples will never match it.
-  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, limit_samples = None, cache_images = False):
-    return self._data_iterator(dataset = "train", mini_batch_size = mini_batch_size, shuffle = shuffle, num_threads = num_threads, limit_samples = limit_samples, cache_images = cache_images)
+  # TODO: add note cautioning against mutation of any of the returned objects because they are reused 
+  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, cache_images = False):
+    return self._data_iterator(dataset = "train", mini_batch_size = mini_batch_size, shuffle = shuffle, num_threads = num_threads, cache_images = cache_images)
 
   def validation_data(self, mini_batch_size = 256, num_threads = 16, limit_samples = None):
-    return self._data_iterator(dataset = "val", mini_batch_size = mini_batch_size, shuffle = False, num_threads = num_threads, limit_samples = limit_samples, cache_images = False)
+    return self._data_iterator(dataset = "val", mini_batch_size = mini_batch_size, shuffle = False, num_threads = num_threads, cache_images = False)
 
-  def _data_iterator(self, dataset, mini_batch_size, shuffle, num_threads, limit_samples, cache_images):
+  def _data_iterator(self, dataset, mini_batch_size, shuffle, num_threads, cache_images):
     import concurrent.futures
 
     dataset_name = "training" if dataset == "train" else "validation"
@@ -352,8 +357,6 @@ class VOC:
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
     image_paths = list(self._descriptions_per_image_path[dataset].keys())
-    if limit_samples:
-      image_paths = image_paths[0:limit_samples]
     batch_size = len(image_paths) // num_threads + 1
     print("VOC dataset: Spawning %d worker threads to process %d %s samples..." % (num_threads, len(image_paths), dataset_name))
 
@@ -388,7 +391,6 @@ class VOC:
 
       # Return one image at a time
       for image_path in image_paths:
-        # Retrieve ground truth 
         # Load image
         image_data = None
         if cache_images and image_path in cached_image_by_path:
@@ -398,22 +400,20 @@ class VOC:
           if cache_images:
             cached_image_by_path[image_path] = image_data
 
-        # Retrieve pre-computed y value and anchor boxes
-        ground_truth_map, positive_anchors, negative_anchors = y_per_image_path[image_path]
+        # Retrieve pre-computed ground truth maps (i.e., y value for training),
+        # anchor boxes, and ground truth object boxes
+        complete_ground_truth_map, minibatch_ground_truth_map, positive_anchors, negative_anchors, ground_truth_object_boxes = y_per_image_path[image_path]
         anchor_boxes = anchor_boxes_per_image_path[image_path]
-
-        # Observed: the maximum number of positive anchors in in a VOC image is 102.
-        # Is this a bug in our code? Paper talks about a 1:1 (128:128) ratio.
 
         # Randomly choose anchors to use in this mini-batch
         positive_anchors, negative_anchors = self._create_anchor_minibatch(positive_anchors = positive_anchors, negative_anchors = negative_anchors, mini_batch_size = mini_batch_size, image_path = image_path)
 
         # Mark which anchors to use in the map
-        ground_truth_map[:,:,:,0] = 0.0 # clear out previous (we re-use the same object)
+        minibatch_ground_truth_map[:,:,:,0] = 0.0 # clear out previous (we re-use the same object)
         for anchor_position in positive_anchors + negative_anchors:
           y = anchor_position[0]
           x = anchor_position[1]
           k = anchor_position[2]
-          ground_truth_map[y,x,k,0] = 1.0
+          minibatch_ground_truth_map[y,x,k,0] = 1.0
 
-        yield image_path, image_data, ground_truth_map, anchor_boxes
+        yield image_path, image_data, minibatch_ground_truth_map, complete_ground_truth_map, anchor_boxes, ground_truth_object_boxes
