@@ -265,7 +265,6 @@ class VOC:
 
   @staticmethod
   def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
-    print("VOC dataset: Thread %d started" % thread_num)
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
     for image_path in image_paths:
@@ -279,14 +278,13 @@ class VOC:
       minibatch_ground_truth_map = np.copy(complete_ground_truth_map)
       y_per_image_path[image_path] = (complete_ground_truth_map, minibatch_ground_truth_map, positive_anchors, negative_anchors, ground_truth_object_boxes)
       anchor_boxes_per_image_path[image_path] = anchor_boxes
-    print("VOC dataset: Thread %d finished" % thread_num)
     return y_per_image_path, anchor_boxes_per_image_path
 
   # TODO: add note cautioning against mutation of any of the returned objects because they are reused 
-  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = 16, cache_images = False):
+  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = os.cpu_count(), cache_images = False):
     return self._data_iterator(dataset = "train", mini_batch_size = mini_batch_size, shuffle = shuffle, num_threads = num_threads, cache_images = cache_images)
 
-  def validation_data(self, mini_batch_size = 256, num_threads = 16, limit_samples = None):
+  def validation_data(self, mini_batch_size = 256, num_threads = os.cpu_count(), limit_samples = None):
     return self._data_iterator(dataset = "val", mini_batch_size = mini_batch_size, shuffle = False, num_threads = num_threads, cache_images = False)
 
   def _data_iterator(self, dataset, mini_batch_size, shuffle, num_threads, cache_images):
