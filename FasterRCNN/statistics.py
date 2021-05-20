@@ -191,9 +191,24 @@ class ModelStatistics:
         Number of samples per epoch, used to pre-allocate arrays.
     """
     self._num_samples = num_samples
-    self._reset()
+    self._reset_internals()
 
-  def _reset(self):
+    # We do not reset the exposed members each epoch and instead allow them to
+    # retain their last good values. This is because Keras's progress bar 
+    # performs arithmetic on values and if at some point an inf slips in (which
+    # I *think* occurs when the first image in an epoch has no detections and
+    # prevents the classifier from running and updating its metrics), the
+    # entire epoch will appear to be inf. Took me forever to debug that ;)
+    self.rpn_mean_class_loss = float("inf")
+    self.rpn_mean_regression_loss = float("inf")
+    self.rpn_mean_total_loss = float("inf")
+    self.rpn_class_accuracy = 0
+    self.rpn_class_recall = 0
+    self.classifier_mean_class_loss = float("inf")
+    self.classifier_mean_regression_loss = float("inf")
+    self.classifier_mean_total_loss = float("inf")
+
+  def _reset_internals(self):
     num_samples = self._num_samples
 
     # The classifier model is not run during steps where no proposals are
@@ -218,16 +233,6 @@ class ModelStatistics:
     self._classifier_regression_targets = np.zeros((0,4))
     self._classifier_regression_predictions = np.zeros((0,4))
 
-    self.rpn_mean_class_loss = float("inf")
-    self.rpn_class_accuracy = 0
-    self.rpn_class_recall = 0
-    self.rpn_mean_regression_loss = float("inf")
-    self.rpn_mean_total_loss = float("inf")
-    
-    self.classifier_mean_class_loss = float("inf")
-    self.classifier_mean_regression_loss = float("inf")
-    self.classifier_mean_total_loss = float("inf")
-
     self._timing_samples = defaultdict(list)
 
   def _update_timings(self, timing_samples):
@@ -238,7 +243,7 @@ class ModelStatistics:
     """
     Must be called at the beginning of each epoch.
     """
-    self._reset()
+    self._reset_internals()
 
   def on_epoch_end(self):
     """
