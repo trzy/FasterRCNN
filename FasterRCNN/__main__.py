@@ -473,7 +473,7 @@ def validate(rpn_model, classifier_model, voc):
   print("Mean Average Precision: %1.2f%%" % (100.0 * mAP.compute_mean_average_precision()))
 
 def train(rpn_model, classifier_model, voc):
-  train_data = voc.train_data(cache_images = True, mini_batch_size = options.mini_batch)
+  train_data = voc.train_data(mini_batch_size = options.mini_batch, augment = options.augment, cache_images = True)
   num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
   stats = ModelStatistics(num_samples = num_samples)
@@ -663,6 +663,7 @@ if __name__ == "__main__":
   parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = 256, help = "Anchor mini-batch size (per image) for region proposal network")
   parser.add_argument("--max-proposals", metavar = "size", type = utils.positive_int, action = "store", default = 0, help = "Maximum number of proposals to extract")
   parser.add_argument("--proposal-batch", metavar = "size", type = utils.positive_int, action = "store", default = 4, help = "Proposal batch size (per image) for classifier network")
+  parser.add_argument("--augment", action="store_true", help = "Augment training data with random horizontal flips")
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
   parser.add_argument("--freeze", action = "store_true", help = "Freeze first 2 blocks of VGG-16")
   parser.add_argument("--rpn-only", action = "store_true", help = "Train only the region proposal network")

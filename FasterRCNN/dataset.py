@@ -1,3 +1,5 @@
+#TODO: use "difficult" attribute to optionally exclude difficult images? Perhaps an an option in VOC initializer.
+
 from .models import region_proposal_network
 from . import utils
 
@@ -31,6 +33,7 @@ class VOC:
     self.num_samples = { "train": len(train_image_paths), "val": len(val_image_paths) }
     self._image_info_per_path = {}
     self._image_info_per_path["train"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in train_image_paths }
+    self._image_info_per_path["train_hflip"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels, horizontal_flip = True) for image_path in train_image_paths } 
     self._image_info_per_path["val"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in val_image_paths }
 
   def get_full_path(self, filename):
@@ -56,7 +59,7 @@ class VOC:
       return repr(self)
 
   class ImageInfo:
-    def __init__(self, name, path, original_width, original_height, width, height, boxes_by_class_name):
+    def __init__(self, name, path, original_width, original_height, width, height, boxes_by_class_name, horizontal_flip):
       self.name = name
       self.path = path
       self.original_width = original_width
@@ -64,6 +67,7 @@ class VOC:
       self.width = width
       self.height = height
       self.boxes_by_class_name = boxes_by_class_name
+      self.horizontal_flip = horizontal_flip
 
       self._ground_truth_map = None # computed on-demand and cached
 
@@ -71,7 +75,10 @@ class VOC:
       """
       Loads image as PIL object, resized to new dimensions.
       """
-      return utils.load_image(url = self.path, width = self.width, height = self.height)
+      image = utils.load_image(url = self.path, width = self.width, height = self.height)
+      if self.horizontal_flip:
+        image = image.transpose(method = Image.FLIP_LEFT_RIGHT)
+      return image
       
     def load_image_data(self):
       """
@@ -197,7 +204,7 @@ class VOC:
       return 1.0
     return (min_dimension_pixels / original_height) if original_width > original_height else (min_dimension_pixels / original_width)
 
-  def _get_image_info(self, image_path, min_dimension_pixels):
+  def _get_image_info(self, image_path, min_dimension_pixels, horizontal_flip = False):
     basename = os.path.splitext(os.path.basename(image_path))[0]
     annotation_file = os.path.join(self._dataset_dir, "Annotations", basename) + ".xml"
     tree = ET.parse(annotation_file)
@@ -216,7 +223,6 @@ class VOC:
     assert depth == 3
     boxes_by_class_name = defaultdict(list)
     for obj in root.findall("object"):
-      #TODO: use "difficult" attribute to optionally exclude difficult images?
       assert len(obj.findall("name")) == 1
       assert len(obj.findall("bndbox")) == 1
       class_name = obj.find("name").text
@@ -229,14 +235,18 @@ class VOC:
       original_y_min = int(bndbox.find("ymin").text)
       original_x_max = int(bndbox.find("xmax").text)
       original_y_max = int(bndbox.find("ymax").text)
-      x_min = original_x_min * scale_factor
       y_min = original_y_min * scale_factor
-      x_max = original_x_max * scale_factor
       y_max = original_y_max * scale_factor
+      if not horizontal_flip:
+        x_min = original_x_min * scale_factor
+        x_max = original_x_max * scale_factor
+      else: 
+        x_min = (original_width - 1 - original_x_max) * scale_factor
+        x_max = (original_width - 1 - original_x_min) * scale_factor
       #print("width: %d -> %d\theight: %d -> %d\tx_min: %d -> %d\ty_min: %d -> %d" % (original_width, width, original_height, height, original_x_min, x_min, original_y_min, y_min))
       box = VOC.Box(x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, class_index = self.class_name_to_index[class_name])
       boxes_by_class_name[class_name].append(box)
-    return VOC.ImageInfo(name = basename, path = image_path, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name)
+    return VOC.ImageInfo(name = basename, path = image_path, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name, horizontal_flip = horizontal_flip)
 
   @staticmethod
   def _create_anchor_minibatch(positive_anchors, negative_anchors, mini_batch_size, image_path):
@@ -262,13 +272,13 @@ class VOC:
     return positive_samples, negative_samples
 
   @staticmethod
-  def _prepare_data(thread_num, image_paths, descriptions_per_image_path):
+  def _prepare_data_thread(thread_num, image_paths, image_info_per_path):
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
     for image_path in image_paths:
-      description = descriptions_per_image_path[image_path]
-      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = description.shape())
-      ground_truth_object_boxes = description.get_boxes()
+      info = image_info_per_path[image_path]
+      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = info.shape())
+      ground_truth_object_boxes = info.get_boxes()
       # Create two copies of the ground truth map: one with all valid anchors
       # and a second one that will be used by the dataset iterator to define
       # new mini-batches each epoch.
@@ -278,26 +288,20 @@ class VOC:
       anchor_boxes_per_image_path[image_path] = anchor_boxes
     return y_per_image_path, anchor_boxes_per_image_path
 
-  # TODO: add note cautioning against mutation of any of the returned objects because they are reused 
-  def train_data(self, mini_batch_size = 256, shuffle = True, num_threads = os.cpu_count(), cache_images = False):
-    return self._data_iterator(dataset = "train", mini_batch_size = mini_batch_size, shuffle = shuffle, num_threads = num_threads, cache_images = cache_images)
-
-  def validation_data(self, mini_batch_size = 256, num_threads = os.cpu_count(), limit_samples = None):
-    return self._data_iterator(dataset = "val", mini_batch_size = mini_batch_size, shuffle = False, num_threads = num_threads, cache_images = False)
-
-  def _data_iterator(self, dataset, mini_batch_size, shuffle, num_threads, cache_images):
+  def _prepare_data(self, dataset, augmented, num_threads):
     import concurrent.futures
 
-    dataset_name = "training" if dataset == "train" else "validation"
-
-    # Precache ground truth maps (y) for each image
+    # Precompute ground truth maps (y) for each image
     y_per_image_path = {}
     anchor_boxes_per_image_path = {}
-    image_paths = list(self._image_info_per_path[dataset].keys())
-    batch_size = len(image_paths) // num_threads + 1
-    print("VOC dataset: Spawning %d worker threads to process %d %s samples..." % (num_threads, len(image_paths), dataset_name))
 
-    # Run multiple threads to compute the maps
+    # Shard the data for faster processing
+    dataset_pretty_name = "training" if dataset.startswith("train") else "validation"
+    image_paths = list(self._image_info_per_path[dataset].keys())
+    shard_size = len(image_paths) // num_threads + 1
+    print("VOC dataset: Spawning %d worker threads to process %d %s%s samples..." % (num_threads, len(image_paths), "augmented " if augmented else "", dataset_pretty_name))
+
+    # Run a thread for each shard to compute the maps
     tic = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor() as executor:
       # Start each thread
@@ -305,22 +309,45 @@ class VOC:
       for i in range(num_threads):
         # Create a sub-map just to be safe in case our Python implementation
         # does not guarantee thread-safe dicts
-        subset_image_paths = image_paths[i*batch_size : i*batch_size + batch_size]
+        subset_image_paths = image_paths[i*shard_size : i*shard_size + shard_size]
         subset_image_info_per_path = { image_path: self._image_info_per_path[dataset][image_path] for image_path in subset_image_paths }
         # Start thread
-        futures.append( executor.submit(self._prepare_data, i, subset_image_paths, subset_image_info_per_path) )
+        futures.append( executor.submit(self._prepare_data_thread, i, subset_image_paths, subset_image_info_per_path) )
       # Wait for threads to finish and then assemble results
       results = [ f.result() for f in futures ]
       for subset_y_per_image_path, subset_anchor_boxes_per_image_path in results:
         y_per_image_path.update(subset_y_per_image_path)
         anchor_boxes_per_image_path.update(subset_anchor_boxes_per_image_path)
     toc = time.perf_counter()
-    print("VOC dataset: Processed %d %s samples in %1.1f minutes" % (len(y_per_image_path), dataset_name, ((toc - tic) / 60.0)))
+    print("VOC dataset: Processed %d samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
 
+    return y_per_image_path, anchor_boxes_per_image_path
+
+  # TODO: add note cautioning against mutation of any of the returned objects because they are reused 
+  def train_data(self, mini_batch_size = 256, shuffle = True, augment = False, num_threads = os.cpu_count(), cache_images = False):
+    return self._data_iterator(normal_dataset = "train", augmented_dataset = "train_hflip" if augment else None, mini_batch_size = mini_batch_size, shuffle = shuffle, num_threads = num_threads, cache_images = cache_images)
+
+  def validation_data(self, mini_batch_size = 256, num_threads = os.cpu_count(), limit_samples = None):
+    return self._data_iterator(normal_dataset = "val", augmented_dataset = None, mini_batch_size = mini_batch_size, shuffle = False, num_threads = num_threads, cache_images = False)
+
+  def _data_iterator(self, normal_dataset, augmented_dataset, mini_batch_size, shuffle, num_threads, cache_images):
+    # Precompute the ground truth maps, including augmented version if needed
+    normal_y_per_image_path, normal_anchor_boxes_per_image_path = self._prepare_data(dataset = normal_dataset, augmented = False, num_threads = num_threads)
+    y_per_image_path = { normal_dataset: normal_y_per_image_path }
+    anchor_boxes_per_image_path = { normal_dataset: normal_anchor_boxes_per_image_path }
+    assert normal_y_per_image_path.keys() == self._image_info_per_path[normal_dataset].keys()
+    if augmented_dataset is not None:
+      augmented_y_per_image_path, augmented_anchor_boxes_per_image_path = self._prepare_data(dataset = augmented_dataset, augmented = True, num_threads = num_threads)
+      y_per_image_path[augmented_dataset] = augmented_y_per_image_path
+      anchor_boxes_per_image_path[augmented_dataset] = augmented_anchor_boxes_per_image_path
+      assert augmented_y_per_image_path.keys() == normal_y_per_image_path.keys()
+    
     # Image cache
-    cached_image_by_path = {}
+    cached_normal_image_by_path = {}
+    cached_augmented_image_by_path = {}
 
     # Iterate
+    image_paths = list(self._image_info_per_path[normal_dataset].keys())
     while True:
       # Shuffle data each epoch
       if shuffle:
@@ -328,19 +355,28 @@ class VOC:
 
       # Return one image at a time
       for image_path in image_paths:
+        # Random horizontal flip: determine which dataset to draw from if
+        # augmentation is desired
+        if augmented_dataset is not None and random.randint(0, 1) != 0:
+          cached_image_by_path = cached_augmented_image_by_path
+          specific_dataset = augmented_dataset
+        else:
+          cached_image_by_path = cached_normal_image_by_path
+          specific_dataset = normal_dataset
+
         # Load image
         image_data = None
         if cache_images and image_path in cached_image_by_path:
           image_data = cached_image_by_path[image_path]
         if image_data is None:  # NumPy array -- cannot test for == None or "is None"
-          image_data = self._image_info_per_path[dataset][image_path].load_image_data()
+          image_data = self._image_info_per_path[specific_dataset][image_path].load_image_data()
           if cache_images:
             cached_image_by_path[image_path] = image_data
 
         # Retrieve pre-computed ground truth maps (i.e., y value for training),
         # anchor boxes, and ground truth object boxes
-        complete_ground_truth_map, minibatch_ground_truth_map, positive_anchors, negative_anchors, ground_truth_object_boxes = y_per_image_path[image_path]
-        anchor_boxes = anchor_boxes_per_image_path[image_path]
+        complete_ground_truth_map, minibatch_ground_truth_map, positive_anchors, negative_anchors, ground_truth_object_boxes = y_per_image_path[specific_dataset][image_path]
+        anchor_boxes = anchor_boxes_per_image_path[specific_dataset][image_path]
 
         # Randomly choose anchors to use in this mini-batch
         positive_anchors, negative_anchors = self._create_anchor_minibatch(positive_anchors = positive_anchors, negative_anchors = negative_anchors, mini_batch_size = mini_batch_size, image_path = image_path)
