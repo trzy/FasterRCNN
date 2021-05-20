@@ -134,7 +134,7 @@ def build_complete_model(rpn_model, classifier_model):
   return model
 
 def show_image(voc, filename):
-  info = voc.get_image_description(path = voc.get_full_path(filename))
+  info = voc.get_image_info(path = voc.get_full_path(filename))
 
   # Need to build the model for this image size in order to be able to visualize boxes correctly
   conv_model = vgg16.conv_layers(input_shape = (info.height,info.width,3))
@@ -148,7 +148,7 @@ def infer_rpn_boxes(rpn_model, voc, filename):
   Run RPN model to find objects and draw their bounding boxes.
   """
   from .models.losses import rpn_class_loss_np
-  info = voc.get_image_description(path = voc.get_full_path(filename))
+  info = voc.get_image_info(path = voc.get_full_path(filename))
   x = info.load_image_data()
   x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
   y_class, y_regression = rpn_model.predict(x)

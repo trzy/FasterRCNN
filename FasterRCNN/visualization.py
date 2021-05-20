@@ -79,11 +79,11 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Load image and scale appropriately
   filepath = voc.get_full_path(filename = filename)
   info = voc.get_image_info(path = filepath)
-  image = info.load_image()
+  image = info.load_image()  
   ctx = ImageDraw.Draw(image, mode = "RGBA")
 
   # Get all anchors for this image size
-  anchor_boxes, _ = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
+  anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
 
   # Draw positive anchors we got correct (true positives) as green and those we mispredicted as orange (false negatives)
   for y in range(y_class.shape[1]):
@@ -96,7 +96,7 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
           draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (255, 100, 0, 64))
 
   # Extract proposals (which also performs NMS)
-  final_proposals = region_proposal_network.extract_proposals(y_predicted_class = y_class, y_predicted_regression = y_regression, y_true = y_true, anchor_boxes = anchor_boxes)
+  final_proposals = region_proposal_network.extract_proposals(y_predicted_class = y_class, y_predicted_regression = y_regression, input_image_shape = info.shape(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
 
   # Draw boxes
   for i in range(final_proposals.shape[0]):
