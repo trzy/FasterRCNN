@@ -470,7 +470,7 @@ def validate(rpn_model, classifier_model, voc):
   stats.on_epoch_end()
   
   # Print mAP
-  print("Mean Average Precision: %1.2f%%" % (100.0 * mAP.compute_mean_average_precision()))
+  print("Mean Average Precision: %1.2f%%" % (100.0 * mAP.compute_mean_average_precision(interpolated = True)))
 
 def train(rpn_model, classifier_model, voc):
   train_data = voc.train_data(mini_batch_size = options.mini_batch, augment = options.augment, cache_images = True)

@@ -104,7 +104,7 @@ class AveragePrecision:
     for class_index, count in object_count_by_class_index.items():
       self._object_count_by_class_index[class_index] += object_count_by_class_index[class_index]
 
-  def _compute_average_precision(self, class_index):
+  def _compute_average_precision(self, class_index, interpolated):
     # Sort predictions in descending order of score
     sorted_predictions = sorted(self._unsorted_predictions_by_class_index[class_index], key = lambda prediction: prediction[0], reverse = True)
     num_ground_truth_positives = self._object_count_by_class_index[class_index]
@@ -122,15 +122,22 @@ class AveragePrecision:
       recall_array.append(recall)
       precision_array.append(precision)
 
-    # Compute AP by integrating under the curve. We do not interpolate
-    # precision value to remove increases (as is done in the URL below). Numpy
-    # seems perfectly capable of handling x arrays with repeating values.
+    # Interpolation means we compute the highest precision observed at a given
+    # recall value. Specifically, it means taking the maximum value seen from
+    # each point onward. See URL below:
     # https://towardsdatascience.com/breaking-down-mean-average-precision-map-ae462f623a52#1a59
+    # AP often uses interpolated precision but we make it optional here.
+    if interpolated:
+      for i in range(len(precision_array)):
+        precision_array[i] = np.max(precision_array[i:])
+    
+    # Compute AP by integrating under the curve. Numpy seems perfectly capable
+    # of handling x arrays with repeating values.
     average_precision = np.trapz(x = recall_array, y = precision_array)
 
     return average_precision, recall_array, precision_array
 
-  def compute_mean_average_precision(self):
+  def compute_mean_average_precision(self, interpolated = False):
     """
     Calculates mAP (mean average precision) using all the data accumulated thus
     far. This should be called only after all image results have been
@@ -143,11 +150,11 @@ class AveragePrecision:
     """
     average_precisions = []
     for class_index in self._object_count_by_class_index:
-      average_precision, _, _ = self._compute_average_precision(class_index = class_index)
+      average_precision, _, _ = self._compute_average_precision(class_index = class_index, interpolated = interpolated)
       average_precisions.append(average_precision)
     return np.mean(average_precisions)
   
-  def plot_precision_vs_recall(self, class_index, class_name = None):
+  def plot_precision_vs_recall(self, class_index, class_name = None, interpolated = False):
     """
     Plots precision (y axis) vs. recall (x axis) using all the data accumulated
     thus far. This should be called only after all image results have been
@@ -161,13 +168,16 @@ class AveragePrecision:
         If given, used as the class name on the plot label. Otherwise, the
         numeric class index is used directly.
     """
-    average_precision, recall_array, precision_array = self._compute_average_precision(class_index = class_index)
+    average_precision, recall_array, precision_array = self._compute_average_precision(class_index = class_index, interpolated = interpolated)
 
     # Plot raw precision vs. recall
     import matplotlib.pyplot as plt
     label = "{0} AP={1:1.2f}".format("Class {}".format(class_index) if class_name is None else class_name, average_precision)
     plt.plot(recall_array, precision_array, label = label)
-    plt.title("Precision vs. Recall")
+    if interpolated:
+      plt.title("Precision (Interpolated) vs. Recall")
+    else:
+      plt.title("Precision vs. Recall")
     plt.xlabel("Recall")
     plt.ylabel("Precision")
     plt.legend()
