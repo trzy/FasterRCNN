@@ -54,6 +54,7 @@ from tensorflow.keras.optimizers import SGD
 from tensorflow.keras import backend as K
 import time
 
+
 def load_image(url, min_dimension_pixels, voc = None):
   """
   Loads image and returns NumPy tensor of shape (height,width,3). Image data is
@@ -112,9 +113,9 @@ def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3)
     utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2")
   return model, conv_model
 
-def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, dropout_fraction, weights_filepath = None):
+def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, dropout_fraction, l2 = 0, weights_filepath = None):
   proposal_boxes = Input(shape = (None, 4), dtype = tf.int32)
-  classifier_output, regression_output = classifier_network.layers(num_classes = num_classes, input_map = conv_model.outputs[0], proposal_boxes = proposal_boxes, dropout_fraction = dropout_fraction)
+  classifier_output, regression_output = classifier_network.layers(num_classes = num_classes, input_map = conv_model.outputs[0], proposal_boxes = proposal_boxes, dropout_fraction = dropout_fraction, l2 = l2)
   model = Model([conv_model.input, proposal_boxes], [classifier_output, regression_output])
 
   optimizer = SGD(lr = learning_rate, momentum = 0.9, clipnorm = clipnorm)
@@ -487,10 +488,7 @@ def train(rpn_model, classifier_model, voc):
     for i in range(num_samples):
       stats.on_step_begin()
 
-      # TODO: Better separation of RPN and classifier
-
       # Fetch one sample and reshape to batch size of 1
-      # TODO: should we just return complete y_true with a y_batch/y_valid map to define mini-batch?
       rpn_train_t0 = time.perf_counter()
       image_path, x, y_true_minibatch, y_true, anchor_boxes, ground_truth_object_boxes = next(train_data)
       input_image_shape = x.shape
@@ -538,6 +536,15 @@ def train(rpn_model, classifier_model, voc):
 
           # Do we have any proposals to process?
           if proposals.size > 0:
+            """
+            get_conv_output = K.function([rpn_model.layers[0].input],[rpn_model.get_layer("block5_conv3").output])
+            conv_output = get_conv_output([x])[0]
+
+            get_pool_output = K.function(classifier_model.inputs,[classifier_model.get_layer("roi_pool").output])
+            pool_output = get_pool_output([x, proposals])[0]
+            debug_pool_layer(feature_map = conv_output, rois = proposals, pool_output = pool_output)
+            """
+
             # Classifier: back prop one step (and then predict)
             classifier_train_t0 = time.perf_counter()
             classifier_losses = classifier_model.train_on_batch(x = [ x, proposals ], y = [ y_true_proposal_classes, y_true_proposal_regressions ])
@@ -678,9 +685,16 @@ if __name__ == "__main__":
   voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600)
 
   rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
-  classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, dropout_fraction = options.dropout)
+  classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, dropout_fraction = options.dropout, l2 = options.l2)
   complete_model = build_complete_model(rpn_model = rpn_model, classifier_model = classifier_model) # contains all weights, used for saving weights
   complete_model.summary()
+
+  # Run-time environment
+  cuda_available = tf.test.is_built_with_cuda()
+  gpu_available = tf.test.is_gpu_available(cuda_only = False, min_cuda_compute_capability = None)
+  print("CUDA Available : %s" % ("yes" if cuda_available else "no"))
+  print("GPU Available  : %s" % ("yes" if gpu_available else "no"))
+  print("Eager Execution: %s" % ("yes" if tf.executing_eagerly() else "no"))
 
   if options.show_image:
     show_image(voc = voc, filename = options.show_image)

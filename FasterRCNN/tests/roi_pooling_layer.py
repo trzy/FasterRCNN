@@ -30,7 +30,7 @@ if __name__ == "__main__":
   num_rois = 4
 
   # Build a model to test just the RoI layer using the Keras functional API
-  input_map = Input(shape = (9,8,pool_size))                  # input map size
+  input_map = Input(shape = (9,8,num_channels))               # input map size
   input_rois = Input(shape = (num_rois,4), dtype = tf.int32)  # N RoIs, each of length 4 (y,x,h,w)
   output_roi_pool = RoIPoolingLayer(pool_size = pool_size)([input_map, input_rois])
   roi_model = Model([input_map, input_rois], output_roi_pool)

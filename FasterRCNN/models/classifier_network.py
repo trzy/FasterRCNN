@@ -9,7 +9,7 @@ from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import TimeDistributed
 
-def layers(num_classes, input_map, proposal_boxes, dropout_fraction):
+def layers(num_classes, input_map, proposal_boxes, dropout_fraction, l2 = 0):
   """
   Constructs classifier network from conv. net output map and proposal boxes
   scaled to the map's coordinate space. Shape of proposal_boxes is (N,4) where
@@ -21,22 +21,24 @@ def layers(num_classes, input_map, proposal_boxes, dropout_fraction):
     3: x_max
   """
   assert len(input_map.shape) == 4
+  
+  regularizer = tf.keras.regularizers.l2(l2)
 
   # RoI pool layer creates 7x7 map for each proposal. These are independently
   # passed through two fully-connected layers.
   #TODO: layer initialization
   #TODO: dropout layers
-  pool = RoIPoolingLayer(pool_size = 7)([input_map, proposal_boxes])
+  pool = RoIPoolingLayer(pool_size = 7, name = "roi_pool")([input_map, proposal_boxes])
   flattened = TimeDistributed(Flatten())(pool)
   if dropout_fraction != 0:
-    fc1 = TimeDistributed(name = "classifier_fc1", layer = Dense(units = 4096, activation = "relu"))(flattened)
+    fc1 = TimeDistributed(name = "classifier_fc1", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(flattened)
     do1 = TimeDistributed(Dropout(dropout_fraction))(fc1)
-    fc2 = TimeDistributed(name = "classifier_fc2", layer = Dense(units = 4096, activation = "relu"))(do1)
+    fc2 = TimeDistributed(name = "classifier_fc2", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(do1)
     do2 = TimeDistributed(Dropout(dropout_fraction))(fc2)
     out = do2
   else:
-    fc1 = TimeDistributed(name = "classifier_fc1", layer = Dense(units = 4096, activation = "relu"))(flattened)
-    fc2 = TimeDistributed(name = "classifier_fc2", layer = Dense(units = 4096, activation = "relu"))(fc1)
+    fc1 = TimeDistributed(name = "classifier_fc1", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(flattened)
+    fc2 = TimeDistributed(name = "classifier_fc2", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(fc1)
     out = fc2
 
   # Output: classifier
