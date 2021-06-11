@@ -660,7 +660,7 @@ if __name__ == "__main__":
   exit()
   """
   parser = argparse.ArgumentParser("FasterRCNN")
-  parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "\\projects\\voc\\vocdevkit\\voc2012", help = "Dataset directory")
+  parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "../VOCdevkit/VOC2012", help = "Dataset directory")
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
   parser.add_argument("--validate", action = "store_true", help = "Validate the model using the validation dataset")
   parser.add_argument("--train", action = "store_true", help = "Train the model on the training dataset")
