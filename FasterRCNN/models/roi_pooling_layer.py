@@ -7,6 +7,7 @@ import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras.layers import Layer
 
+
 class RoIPoolingLayer(Layer):
   """
   Input shape:
@@ -59,12 +60,22 @@ class RoIPoolingLayer(Layer):
     # outer-most of a pair of map_fn() iterations and stacks its results
     # in the batch dimension, (samples, ...).
     #
-    return tf.map_fn(
-      fn = lambda input_pair:
-        RoIPoolingLayer._compute_pooled_rois(feature_map = input_pair[0], rois = input_pair[1], pool_size = self.pool_size),
-      elems = inputs,
-      fn_output_signature = tf.float32  # this is absolutely required else the fn type inference seems to fail spectacularly
-    )
+    if self.pool_size == 7 and inputs[0].shape[3] == 512:
+      # Special case optimization: 7x7x512 pools, ~4-5x speed-up
+      return tf.map_fn(
+        fn = lambda input_pair:
+          RoIPoolingLayer._compute_pooled_rois_7x7x512(feature_map = input_pair[0], rois = input_pair[1]),
+        elems = inputs,
+        fn_output_signature = tf.float32  # this is absolutely required else the fn type inference seems to fail spectacularly
+      )
+    else:
+      # Generic case capable of handling any pool shape
+      return tf.map_fn(
+        fn = lambda input_pair:
+          RoIPoolingLayer._compute_pooled_rois(feature_map = input_pair[0], rois = input_pair[1], pool_size = self.pool_size),
+        elems = inputs,
+        fn_output_signature = tf.float32  # this is absolutely required else the fn type inference seems to fail spectacularly
+      )
 
   @tf.function
   def _compute_pooled_rois(feature_map, rois, pool_size):
@@ -150,3 +161,850 @@ class RoIPoolingLayer(Layer):
     x_size = tf.math.maximum(x_end - x_start, 1)
     pool_cell = tf.slice(region_of_interest, [y_start, x_start, 0], [y_size, x_size, num_channels])
     return tf.math.reduce_max(pool_cell, axis=(1,0))  # keep channels independent
+
+  @tf.function
+  def _compute_pooled_rois_7x7x512(feature_map, rois):
+    # Special case: 7x7x512, unrolled pool width and height (7x7=49)
+    return tf.map_fn(
+      fn = lambda roi: tf.reshape(
+        tf.stack([
+          # y=0,x=0
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=0,x=1
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=0,x=2
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=0,x=3
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=0,x=4
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=0,x=5
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=0,x=6
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, roi[3] - tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=1,x=0
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=1,x=1
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=1,x=2
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=1,x=3
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=1,x=4
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=1,x=5
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=1,x=6
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, roi[3] - tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=2,x=0
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=2,x=1
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=2,x=2
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=2,x=3
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=2,x=4
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=2,x=5
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=2,x=6
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, roi[3] - tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=3,x=0
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=3,x=1
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=3,x=2
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=3,x=3
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=3,x=4
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=3,x=5
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=3,x=6
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, roi[3] - tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=4,x=0
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=4,x=1
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=4,x=2
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=4,x=3
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=4,x=4
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=4,x=5
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=4,x=6
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, roi[3] - tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=5,x=0
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=5,x=1
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=5,x=2
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=5,x=3
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=5,x=4
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=5,x=5
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=5,x=6
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, roi[3] - tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=6,x=0
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, roi[2] - tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((0 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(0 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=6,x=1
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, roi[2] - tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((1 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(1 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=6,x=2
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, roi[2] - tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((2 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(2 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=6,x=3
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, roi[2] - tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((3 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(3 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=6,x=4
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, roi[2] - tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((4 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(4 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=6,x=5
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, roi[2] - tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, tf.cast((5 + 1) * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32) - tf.cast(5 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+          # y=6,x=6
+          tf.math.reduce_max(
+            tf.slice(
+              feature_map[ roi[0]:roi[0]+roi[2], roi[1]:roi[1]+roi[3], 0:512 ],
+              [
+                tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32),
+                tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32),
+                0
+              ],
+              [
+                tf.math.maximum(1, roi[2] - tf.cast(6 * (tf.cast(roi[2], dtype = tf.float32) / 7), dtype = tf.int32)),
+                tf.math.maximum(1, roi[3] - tf.cast(6 * (tf.cast(roi[3], dtype = tf.float32) / 7), dtype = tf.int32)),
+                512
+              ]
+            ),
+            axis = (1,0)
+          ),
+        ]),
+        shape = (7,7,512)
+      ),
+      elems = rois,
+      fn_output_signature = tf.float32
+    )
+

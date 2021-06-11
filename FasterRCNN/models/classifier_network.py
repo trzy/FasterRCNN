@@ -26,8 +26,6 @@ def layers(num_classes, input_map, proposal_boxes, dropout_fraction, l2 = 0):
 
   # RoI pool layer creates 7x7 map for each proposal. These are independently
   # passed through two fully-connected layers.
-  #TODO: layer initialization
-  #TODO: dropout layers
   pool = RoIPoolingLayer(pool_size = 7, name = "roi_pool")([input_map, proposal_boxes])
   flattened = TimeDistributed(Flatten())(pool)
   if dropout_fraction != 0:
