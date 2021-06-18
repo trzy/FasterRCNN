@@ -392,7 +392,7 @@ def _clip_box_coordinates_to_map_boundaries(boxes, map_shape):
 
   return boxes
 
-def label_proposals(proposals, ground_truth_object_boxes, num_classes):
+def label_proposals(proposals, ground_truth_object_boxes, num_classes, min_iou_threshold, max_iou_threshold):
   # One hot encoded class labels
   num_proposals = proposals.shape[0]
   y_class_labels = np.zeros((num_proposals, num_classes))
@@ -415,22 +415,30 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
   # (background) labels. Presumably proposals that scored even lower than this
   # against all ground truth boxes would have been ignored entirely and removed
   # from the proposal set, which we do not currently support here.
-  iou_threshold = 0.5  
+  iou_threshold = 0.5
+
+  # This will determine which proposals make it through (those below the
+  # minimum IoU threshold are filtered out)
+  valid_indices = [] 
 
   # Test each proposal against each box to find the best match
   for i in range(num_proposals):
     best_iou = 0
-    best_class_idx = 0  # background
+    best_class_idx = 0                # background
     best_box = None
+    passed_min_iou_threshold = False  # whether this proposal had IoU > min. threshold for any box
 
     for box in ground_truth_object_boxes:
       proposal_box_coords = proposals[i,0:4]
       object_box_coords = box.corners
       iou = intersection_over_union(box1 = proposal_box_coords, box2 = object_box_coords)
-      if iou > iou_threshold and iou > best_iou:
+      if iou >= max_iou_threshold and iou > best_iou:
         best_iou = iou
         best_class_idx = box.class_index
         best_box = box
+      elif iou >= min_iou_threshold:
+        passed_min_iou_threshold = True
+        
 
     # Create one-hot encoded label for this proposal
     y_class_labels[i,best_class_idx] = 1.0
@@ -449,7 +457,11 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes):
       th = log(box_height / proposal_height[i])
       tw = log(box_width / proposal_width[i])
       index = best_class_idx - 1
-      y_regression_labels[i,0,4*index:4*index+4] = 1, 1, 1, 1       # mask indicating which targets are valid
+      y_regression_labels[i,0,4*index:4*index+4] = 1, 1, 1, 1 # mask indicating which targets are valid
       y_regression_labels[i,1,4*index:4*index+4] = ty, tx, th, tw
+      valid_indices.append(i) # include this sample
+    elif passed_min_iou_threshold:
+      valid_indices.append(i)
 
-  return y_class_labels, y_regression_labels
+  # Return only the included proposals
+  return proposals[valid_indices], y_class_labels[valid_indices], y_regression_labels[valid_indices]

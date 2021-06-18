@@ -1,3 +1,10 @@
+# TODO: use lower IoU threshold of 0.1 for negative samples to perform hard sample mining (favor "difficult" samples that have some overlap with a positive class)
+
+# TODO: try to run w/ 4 proposals and no L2 or dropout
+# TODO: try to run w/ 64 proposals and compare difference
+# TODO: try to freeze VGG layers?
+# TODO: try to freeze layers and apply dropout?
+
 #
 # FasterRCNN for Keras
 # Copyright 2021 Bart Trzynadlowski
@@ -54,6 +61,28 @@ from tensorflow.keras.optimizers import SGD
 from tensorflow.keras import backend as K
 import time
 
+
+def prepare_mAP_directories():
+  gt_dir = os.path.join(options.map_results, "ground-truth")
+  results_dir = os.path.join(options.map_results, "detection-results")
+  for dir in [ gt_dir, results_dir ]:
+    if not os.path.exists(dir):
+      os.makedirs(dir)
+
+def write_results_to_disk(image_number, ground_truth_object_boxes, scored_boxes_by_class_index, voc):
+  gt_file = os.path.join(options.map_results, "ground-truth", "image_%d.txt" % image_number)
+  results_file = os.path.join(options.map_results, "detection-results", "image_%d.txt" % image_number)
+  with open(gt_file, "w") as fp:
+    for box in ground_truth_object_boxes:
+      y_min, x_min, y_max, x_max = box.corners
+      class_name = voc.index_to_class_name[box.class_index]
+      fp.write("%s %f %f %f %f\n" % (class_name, x_min, y_min, x_max, y_max))
+  with open(results_file, "w") as fp:
+    for class_index, boxes in scored_boxes_by_class_index.items():
+      class_name = voc.index_to_class_name[class_index]
+      for box in boxes:
+        y_min, x_min, y_max, x_max, score = box
+        fp.write("%s %f %f %f %f %f\n" % (class_name, score, x_min, y_min, x_max, y_max))
 
 def load_image(url, min_dimension_pixels, voc = None):
   """
@@ -322,10 +351,12 @@ def select_proposals_for_training(proposals, ground_truth_object_boxes, num_clas
         regressions = [ 0, 0, 0, 0, ty, tx, th, tw, 0, 0, 0, 0, ... 0 ]
   """
   # Generate one-hot labels for each proposal
-  y_true_proposal_classes, y_true_proposal_regressions = region_proposal_network.label_proposals(
+  proposals, y_true_proposal_classes, y_true_proposal_regressions = region_proposal_network.label_proposals(
     proposals = proposals,
     ground_truth_object_boxes = ground_truth_object_boxes,
-    num_classes = num_classes)
+    num_classes = num_classes,
+    min_iou_threshold = options.min_iou,
+    max_iou_threshold = options.max_iou)
 
   # Sample from proposals
   proposals, y_true_proposal_classes, y_true_proposal_regressions = sample_proposals(
@@ -433,6 +464,14 @@ def validate(rpn_model, classifier_model, voc):
         proposals = proposals_pixels,
         classes = y_classifier_predicted_class[0,:,:],
         regressions = y_classifier_predicted_regression[0,:,:])
+
+      # Write detections out to disk for off-line mAP calculation
+      if options.map_results:
+        write_results_to_disk(
+          image_number = i,
+          ground_truth_object_boxes = ground_truth_object_boxes,
+          scored_boxes_by_class_index = scored_boxes_by_class_index,
+          voc = voc)
       
       # Update classifier stats
       stats.on_classifier_step(
@@ -443,6 +482,12 @@ def validate(rpn_model, classifier_model, voc):
         y_true_regressions = y_true_proposal_regressions,
         timing_samples = {}
       )
+
+      del proposals_pixels
+      del y_classifier_predicted_class
+      del y_classifier_predicted_regression
+      del y_true_proposal_classes
+      del y_true_proposal_regressions
 
     # Update mAP calculation
     mAP.add_image_results(scored_boxes_by_class_index = scored_boxes_by_class_index, ground_truth_object_boxes = ground_truth_object_boxes)
@@ -468,6 +513,17 @@ def validate(rpn_model, classifier_model, voc):
       ("classifier_regression_loss", stats.classifier_mean_regression_loss)
     ])
     stats.on_step_end()
+
+    # Try hinting to interpreter that we are finished with these objects 
+    del proposals
+    del x
+    del y_true_minibatch
+    del y_true
+    del scored_boxes_by_class_index
+    del anchor_boxes
+    del ground_truth_object_boxes
+    del anchor_boxes_valid
+
   stats.on_epoch_end()
   
   # Print mAP
@@ -561,6 +617,14 @@ def train(rpn_model, classifier_model, voc):
               timing_samples = { "extract_proposals": extract_proposals_time, "prepare_proposals": prepare_proposals_time, "classifier_train": classifier_train_time }
             )
 
+            del y_classifier_predicted_class
+            del y_classifier_predicted_regression
+
+          del y_true_proposal_classes
+          del y_true_proposal_regressions
+
+        del proposals
+
       # Update RPN progress and progress bar
       stats.on_rpn_step(
         losses = rpn_losses,
@@ -581,6 +645,14 @@ def train(rpn_model, classifier_model, voc):
         ("classifier_regression_loss", stats.classifier_mean_regression_loss)
       ])
       stats.on_step_end()
+      
+      del y_rpn_predicted_class
+      del y_rpn_predicted_regression
+      del y_true_minibatch
+      del y_true
+      del anchor_boxes
+      del ground_truth_object_boxes
+      del x      
 
     # Log
     logger.on_epoch_end(epoch = epoch, logs = {
@@ -606,7 +678,7 @@ def train(rpn_model, classifier_model, voc):
     complete_model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
     print("Saved checkpoint: %s" % checkpoint_filename)
     stats.on_epoch_end()
-
+ 
   # Save learned model parameters
   if options.save_to is not None:
     complete_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
@@ -663,6 +735,7 @@ if __name__ == "__main__":
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "../VOCdevkit/VOC2012", help = "Dataset directory")
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
   parser.add_argument("--validate", action = "store_true", help = "Validate the model using the validation dataset")
+  parser.add_argument("--map-results", metavar = "dir", type = str, action = "store", help = "Run validation and write out results for Cartucho mAP analysis to directory")
   parser.add_argument("--train", action = "store_true", help = "Train the model on the training dataset")
   parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "rate", type = float, action = "store", default = "0.001", help = "Learning rate")
@@ -670,6 +743,8 @@ if __name__ == "__main__":
   parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = 256, help = "Anchor mini-batch size (per image) for region proposal network")
   parser.add_argument("--max-proposals", metavar = "size", type = utils.positive_int, action = "store", default = 0, help = "Maximum number of proposals to extract")
   parser.add_argument("--proposal-batch", metavar = "size", type = utils.positive_int, action = "store", default = 4, help = "Proposal batch size (per image) for classifier network")
+  parser.add_argument("--min-iou", metavar="value", type = float, default = "0", action = "store", help = "Minimum IoU for selection of negative RoI samples for input to classifier")
+  parser.add_argument("--max-iou", metavar="value", type = float, default = "0.5", action = "store", help = "Maximum IoU for selection of negative RoI samples for input to classifier")
   parser.add_argument("--augment", action="store_true", help = "Augment training data with random horizontal flips")
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
   parser.add_argument("--dropout", metavar = "value", type = float, default = "0", action = "store", help = "Dropout fraction on last 2 fully connected layers")
@@ -709,5 +784,7 @@ if __name__ == "__main__":
   if options.train:
     train(rpn_model = rpn_model, classifier_model = classifier_model, voc = voc)
 
-  if options.train or options.validate: # always validate after training
+  if options.train or options.validate or options.map_results:  # always validate after training
+    if options.map_results:
+      prepare_mAP_directories()
     validate(rpn_model = rpn_model, classifier_model = classifier_model, voc = voc)
