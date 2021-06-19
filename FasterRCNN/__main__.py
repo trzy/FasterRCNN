@@ -119,7 +119,7 @@ def print_weights(model):
     if len(weights) > 0:
       print(layer.name, layer.get_weights()[0][0])
 
-def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3), weights_filepath = None, l2 = 0, freeze = False):
+def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3), weights_filepath = None, l2 = 0, freeze_layers = ""):
   conv_model = vgg16.conv_layers(input_shape = input_image_shape, l2 = l2)
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0], l2 = l2)
   model = Model([conv_model.input], [classifier_output, regression_output])
@@ -137,12 +137,11 @@ def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3)
     vgg16.load_imagenet_weights(model = model)
     print("Loaded pre-trained VGG-16 weights")
 
-  # Freeze first two convolutional blocks during training
-  if freeze:
-    utils.freeze_layers(model = model, layers = "block1_conv1, block1_conv2, block2_conv1, block2_conv2")
+  # Freeze specified layers
+  utils.freeze_layers(model = model, layers = freeze_layers)
   return model, conv_model
 
-def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, dropout_fraction, l2 = 0, weights_filepath = None):
+def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, dropout_fraction, l2 = 0, weights_filepath = None, freeze_layers = ""):
   proposal_boxes = Input(shape = (None, 4), dtype = tf.int32)
   classifier_output, regression_output = classifier_network.layers(num_classes = num_classes, input_map = conv_model.outputs[0], proposal_boxes = proposal_boxes, dropout_fraction = dropout_fraction, l2 = l2)
   model = Model([conv_model.input, proposal_boxes], [classifier_output, regression_output])
@@ -156,6 +155,8 @@ def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, dro
     model.load_weights(filepath = weights_filepath, by_name = True)
     print("Loaded classifier model weights from %s" % weights_filepath)
 
+  # Freeze specified layers
+  utils.freeze_layers(model = model, layers = freeze_layers)
   return model
 
 def build_complete_model(rpn_model, classifier_model):
@@ -710,7 +711,7 @@ if __name__ == "__main__":
   parser.add_argument("--augment", action="store_true", help = "Augment training data with random horizontal flips")
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
   parser.add_argument("--dropout", metavar = "value", type = float, default = "0", action = "store", help = "Dropout fraction on last 2 fully connected layers")
-  parser.add_argument("--freeze", action = "store_true", help = "Freeze first 2 blocks of VGG-16")
+  parser.add_argument("--freeze", metavar = "layers", action = "store", help = "Freeze the specified layers during training")
   parser.add_argument("--rpn-only", action = "store_true", help = "Train only the region proposal network")
   parser.add_argument("--log", metavar = "filepath", type = str, action = "store", default = "out.csv", help = "Log metrics to csv file")
   parser.add_argument("--save-to", metavar = "filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
@@ -721,8 +722,8 @@ if __name__ == "__main__":
 
   voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600, train_dataset = options.train_dataset, val_dataset = options.val_dataset)
 
-  rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
-  classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, dropout_fraction = options.dropout, l2 = options.l2)
+  rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2, freeze_layers = options.freeze)
+  classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, dropout_fraction = options.dropout, l2 = options.l2, freeze_layers = options.freeze)
   complete_model = build_complete_model(rpn_model = rpn_model, classifier_model = classifier_model) # contains all weights, used for saving weights
   complete_model.summary()
 

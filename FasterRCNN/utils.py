@@ -8,6 +8,7 @@
 #
 
 import argparse
+import fnmatch
 import imageio
 from PIL import Image
 import numpy as np
@@ -73,24 +74,32 @@ def load_image_data_vgg16(url, min_dimension_pixels):
   image = np.array(load_image(url = url, min_dimension_pixels = min_dimension_pixels))
   return tf.keras.applications.vgg16.preprocess_input(x = image)
 
+def _matches_any_filter(string, filters):
+  for f in filters:
+    if len(fnmatch.filter([ string ], f)) > 0:
+      return True
+  return False
+
 def freeze_layers(model, layers):
   """
   Sets specified layers in a model to non-trainable. Layers may be specified as
-  a string of comma-separated layer names or as a list of layer names.
+  a string of comma-separated layer filers or as a list of layer filters using
+  fnmatch syntax. For example: "block*_conv*,dense?,predictions"
   """
-  frozen_layers = []
+  frozen = []
+  filters = []
   if type(layers) == str:
-    frozen_layers = [ frozen_layer.strip() for frozen_layer in layers.split(",") ]
+    filters = [ frozen_layer.strip() for frozen_layer in layers.split(",") ]
   elif type(layers) == list:
-    frozen_layers = layers
+    filters = layers
   elif layers != None:
     raise RuntimeError("freeze_layers: 'layers' must be a string or a list of strings")
   for layer in model.layers:
-    if layer.name in frozen_layers:
+    if _matches_any_filter(string = layer.name, filters = filters):
       layer.trainable = False
-      frozen_layers.remove(layer.name)
-  if len(frozen_layers) > 0:
-    raise RuntimeError("Cannot freeze missing layers: %s" % ", ".join(frozen_layers))
+      frozen.append(layer.name)
+  if len(frozen) > 0:
+    print("Froze layers: %s" % ", ".join(frozen))
 
 class CSVLogCallback(tf.keras.callbacks.Callback):
   """
