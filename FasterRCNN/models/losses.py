@@ -1,3 +1,46 @@
+#
+#  """
+#  TODO: convert to unit test
+#  y_true = np.array([
+#    [1, 0, 0, 0],
+#    [1, 0, 0, 0],
+#    [0, 0, 1, 0],
+#    [0, 0, 0, 1]
+#  ]).reshape((2,2,4))
+#  y_predicted = np.array([
+#    [1, 0, 0, 0],
+#    [0, 1, 0, 0],
+#    [1, 0, 0, 0],
+#    [0, 0, 0, 1]
+#  ]).reshape((2,2,4))
+#
+#  loss = K.eval(classifier_class_loss(y_true = K.variable(y_true), y_predicted = K.variable(y_predicted)))
+#  print(loss)
+#  print("---")
+#  for j in range(2):
+#    for i in range(2):
+#      yt = K.variable(y_true[j,i])
+#      yp = K.variable(y_predicted[j,i])
+#      print(K.eval(K.categorical_crossentropy(yt, yp)))
+#
+#  exit()
+#  
+#  y_true = np.zeros((1,2,2,8))
+#  y_true[0,0,0,:] = 1, 1, 1, 1, 0, 0, 0, 0
+#  y_true[0,0,1,:] = 1, 2, 3, 3, 2, 2, 2, 2
+#  y_true[0,1,0,:] = 0, 0, 0, 0, 0, 0, 0, 0
+#  y_true[0,1,1,:] = 0, 3, 0, 0, 3, 2, 1, 0
+#  y_predicted = np.array([
+#    [1,2,3,4,5,6,7,8],
+#    [0,1,2,3,3,2,1,0]
+#  ]).reshape((1,2,8))
+#
+#  loss = K.eval(classifier_regression_loss(y_true = K.variable(y_true), y_predicted = K.variable(y_predicted)))
+#  print(loss)
+#  exit()
+#  """
+#
+
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
