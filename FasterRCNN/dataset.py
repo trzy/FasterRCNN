@@ -23,13 +23,13 @@ class VOC:
   images and associated metadata (e.g., box coordinates) such that the smallest
   dimension is equal to `min_dimension_pixels`.
   """
-  def __init__(self, dataset_dir, min_dimension_pixels = None):
+  def __init__(self, dataset_dir, train_dataset = "train", val_dataset = "val", min_dimension_pixels = None):
     print("VOC dataset: Parsing metadata...")
     self._dataset_dir = dataset_dir
-    self.index_to_class_name, self.class_name_to_index = self._get_index_to_class_name(dataset_dir)
+    self.index_to_class_name, self.class_name_to_index = self._get_index_to_class_name(dataset_dir, train_dataset = train_dataset, val_dataset = val_dataset)
     self.num_classes = len(self.index_to_class_name.keys()) # number of classes including background class
-    train_image_paths = self._get_image_paths(dataset_dir, dataset = "train")
-    val_image_paths = self._get_image_paths(dataset_dir, dataset = "val")
+    train_image_paths = self._get_image_paths(dataset_dir, dataset = train_dataset)
+    val_image_paths = self._get_image_paths(dataset_dir, dataset = val_dataset)
     self.num_samples = { "train": len(train_image_paths), "val": len(val_image_paths) }
     self._image_info_per_path = {}
     self._image_info_per_path["train"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in train_image_paths }
@@ -108,15 +108,15 @@ class VOC:
       return "[name=%s, (%d, %d), boxes=%s]" % (self.name, self.width, self.height, self.boxes_by_class_name)
 
   @staticmethod
-  def _get_index_to_class_name(dataset_dir):
+  def _get_index_to_class_name(dataset_dir, train_dataset, val_dataset):
     """
     Returns mappings between class index and class name. Indices are in the 
     range [1,N], where N is the number of VOC classes, because index 0 is
     reserved for use as a background class in the final classifier network.
     """
     imageset_dir = os.path.join(dataset_dir, "ImageSets", "Main")
-    train_classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_train.txt") ])
-    val_classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_val.txt") ])
+    train_classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_" + train_dataset + ".txt") ])
+    val_classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_" + val_dataset + ".txt") ])
     assert train_classes == val_classes, "Number of training and validation image sets in ImageSets/Main differs. Does your dataset have missing or extraneous files?"
     assert len(train_classes) > 0, "No classes found in ImageSets/Main"
     index_to_class_name = { (1 + v[0]): v[1] for v in enumerate(sorted(train_classes)) }

@@ -733,6 +733,8 @@ if __name__ == "__main__":
   """
   parser = argparse.ArgumentParser("FasterRCNN")
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "../VOCdevkit/VOC2012", help = "Dataset directory")
+  parser.add_argument("--train-dataset", metavar = "name", type = str, action = "store", default = "train", help = "Training dataset to use (train or trainval)")
+  parser.add_argument("--val-dataset", metavar = "name", type = str, action = "store", default = "val", help = "Validation dataset to use (val or test)")
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
   parser.add_argument("--validate", action = "store_true", help = "Validate the model using the validation dataset")
   parser.add_argument("--map-results", metavar = "dir", type = str, action = "store", help = "Run validation and write out results for Cartucho mAP analysis to directory")
@@ -757,7 +759,7 @@ if __name__ == "__main__":
   parser.add_argument("--show-objects", metavar = "file", type = str, action = "store", help = "Run inference on image using classifier network and display bounding boxes")
   options = parser.parse_args()
 
-  voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600)
+  voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600, train_dataset = options.train_dataset, val_dataset = options.val_dataset)
 
   rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2)
   classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, dropout_fraction = options.dropout, l2 = options.l2)
