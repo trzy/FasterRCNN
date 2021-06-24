@@ -15,7 +15,7 @@
 #
 
 # TODO:
-# - Standardize on notation for y_true maps
+# - Nomenclature: y_classifier* to y_detection* and change usage of "classifier model" to "detector model"
 # - Desperately need to settle on some better naming conventions for the various y outputs and ground truths, as well as proposal
 #   maps in different formats (e.g., pixel units, map units, etc.)
 # - Clip final boxes? See: 2010_004041.jpg
@@ -124,6 +124,10 @@ def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3)
   classifier_output, regression_output = region_proposal_network.layers(input_map = conv_model.outputs[0], l2 = l2)
   model = Model([conv_model.input], [classifier_output, regression_output])
 
+  # Freeze specified layers before compiling
+  utils.freeze_layers(model = model, layers = freeze_layers)
+
+  # Compile
   optimizer = SGD(lr = learning_rate, momentum = 0.9, clipnorm = clipnorm)
   loss = [ rpn_class_loss, rpn_regression_loss ]
   model.compile(optimizer = optimizer, loss = loss)
@@ -137,15 +141,17 @@ def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3)
     vgg16.load_imagenet_weights(model = model)
     print("Loaded pre-trained VGG-16 weights")
 
-  # Freeze specified layers
-  utils.freeze_layers(model = model, layers = freeze_layers)
   return model, conv_model
 
 def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, dropout_fraction, l2 = 0, weights_filepath = None, freeze_layers = ""):
   proposal_boxes = Input(shape = (None, 4), dtype = tf.int32)
   classifier_output, regression_output = classifier_network.layers(num_classes = num_classes, input_map = conv_model.outputs[0], proposal_boxes = proposal_boxes, dropout_fraction = dropout_fraction, l2 = l2)
   model = Model([conv_model.input, proposal_boxes], [classifier_output, regression_output])
+  
+  # Freeze specified layers before compiling
+  utils.freeze_layers(model = model, layers = freeze_layers)
 
+  # Compile
   optimizer = SGD(lr = learning_rate, momentum = 0.9, clipnorm = clipnorm)
   loss = [ classifier_class_loss, classifier_regression_loss ]
   model.compile(optimizer = optimizer, loss = loss)
@@ -155,11 +161,9 @@ def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, dro
     model.load_weights(filepath = weights_filepath, by_name = True)
     print("Loaded classifier model weights from %s" % weights_filepath)
 
-  # Freeze specified layers
-  utils.freeze_layers(model = model, layers = freeze_layers)
   return model
 
-def build_complete_model(rpn_model, classifier_model):
+def build_joint_model(rpn_model, classifier_model):
   model = Model(classifier_model.inputs, rpn_model.outputs + classifier_model.outputs)
   model.compile(optimizer = SGD(), loss = "mae")
   return model
@@ -407,6 +411,9 @@ def convert_proposals_to_classifier_network_format(proposals, rpn_shape):
   return rois
   
 def validate(rpn_model, classifier_model, voc):
+  if options.map_results:
+    prepare_mAP_directories()
+  
   val_data = voc.validation_data(mini_batch_size = options.mini_batch)
   num_samples = voc.num_samples["val"]
 
@@ -530,7 +537,216 @@ def validate(rpn_model, classifier_model, voc):
   # Print mAP
   print("Mean Average Precision: %1.2f%%" % (100.0 * mAP.compute_mean_average_precision(interpolated = True)))
 
-def train(rpn_model, classifier_model, voc):
+def train_rpn(rpn_model, voc):
+  """
+  Trains only the RPN network.
+  """
+  train_data = voc.train_data(mini_batch_size = options.mini_batch, augment = options.augment, cache_images = True)
+  num_samples = voc.num_samples["train"]  # number of iterations in an epoch
+  
+  stats = ModelStatistics(num_samples = num_samples)
+  logger = utils.CSVLogCallback(filename = options.log, log_epoch_number = False, log_learning_rate = False)
+
+  for epoch in range(options.epochs):
+    stats.on_epoch_begin()
+    progbar = tf.keras.utils.Progbar(num_samples)
+    print("Epoch %d/%d" % (epoch + 1, options.epochs))
+
+    for i in range(num_samples):
+      stats.on_step_begin()
+
+      # Fetch one sample and reshape to batch size of 1
+      image_path, x, y_true_minibatch, y_true, anchor_boxes, ground_truth_object_boxes = next(train_data)
+      input_image_shape = x.shape
+      rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
+      y_true = np.expand_dims(y_true, axis = 0)
+      y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
+      x = np.expand_dims(x, axis = 0)
+
+      # RPN: back prop one step (and then predict so we can evaluate accuracy)
+      rpn_losses = rpn_model.train_on_batch(x = x, y = y_true_minibatch) # loss = [sum, loss_cls, loss_regr]
+      y_rpn_predicted_class, y_rpn_predicted_regression = rpn_model.predict_on_batch(x = x)
+
+      # Update stats and progress bar
+      stats.on_rpn_step(
+        losses = rpn_losses,
+        y_predicted_class = y_rpn_predicted_class,
+        y_predicted_regression = y_rpn_predicted_regression,
+        y_true_minibatch = y_true_minibatch,
+        y_true = y_true,
+        timing_samples = {}
+      )
+      progbar.update(current = i, values = [ 
+        ("rpn_total_loss", stats.rpn_mean_total_loss),
+        ("rpn_class_loss", stats.rpn_mean_class_loss),
+        ("rpn_regression_loss", stats.rpn_mean_regression_loss),
+        ("rpn_class_accuracy", stats.rpn_class_accuracy),
+        ("rpn_class_recall", stats.rpn_class_recall)
+      ])
+      stats.on_step_end()
+      
+    # Log
+    logger.on_epoch_end(epoch = epoch, logs = {
+      "epoch": epoch,
+      "learning_rate": options.learning_rate,
+      "clipnorm": options.clipnorm,
+      "mini_batch": options.mini_batch,
+      "max_proposals": options.max_proposals,
+      "proposal_batch": options.proposal_batch,
+      "rpn_total_loss": stats.rpn_mean_total_loss,
+      "rpn_class_loss": stats.rpn_mean_class_loss,
+      "rpn_regression_loss": stats.rpn_mean_regression_loss,
+      "rpn_class_accuracy": stats.rpn_class_accuracy,
+      "rpn_class_recall": stats.rpn_class_recall
+    })
+
+    # Checkpoint
+    print("")
+    checkpoint_filename = "checkpoint-%d-%1.2f.hdf5" % (epoch + 1, stats.rpn_mean_total_loss)
+    rpn_model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
+    print("Saved checkpoint: %s" % checkpoint_filename)
+    stats.on_epoch_end(print_statistics = False)
+ 
+  # Save learned model parameters
+  if options.save_to is not None:
+    rpn_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
+    print("Saved RPN model weights to %s" % options.save_to)
+
+def train_detector(rpn_model, classifier_model, voc):
+  """
+  Trains only the detector model and uses a separate RPN model (no shared
+  layers) to generate proposals.
+  """
+  train_data = voc.train_data(mini_batch_size = options.mini_batch, augment = options.augment, cache_images = True)
+  num_samples = voc.num_samples["train"]  # number of iterations in an epoch
+
+  logger = utils.CSVLogCallback(filename = options.log, log_epoch_number = False, log_learning_rate = False)
+  stats = ModelStatistics(num_samples = num_samples)
+
+  for epoch in range(options.epochs):
+    stats.on_epoch_begin()
+    progbar = tf.keras.utils.Progbar(num_samples)
+    print("Epoch %d/%d" % (epoch + 1, options.epochs))
+
+    for i in range(num_samples):
+      stats.on_step_begin()
+
+      # Fetch one sample and reshape to batch size of 1
+      image_path, x, y_true_minibatch, y_true, anchor_boxes, ground_truth_object_boxes = next(train_data)
+      input_image_shape = x.shape
+      rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
+      y_true = np.expand_dims(y_true, axis = 0)
+      y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
+      x = np.expand_dims(x, axis = 0)
+
+      # RPN: run forward step only to generate region proposals
+      y_rpn_predicted_class, y_rpn_predicted_regression = rpn_model.predict_on_batch(x = x)
+
+      # Classifier
+      proposals = region_proposal_network.extract_proposals(
+        y_predicted_class = y_rpn_predicted_class,
+        y_predicted_regression = y_rpn_predicted_regression,
+        input_image_shape = input_image_shape,
+        anchor_boxes = anchor_boxes,
+        anchor_boxes_valid = y_true[:,:,:,:,0],
+        max_proposals = options.max_proposals
+      )
+
+      if proposals.shape[0] > 0:
+        # Prepare proposals and ground truth data for classifier network 
+        proposals, y_true_proposal_classes, y_true_proposal_regressions = select_proposals_for_training(
+          proposals = proposals,
+          ground_truth_object_boxes = ground_truth_object_boxes,
+          num_classes = voc.num_classes,
+          max_proposals = options.proposal_batch,
+          positive_fraction = 0.5
+        )
+        proposals = convert_proposals_to_classifier_network_format(
+          proposals = proposals,
+          rpn_shape = rpn_shape
+        )
+        proposals = np.expand_dims(proposals, axis = 0)
+        y_true_proposal_classes = np.expand_dims(y_true_proposal_classes, axis = 0)
+        y_true_proposal_regressions = np.expand_dims(y_true_proposal_regressions, axis = 0)
+
+        # Classifier: back prop one step if any proposals and predict
+        if proposals.size > 0:
+          classifier_losses = classifier_model.train_on_batch(x = [ x, proposals ], y = [ y_true_proposal_classes, y_true_proposal_regressions ])
+          y_classifier_predicted_class, y_classifier_predicted_regression = classifier_model.predict_on_batch(x = [ x, proposals ])
+            
+          # Update classifier progress
+          stats.on_classifier_step(
+            losses = classifier_losses,
+            y_predicted_class = y_classifier_predicted_class,
+            y_predicted_regression = y_classifier_predicted_regression,
+            y_true_classes = y_true_proposal_classes,
+            y_true_regressions = y_true_proposal_regressions,
+            timing_samples = {}
+          )
+
+          del y_classifier_predicted_class
+          del y_classifier_predicted_regression
+
+        del y_true_proposal_classes
+        del y_true_proposal_regressions
+
+      del proposals
+
+      # Update progress bar
+      stats.on_rpn_step(
+        losses = [ 0, 0, 0 ], # we are not training the RPN here
+        y_predicted_class = y_rpn_predicted_class,
+        y_predicted_regression = y_rpn_predicted_regression,
+        y_true_minibatch = y_true_minibatch,
+        y_true = y_true,
+        timing_samples = {}
+      )
+      progbar.update(current = i, values = [ 
+        ("classifier_total_loss", stats.classifier_mean_total_loss),
+        ("classifier_class_loss", stats.classifier_mean_class_loss),
+        ("classifier_regression_loss", stats.classifier_mean_regression_loss)
+      ])
+      stats.on_step_end()
+      
+      del y_rpn_predicted_class
+      del y_rpn_predicted_regression
+      del y_true_minibatch
+      del y_true
+      del anchor_boxes
+      del ground_truth_object_boxes
+      del x      
+
+    # Log
+    logger.on_epoch_end(epoch = epoch, logs = {
+      "epoch": epoch,
+      "learning_rate": options.learning_rate,
+      "clipnorm": options.clipnorm,
+      "mini_batch": options.mini_batch,
+      "max_proposals": options.max_proposals,
+      "proposal_batch": options.proposal_batch,
+      "rpn_total_loss": stats.rpn_mean_total_loss,
+      "rpn_class_loss": stats.rpn_mean_class_loss,
+      "rpn_regression_loss": stats.rpn_mean_regression_loss,
+      "rpn_class_accuracy": stats.rpn_class_accuracy,
+      "rpn_class_recall": stats.rpn_class_recall,
+      "classifier_total_loss": stats.classifier_mean_total_loss,
+      "classifier_class_loss": stats.classifier_mean_class_loss,
+      "classifier_regression_loss": stats.classifier_mean_regression_loss
+    })
+
+    # Checkpoint
+    print("")
+    checkpoint_filename = "checkpoint-%d-%1.2f.hdf5" % (epoch + 1, stats.classifier_mean_total_loss)
+    classifier_model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
+    print("Saved checkpoint: %s" % checkpoint_filename)
+    stats.on_epoch_end(print_statistics = False)
+ 
+  # Save learned model parameters
+  if options.save_to is not None:
+    classifier_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
+    print("Saved detector model weights to %s" % options.save_to)
+
+def train_joint(joint_model, rpn_model, classifier_model, voc):
   train_data = voc.train_data(mini_batch_size = options.mini_batch, augment = options.augment, cache_images = True)
   num_samples = voc.num_samples["train"]  # number of iterations in an epoch
 
@@ -675,16 +891,43 @@ def train(rpn_model, classifier_model, voc):
 
     # Checkpoint
     print("")
-    checkpoint_filename = "checkpoint-%d-%1.2f.hdf5" % (epoch, stats.rpn_mean_total_loss)
-    complete_model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
+    checkpoint_filename = "checkpoint-%d-%1.2f.hdf5" % (epoch + 1, stats.rpn_mean_total_loss)
+    joint_model.save_weights(filepath = checkpoint_filename, overwrite = True, save_format = "h5")
     print("Saved checkpoint: %s" % checkpoint_filename)
     stats.on_epoch_end()
  
   # Save learned model parameters
   if options.save_to is not None:
-    complete_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
-    print("Saved model weights to %s" % options.save_to)
+    joint_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
+    print("Saved joint model weights to %s" % options.save_to)
 
+
+def joint_model(num_classes, rpn_weights_filepath, detector_weights_filepath):
+  rpn_model, conv_model = build_rpn_model(weights_filepath = rpn_weights_filepath, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2, freeze_layers = options.freeze)
+  classifier_model = build_classifier_model(num_classes = num_classes, conv_model = conv_model, weights_filepath = detector_weights_filepath, learning_rate = options.learning_rate, clipnorm = options.clipnorm, dropout_fraction = options.dropout, l2 = options.l2, freeze_layers = options.freeze)
+  joint_model = build_joint_model(rpn_model = rpn_model, classifier_model = classifier_model) # contains all weights, used for saving weights
+  joint_model.summary()
+  return joint_model, rpn_model, classifier_model
+
+def standalone_rpn_model(weights_filepath):
+  rpn_model, _ = build_rpn_model(weights_filepath = weights_filepath, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2, freeze_layers = options.freeze)
+  rpn_model.summary()
+  return rpn_model
+
+def standalone_detector_model(num_classes, weights_filepath):
+  _, conv_model = build_rpn_model(weights_filepath = weights_filepath, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2, freeze_layers = options.freeze)
+  classifier_model = build_classifier_model(num_classes = num_classes, conv_model = conv_model, weights_filepath = weights_filepath, learning_rate = options.learning_rate, clipnorm = options.clipnorm, dropout_fraction = options.dropout, l2 = options.l2, freeze_layers = options.freeze)
+  classifier_model.summary()
+  return classifier_model
+ 
+def extract_weights(model):
+  weights = []
+  for layer in model.layers:
+    w = layer.get_weights()
+    if len(w) > 0:
+      for ww in w:
+        weights.append((layer.name, ww))
+  return weights
 
 # good test images:
 # 2010_004041.jpg
@@ -693,39 +936,43 @@ def train(rpn_model, classifier_model, voc):
 # 2009_004872.jpg
 if __name__ == "__main__":
   parser = argparse.ArgumentParser("FasterRCNN")
+  group = parser.add_argument_group("Operation")
+  group_ex = parser.add_mutually_exclusive_group()
+  group_ex.add_argument("--train", metavar = "mode", type = str, action = "store", help = "Train the model on the training dataset using the given method (joint, rpn, detector)")
+  group_ex.add_argument("--validate", action = "store_true", help = "Validate the model using the validation dataset")
   parser.add_argument("--dataset-dir", metavar = "path", type = str, action = "store", default = "../VOCdevkit/VOC2012", help = "Dataset directory")
   parser.add_argument("--train-dataset", metavar = "name", type = str, action = "store", default = "train", help = "Training dataset to use (train or trainval)")
   parser.add_argument("--val-dataset", metavar = "name", type = str, action = "store", default = "val", help = "Validation dataset to use (val or test)")
   parser.add_argument("--show-image", metavar = "file", type = str, action = "store", help = "Show an image with ground truth and corresponding anchor boxes")
-  parser.add_argument("--validate", action = "store_true", help = "Validate the model using the validation dataset")
-  parser.add_argument("--map-results", metavar = "dir", type = str, action = "store", help = "Run validation and write out results for Cartucho mAP analysis to directory")
-  parser.add_argument("--train", action = "store_true", help = "Train the model on the training dataset")
+  parser.add_argument("--map-results", metavar = "dir", type = str, action = "store", help = "During validation, write out results for Cartucho mAP analysis to directory")
   parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "rate", type = float, action = "store", default = "0.001", help = "Learning rate")
   parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = "1.0", help = "Clip gradient norm to value")
   parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = 256, help = "Anchor mini-batch size (per image) for region proposal network")
   parser.add_argument("--max-proposals", metavar = "size", type = utils.positive_int, action = "store", default = 0, help = "Maximum number of proposals to extract")
   parser.add_argument("--proposal-batch", metavar = "size", type = utils.positive_int, action = "store", default = 4, help = "Proposal batch size (per image) for classifier network")
-  parser.add_argument("--min-iou", metavar="value", type = float, default = "0", action = "store", help = "Minimum IoU for selection of negative RoI samples for input to classifier")
-  parser.add_argument("--max-iou", metavar="value", type = float, default = "0.5", action = "store", help = "Maximum IoU for selection of negative RoI samples for input to classifier")
-  parser.add_argument("--augment", action="store_true", help = "Augment training data with random horizontal flips")
+  parser.add_argument("--min-iou", metavar = "value", type = float, default = "0", action = "store", help = "Minimum IoU for selection of negative RoI samples for input to classifier")
+  parser.add_argument("--max-iou", metavar = "value", type = float, default = "0.5", action = "store", help = "Maximum IoU for selection of negative RoI samples for input to classifier")
+  parser.add_argument("--augment", action = "store_true", help = "Augment training data with random horizontal flips")
   parser.add_argument("--l2", metavar = "value", type = float, action = "store", default = "2.5e-4", help = "L2 regularization")
   parser.add_argument("--dropout", metavar = "value", type = float, default = "0", action = "store", help = "Dropout fraction on last 2 fully connected layers")
   parser.add_argument("--freeze", metavar = "layers", action = "store", help = "Freeze the specified layers during training")
   parser.add_argument("--rpn-only", action = "store_true", help = "Train only the region proposal network")
   parser.add_argument("--log", metavar = "filepath", type = str, action = "store", default = "out.csv", help = "Log metrics to csv file")
   parser.add_argument("--save-to", metavar = "filepath", type = str, action = "store", help = "File to save model weights to when training is complete")
-  parser.add_argument("--load-from", metavar="filepath", type = str, action = "store", help = "File to load initial model weights from")
+  parser.add_argument("--load-rpn", metavar = "filepath", type = str, action = "store", help = "File to load initial RPN model weights from")
+  parser.add_argument("--load-detector", metavar = "filepath", type = str, action = "store", help = "File to load initial detector model weights from")
+  parser.add_argument("--load-from", metavar = "filepath", type = str, action = "store", help = "File to load initial model weights from for both model types")
   parser.add_argument("--infer-boxes", metavar = "file", type = str, action = "store", help = "Run inference on image using region proposal network and display bounding boxes")
   parser.add_argument("--show-objects", metavar = "file", type = str, action = "store", help = "Run inference on image using classifier network and display bounding boxes")
   options = parser.parse_args()
 
-  voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600, train_dataset = options.train_dataset, val_dataset = options.val_dataset)
+  if options.load_from is not None:
+    # --load-from applies to both networks
+    options.load_rpn = options.load_from
+    options.load_detector = options.load_from
 
-  rpn_model, conv_model = build_rpn_model(weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, l2 = options.l2, freeze_layers = options.freeze)
-  classifier_model = build_classifier_model(num_classes = voc.num_classes, conv_model = conv_model, weights_filepath = options.load_from, learning_rate = options.learning_rate, clipnorm = options.clipnorm, dropout_fraction = options.dropout, l2 = options.l2, freeze_layers = options.freeze)
-  complete_model = build_complete_model(rpn_model = rpn_model, classifier_model = classifier_model) # contains all weights, used for saving weights
-  complete_model.summary()
+  voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600, train_dataset = options.train_dataset, val_dataset = options.val_dataset)
 
   # Run-time environment
   cuda_available = tf.test.is_built_with_cuda()
@@ -737,17 +984,36 @@ if __name__ == "__main__":
   if options.show_image:
     show_image(voc = voc, filename = options.show_image)
 
-  if options.infer_boxes:
-    infer_rpn_boxes(rpn_model = rpn_model, voc = voc, filename = options.infer_boxes)
+  if options.infer_boxes: 
+    model = standalone_rpn_model(weights_filepath = options.load_rpn)
+    infer_rpn_boxes(rpn_model = model, voc = voc, filename = options.infer_boxes)
+    del model
 
   if options.show_objects:
+    _, rpn_model, detector_model = joint_model(num_classes = voc.num_classes, rpn_weights_filepath = options.load_rpn, detector_weights_filepath = options.load_detector)
     image, image_data = load_image(url = options.show_objects, min_dimension_pixels = 600, voc = voc)
-    show_objects(rpn_model = rpn_model, classifier_model = classifier_model, image = image, image_data = image_data)
+    show_objects(rpn_model = rpn_model, classifier_model = detector_model, image = image, image_data = image_data)
+    del rpn_model
+    del detector_model
 
-  if options.train:
-    train(rpn_model = rpn_model, classifier_model = classifier_model, voc = voc)
-
-  if options.train or options.validate or options.map_results:  # always validate after training
-    if options.map_results:
-      prepare_mAP_directories()
-    validate(rpn_model = rpn_model, classifier_model = classifier_model, voc = voc)
+  if options.train is not None:
+    if options.train == "joint":
+      joint_model, rpn_model, detector_model = joint_model(num_classes = voc.num_classes, rpn_weights_filepath = options.load_rpn, detector_weights_filepath = options.load_detector)
+      train_joint(joint_model = joint_model, rpn_model = rpn_model, classifier_model = detector_model, voc = voc)
+      validate(rpn_model = rpn_model, classifier_model = detector_model, voc = voc) # always perform validation after joint training
+    elif options.train == "rpn":
+      model = standalone_rpn_model(weights_filepath = options.load_rpn)
+      train_rpn(rpn_model = model, voc = voc)
+    elif options.train == "detector":
+      rpn_model = standalone_rpn_model(weights_filepath = options.load_rpn)
+      detector_model = standalone_detector_model(num_classes = voc.num_classes, weights_filepath = options.load_detector)
+      train_detector(rpn_model = rpn_model, classifier_model = detector_model, voc = voc)
+      validate(rpn_model = rpn_model, classifier_model = detector_model, voc = voc) # always perform validation after detector training
+    else:
+      raise ValueError("Invalid training mode. Must be one of: joint, rpn, detector")
+      
+  if options.validate:
+    #TODO: verify this gives the same result as a joint model
+    rpn_model = standalone_rpn_model(weights_filepath = options.load_rpn)
+    detector_model = standalone_detector_model(num_classes = voc.num_classes, weights_filepath = options.load_detector)
+    validate(rpn_model = rpn_model, classifier_model = detector_model, voc = voc)

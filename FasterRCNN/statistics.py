@@ -255,10 +255,12 @@ class ModelStatistics:
     """
     self._reset_internals()
 
-  def on_epoch_end(self):
+  def on_epoch_end(self, print_statistics = True):
     """
     Must be called at the end of each epoch after the last step.
     """
+    if not print_statistics:
+      return
     # Print stats for RPN regression targets
     mean_ty, mean_tx, mean_th, mean_tw = np.mean(self._rpn_regression_targets, axis = 0)
     std_ty, std_tx, std_th, std_tw = np.std(self._rpn_regression_targets, axis = 0)
