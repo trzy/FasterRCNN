@@ -23,7 +23,7 @@ class VOC:
   images and associated metadata (e.g., box coordinates) such that the smallest
   dimension is equal to `min_dimension_pixels`.
   """
-  def __init__(self, dataset_dir, train_dataset = "train", val_dataset = "val", min_dimension_pixels = None):
+  def __init__(self, dataset_dir, train_dataset = "train", val_dataset = "val", min_dimension_pixels = None, difficult = False):
     print("VOC dataset: Parsing metadata...")
     self._dataset_dir = dataset_dir
     self.index_to_class_name, self.class_name_to_index = self._get_index_to_class_name(dataset_dir, train_dataset = train_dataset, val_dataset = val_dataset)
@@ -32,9 +32,9 @@ class VOC:
     val_image_paths = self._get_image_paths(dataset_dir, dataset = val_dataset)
     self.num_samples = { "train": len(train_image_paths), "val": len(val_image_paths) }
     self._image_info_per_path = {}
-    self._image_info_per_path["train"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in train_image_paths }
-    self._image_info_per_path["train_hflip"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels, horizontal_flip = True) for image_path in train_image_paths } 
-    self._image_info_per_path["val"] = { image_path: self._get_image_info(image_path = image_path, min_dimension_pixels = min_dimension_pixels) for image_path in val_image_paths }
+    self._image_info_per_path["train"] = { image_path: self._get_image_info(image_path = image_path, allow_difficult = difficult, min_dimension_pixels = min_dimension_pixels) for image_path in train_image_paths }
+    self._image_info_per_path["train_hflip"] = { image_path: self._get_image_info(image_path = image_path, allow_difficult = difficult, min_dimension_pixels = min_dimension_pixels, horizontal_flip = True) for image_path in train_image_paths } 
+    self._image_info_per_path["val"] = { image_path: self._get_image_info(image_path = image_path, allow_difficult = difficult, min_dimension_pixels = min_dimension_pixels) for image_path in val_image_paths }
 
   def get_full_path(self, filename):
     return os.path.join(self._dataset_dir, "JPEGImages", filename)
@@ -204,7 +204,7 @@ class VOC:
       return 1.0
     return (min_dimension_pixels / original_height) if original_width > original_height else (min_dimension_pixels / original_width)
 
-  def _get_image_info(self, image_path, min_dimension_pixels, horizontal_flip = False):
+  def _get_image_info(self, image_path, min_dimension_pixels, allow_difficult, horizontal_flip = False):
     basename = os.path.splitext(os.path.basename(image_path))[0]
     annotation_file = os.path.join(self._dataset_dir, "Annotations", basename) + ".xml"
     tree = ET.parse(annotation_file)
@@ -225,6 +225,10 @@ class VOC:
     for obj in root.findall("object"):
       assert len(obj.findall("name")) == 1
       assert len(obj.findall("bndbox")) == 1
+      assert len(obj.findall("difficult")) == 1
+      is_difficult = int(obj.find("difficult").text) != 0
+      if is_difficult and not allow_difficult:
+        continue  # ignore difficult examples unless asked to include them
       class_name = obj.find("name").text
       bndbox = obj.find("bndbox")
       assert len(bndbox.findall("xmin")) == 1
@@ -246,6 +250,7 @@ class VOC:
       #print("width: %d -> %d\theight: %d -> %d\tx_min: %d -> %d\ty_min: %d -> %d" % (original_width, width, original_height, height, original_x_min, x_min, original_y_min, y_min))
       box = VOC.Box(x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, class_index = self.class_name_to_index[class_name])
       boxes_by_class_name[class_name].append(box)
+    assert len(boxes_by_class_name) > 0
     return VOC.ImageInfo(name = basename, path = image_path, original_width = original_width, original_height = original_height, width = width, height = height, boxes_by_class_name = boxes_by_class_name, horizontal_flip = horizontal_flip)
 
   @staticmethod
