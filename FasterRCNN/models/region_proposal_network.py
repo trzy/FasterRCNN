@@ -14,6 +14,7 @@ from tensorflow.keras import models
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Dense
+import time
 
 def layers(input_map, l2 = 0):
   assert len(input_map.shape) == 4
@@ -156,31 +157,52 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
 
   # Compute IoU of each anchor with each box and store the results in a map of
   # shape: (height, width, num_anchors, num_ground_truth_boxes)
+  __t0 = time.perf_counter()
   num_ground_truth_boxes = len(ground_truth_object_boxes)
   ious = np.full(shape = (height, width, num_anchors, num_ground_truth_boxes), fill_value = -1.0)
+   
+  anchors_center_y = anchor_boxes[:, :, 0::4]           # each map has shape (height,width,k)
+  anchors_center_x = anchor_boxes[:, :, 1::4]
+  anchors_height = anchor_boxes[:, :, 2::4]
+  anchors_width = anchor_boxes[:, :, 3::4]
+  anchors_y1 = anchors_center_y - 0.5 * anchors_height
+  anchors_x1 = anchors_center_x - 0.5 * anchors_width
+  anchors_y2 = anchors_center_y + 0.5 * anchors_height
+  anchors_x2 = anchors_center_x + 0.5 * anchors_width
+  anchors_area = anchors_height * anchors_width
+  
+  for box_idx in range(num_ground_truth_boxes):
+    box = ground_truth_object_boxes[box_idx]
+    box_y1, box_x1, box_y2, box_x2 = box.corners
+    box_area = (box_y2 - box_y1 + 1) * (box_x2 - box_x1 + 1) 
+    
+    # Compute IoU of this box against every anchor
+    y1 = np.maximum(box_y1, anchors_y1)
+    x1 = np.maximum(box_x1, anchors_x1)
+    y2 = np.minimum(box_y2, anchors_y2)
+    x2 = np.minimum(box_x2, anchors_x2)
+    heights = np.maximum(y2 - y1 + 1, 0.0)
+    widths = np.maximum(x2 - x1 + 1, 0.0)
+    intersections = heights * widths
+    unions = box_area + anchors_area - intersections
+    ious[:,:,:,box_idx] = intersections / unions
+
+  # No IoU for invalid anchors positions
   for y in range(truth_map.shape[0]):
     for x in range(truth_map.shape[1]):
       for k in range(truth_map.shape[2]):
-
-        # Ignore invalid anchors (i.e., at image boundary)
         if not anchor_boxes_valid[y,x,k]:
-          continue
-
-        for box_idx in range(num_ground_truth_boxes):
-          # Compute anchor box in pixels
-          anchor_center_y, anchor_center_x, anchor_height, anchor_width = anchor_boxes[y,x,k*4+0:k*4+4]
-          anchor_box_coords = (anchor_center_y - 0.5 * anchor_height, anchor_center_x - 0.5 * anchor_width, anchor_center_y + 0.5 * anchor_height, anchor_center_x + 0.5 * anchor_width)
-
-          # Compute IoU with ground truth box
-          box = ground_truth_object_boxes[box_idx]
-          object_box_coords = box.corners
-          ious[y,x,k,box_idx] = intersection_over_union(box1 = anchor_box_coords, box2 = object_box_coords)
+          ious[y,x,k,:] = -1.0
+  __compute_iou_time = time.perf_counter() - __t0
 
   # Keep track of how many anchors have been assigned to represent each box
   num_anchors_for_box = np.zeros(num_ground_truth_boxes)
 
   # Associate anchors to ground truth boxes when IoU > 0.7 and background when
   # IoU < 0.3
+  __t0 = time.perf_counter()
+  best_box_idxs = np.argmax(ious, axis = 3)   # shape (height,width,k) of best ground truth box index (highest IoU) for each anchor position
+  best_ious = np.max(ious, axis = 3)          # shape (height,width,k), containing corresponding best IoU 
   for y in range(truth_map.shape[0]):
     for x in range(truth_map.shape[1]):
       for k in range(truth_map.shape[2]):
@@ -188,8 +210,8 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
           continue
         # Box with highest IoU that exceeds threshold will be associated with
         # this anchor
-        best_box_idx = np.argmax(ious[y,x,k,:])
-        iou = ious[y,x,k,best_box_idx]
+        best_box_idx = best_box_idxs[y,x,k]
+        iou = best_ious[y,x,k]
         if iou > 0.7:
           truth_map[y,x,k,1] = 1.0                # this is an object anchor
           truth_map[y,x,k,2] = 1.0 + best_box_idx # object anchor and the box it corresponds to
@@ -198,9 +220,11 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
           truth_map[y,x,k,1] = 0.0                # this is not an object (background or neutral)
           truth_map[y,x,k,2] = -1.0               # background
         truth_map[y,x,k,3] = iou
+  __associate_boxes_time = time.perf_counter() - __t0
 
   # For each box that still lacks an anchor, construct a list of (iou, (y,x,k))
   # of anchors still available for use (all negative or unassigned anchors)
+  __t0 = time.perf_counter()
   anchor_candidates_for_anchorless_box = defaultdict(list)
   for box_idx in range(num_ground_truth_boxes):
     if num_anchors_for_box[box_idx] == 0:
@@ -215,11 +239,13 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
               iou = ious[y,x,k,box_idx]
               candidate = (iou, (y, x, k))
               anchor_candidates_for_anchorless_box[box_idx].append(candidate)
+  __anchor_candidates_time = time.perf_counter() - __t0
 
   # For the unaccounted boxes, pick anchors to assign them. We want to pick the
   # highest IoU anchors to assign to each box. If an anchor has the highest IoU
   # for more than one box (highly unlikely!), it is assigned to the box which
   # has the highest value of the IoU score.
+  __t0 = time.perf_counter()
   for box_idx in anchor_candidates_for_anchorless_box:
     candidates = anchor_candidates_for_anchorless_box[box_idx]
     sorted_candidates = sorted(candidates, key = lambda candidate: candidate[0], reverse = True)  # sort descending by IoU
@@ -247,11 +273,10 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
     n = len(anchor_candidates_for_anchorless_box)
     anchor_candidates_for_anchorless_box = { box_idx: candidates for box_idx, candidates in anchor_candidates_for_anchorless_box.items() }
     assert n == len(anchor_candidates_for_anchorless_box), "Unexpectedly ran out of anchors to assign to ground truth box"
+  __unaccounted_pairing_time = time.perf_counter() - __t0
 
   # Compute regression parameters of each positive anchor onto ground truth box
-  # and, while we're at it, find all the positive and negative anchors
-  object_anchors = []
-  not_object_anchors = []
+  __t0 = time.perf_counter()
   for y in range(truth_map.shape[0]):
     for x in range(truth_map.shape[1]):
       for k in range(truth_map.shape[2]):
@@ -270,12 +295,20 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
           th = log(box_height / anchor_height)
           tw = log(box_width / anchor_width)
           truth_map[y,x,k,4:8] = ty, tx, th, tw
+ 
+  # Store positive and negative samples (but not neutral ones) in lists
+  truth_map_coords = np.transpose(np.mgrid[0:height,0:width,0:num_anchors], (1,2,3,0))  # shape (height,width,k,3): every index (y,x,k,:) returns its own coordinate (y,x,k)
+  object_anchors = truth_map_coords[np.where(truth_map[:,:,:,2] > 0)]                   # shape (N,3), where each row is the coordinate (y,x,k) of a positive sample
+  not_object_anchors = truth_map_coords[np.where(truth_map[:,:,:,2] < 0)]               # shape (N,3), where each row is the coordinate (y,x,k) of a negative sample
 
-        # Store positive and negative samples (but nt neutral ones), in lists
-        if truth_map[y,x,k,2] > 0:
-          object_anchors.append((y, x, k))
-        elif truth_map[y,x,k,2] < 0:
-          not_object_anchors.append((y, x, k))
+  __regression_param_time = time.perf_counter() - __t0
+
+  #print("---")
+  #print("Compute IoU Time        :", __compute_iou_time)
+  #print("Associate Boxes Time    :", __associate_boxes_time)
+  #print("Anchor Candidates Time  :", __anchor_candidates_time)
+  #print("Unaccounted Pairing Time:", __unaccounted_pairing_time)
+  #print("Regression Param Time   :", __regression_param_time)
 
   return truth_map, object_anchors, not_object_anchors
 
@@ -410,13 +443,6 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes, min_iou_t
   proposal_height = proposals[:,2] - proposals[:,0] + 1
   proposal_width = proposals[:,3] - proposals[:,1] + 1
 
-  # IoU threshold for positive examples as in FasterRCNN paper. Note that older
-  # models had a minimum threshold (e.g., 0.1), creating a range for negative
-  # (background) labels. Presumably proposals that scored even lower than this
-  # against all ground truth boxes would have been ignored entirely and removed
-  # from the proposal set, which we do not currently support here.
-  iou_threshold = 0.5
-
   # This will determine which proposals make it through (those below the
   # minimum IoU threshold are filtered out)
   valid_indices = [] 
@@ -437,8 +463,7 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes, min_iou_t
         best_class_idx = box.class_index
         best_box = box
       elif iou >= min_iou_threshold:
-        passed_min_iou_threshold = True
-        
+        passed_min_iou_threshold = True      
 
     # Create one-hot encoded label for this proposal
     y_class_labels[i,best_class_idx] = 1.0
