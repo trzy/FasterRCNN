@@ -1,4 +1,14 @@
-# TODO: use lower IoU threshold of 0.1 for negative samples to perform hard sample mining (favor "difficult" samples that have some overlap with a positive class)
+# Things to try next:
+# - Rehabilitate github.com/chenyuntc/simple-faster-rcnn-pytorch and compare its RPN and then full model
+# - Are we actually RoI pooling the right cells? I have a suspicion that the division by 16 to get from
+#   image space to feature map space is not quite correct. The MaxPool2D() layers are responsible for
+#   halving the size of the feature map. We can test whether our mapping function between input map
+#   and output map works by generating black images and lighting up a single pixel at a time.
+# - Compare anchors and labels from simple-faster-rcnn-pytorch to our own.
+# - Why does everyone carefully replicate the binary softmax outputs in the RPN layer rather than
+#   using a sigmoid? Does this have any effect on RPN training?
+
+
 
 # TODO: try to run w/ 4 proposals and no L2 or dropout
 # TODO: try to run w/ 64 proposals and compare difference

@@ -1,5 +1,3 @@
-#TODO: use "difficult" attribute to optionally exclude difficult images? Perhaps an an option in VOC initializer.
-
 from .models import region_proposal_network
 from . import utils
 
