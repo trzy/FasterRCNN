@@ -25,6 +25,7 @@
 #
 
 # TODO:
+# - Investigate why mAP is wrong when using a limited subset of train/val data
 # - Nomenclature: y_classifier* to y_detection* and change usage of "classifier model" to "detector model"
 # - Desperately need to settle on some better naming conventions for the various y outputs and ground truths, as well as proposal
 #   maps in different formats (e.g., pixel units, map units, etc.)
