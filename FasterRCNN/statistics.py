@@ -321,9 +321,16 @@ class ModelStatistics:
         Performance profiling samples as a dictionary mapping labels to floats.
         Timings are aggregated by label, which is an arbitrary string.
     """
-    y_true_class = y_true[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
-    y_valid = y_true_minibatch[:,:,:,:,0].reshape(y_predicted_class.shape)      # valid anchors participating in this mini-batch
-    assert np.size(y_true_class) == np.size(y_predicted_class)
+    #new_shape = [ tf.shape(y_predicted)[0], tf.shape(y_predicted)[1] ]
+    #y_true_class = tf.cast(tf.reshape(y_true[:,:,:,:,1], shape = new_shape), dtype = y_predicted.dtype) # shape [batch,H*W*k]
+    y_true_class = y_true[:,:,:,:,2].reshape((y_predicted_class.shape[0], y_predicted_class.shape[1]))  # shape [batch,H*W*k], where > 0 indicates object, < 0 indicated background,  == 0 is neutral and unused
+    y_valid = y_true_minibatch[:,:,:,:,0].reshape(y_true_class.shape)
+    y_predicted_class = np.argmax(y_predicted_class, axis = 2)  # if 0, predicted class is object, if 1, background
+    y_predicted_class = 1 - y_predicted_class                   # change so that 0 = background, 1 = object
+
+    #y_true_class = y_true[:,:,:,:,2].reshape(y_predicted_class.shape)  # ground truth classes
+    #y_valid = y_true_minibatch[:,:,:,:,0].reshape(y_predicted_class.shape)      # valid anchors participating in this mini-batch
+    #assert np.size(y_true_class) == np.size(y_predicted_class)
     
     # Compute class accuracy and recall. Note that invalid anchor locations
     # have their corresponding objectness class score set to 0 (neutral). It is

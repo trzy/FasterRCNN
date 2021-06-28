@@ -14,6 +14,9 @@ from tensorflow.keras import models
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Reshape
+from tensorflow.keras.layers import Lambda
+from tensorflow.keras.layers import Activation
 import time
 
 def layers(input_map, l2 = 0):
@@ -26,7 +29,15 @@ def layers(input_map, l2 = 0):
   anchors = Conv2D(name = "rpn_conv1", kernel_size = (3,3), strides = 1, filters = 512, padding = "same", activation = "relu", kernel_initializer = "normal", kernel_regularizer = regularizer)(input_map)
 
   # Classification layer: predicts whether there is an object at the anchor or not. We use a sigmoid function, where > 0.5 is indicates a positive result.
-  classifier = Conv2D(name = "rpn_class", kernel_size = (1,1), strides = 1, filters = anchors_per_location, padding = "same", activation = "sigmoid", kernel_initializer = "uniform")(anchors)
+  classifier_raw = Conv2D(name = "rpn_class_raw", kernel_size = (1,1), strides = 1, filters = 2 * anchors_per_location, padding = "same", activation = "sigmoid", kernel_initializer = "uniform")(anchors)
+  input_batch = tf.shape(input_map)[0]
+  input_height = tf.shape(input_map)[1]
+  input_width = tf.shape(input_map)[2]
+  input_channels = tf.shape(input_map)[3]
+  classifier_shaped_1 = Lambda(lambda layer: tf.reshape(layer, shape = (tf.shape(layer)[0], -1, 2)), name = "rpn_class_lambda_1")(classifier_raw)
+  classifier = Activation("softmax", name = "rpn_class_softmax")(classifier_shaped_1)
+  # We converted from (1,h,w,2*k) -> (1,h*w*k,2). In order to access each anchor's object and background outputs (y,x,anchor):
+  #   out[0, (y*w+x)*k+anchor, class], where class=0 for object and 1 for bg
 
   # Regress
   regressor = Conv2D(name = "rpn_boxes", kernel_size = (1,1), strides = 1, filters = 4 * anchors_per_location, padding = "same", activation = "linear", kernel_initializer = "zero")(anchors)

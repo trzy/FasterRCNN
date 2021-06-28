@@ -64,17 +64,21 @@ def rpn_class_loss(y_true, y_predicted):
   Keras implementation of RPN objectness class loss function.
   """
   y_predicted_class = tf.convert_to_tensor(y_predicted)
-  y_true_class = tf.cast(tf.reshape(y_true[:,:,:,:,1], shape = tf.shape(y_predicted)), dtype = y_predicted.dtype)
+  new_shape = [ tf.shape(y_predicted)[0], tf.shape(y_predicted)[1] ]
+  y_true_class = tf.cast(tf.reshape(y_true[:,:,:,:,1], shape = new_shape), dtype = y_predicted.dtype) # shape [batch,H*W*k]
+  y_bg = 1.0 - y_true_class                                      # shape [batch,H*W*k], containing background score
+  y_true_class = tf.stack([ y_true_class, y_bg ], axis = 2)      # shape [batch,H*W*k,2]
 
   # y_true[:,:,:,0] is 1.0 for anchors included in the mini-batch
-  y_mask = tf.cast(tf.reshape(y_true[:,:,:,:,0], shape = tf.shape(y_predicted)), dtype = y_predicted.dtype)
+  mask_shape = [ tf.shape(y_predicted)[0], tf.shape(y_predicted)[1] ]
+  y_mask = tf.cast(tf.reshape(y_true[:,:,:,:,0], shape = mask_shape), dtype = y_predicted.dtype)
 
   # Compute how many anchors are actually used in the mini-batch (e.g.,
   # typically 256)
   N_cls = tf.cast(tf.math.count_nonzero(y_mask), dtype = tf.float32) + K.epsilon()
 
   # Compute element-wise loss for all anchors
-  loss_all_anchors = K.binary_crossentropy(y_true_class, y_predicted_class)
+  loss_all_anchors = K.categorical_crossentropy(y_true_class, y_predicted_class)
 
   # Zero out the ones which should not have been included
   relevant_loss_terms = y_mask * loss_all_anchors
