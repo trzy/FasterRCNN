@@ -98,11 +98,19 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   # Extract proposals (which also performs NMS)
   final_proposals = region_proposal_network.extract_proposals(y_predicted_class = y_class, y_predicted_regression = y_regression, input_image_shape = info.shape(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
 
+  # Label proposals, so we can see whether any of them would actually be assigned to a ground truth box
+  final_proposals, y_class_labels, _ = region_proposal_network.label_proposals(proposals = final_proposals, ground_truth_object_boxes = info.get_boxes(), num_classes = voc.num_classes, min_iou_threshold = 0.0, max_iou_threshold = 0.5)
+
   # Draw boxes
   for i in range(final_proposals.shape[0]):
+    # Color is green if this proposal would be assigned to a ground truth box, else yellow
+    if np.argmax(y_class_labels[i]) != 0:
+      color = (0, 255, 0, 255)
+    else:
+      color = (255, 255, 0, 255)
     y_min, x_min, y_max, x_max = final_proposals[i,0:4]
     #print("proposal =", y_min, x_min, y_max, x_max)
-    draw_rectangle(ctx = ctx, x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, color = (255, 255, 0, 255), thickness = 1)
+    draw_rectangle(ctx = ctx, x_min = x_min, y_min = y_min, x_max = x_max, y_max = y_max, color = color, thickness = 1)
 
   # Write out image
   image.show()
