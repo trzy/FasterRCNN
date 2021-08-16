@@ -18,10 +18,10 @@
 from ..dataset import VOC
 from ..models import vgg16
 from ..models import region_proposal_network
-from ..models.rpn_loss import rpn_class_loss
-from ..models.rpn_loss import rpn_regression_loss
-from ..models.rpn_loss import rpn_class_loss_np
-from ..models.rpn_loss import rpn_regression_loss_np
+from ..models.losses import rpn_class_loss
+from ..models.losses import rpn_regression_loss
+from ..models.losses import rpn_class_loss_np
+from ..models.losses import rpn_regression_loss_np
 
 import argparse
 import numpy as np
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
   model = build_rpn_model(weights_filepath = options.load_from)
 
-  voc = VOC(dataset_dir = options.dataset_dir, scale = 600)
+  voc = VOC(dataset_dir = options.dataset_dir, min_dimension_pixels = 600)
   train_data = voc.train_data(shuffle = False)
 
   print("Running loss function test over training samples...")
@@ -69,9 +69,9 @@ if __name__ == "__main__":
   max_diff_regr = 0
   epsilon = 1e-9
   for i in range(voc.num_samples["train"]):
-    image_path, x, y, anchor_boxes = next(train_data)
-    y = y.reshape((1, y.shape[0], y.shape[1], y.shape[2], y.shape[3]))  # convert to batch size of 1
-    x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
+    image_path, x, y_true_minibatch, y_true, anchor_boxes, ground_truth_object_boxes = next(train_data)
+    y = np.expand_dims(y_true_minibatch, axis = 0)  # convert to batch size of 1
+    x = np.expand_dims(x, axis = 0)  
     y_predicted_cls, y_predicted_regr = model.predict(x)
     loss_cls_keras  = K.eval(rpn_class_loss(y_true = K.variable(y), y_predicted = K.variable(y_predicted_cls)))
     loss_cls_np     = rpn_class_loss_np(y_true = y, y_predicted = y_predicted_cls)
