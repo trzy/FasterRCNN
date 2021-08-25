@@ -1,3 +1,5 @@
+# TODO: +0 or +1 when computing box dimensions? Being inconsistent here.
+
 from .intersection_over_union import intersection_over_union
 from . import vgg16
 from .nms import nms
@@ -109,7 +111,7 @@ def compute_all_anchor_boxes(input_image_shape):
 
   anchor_boxes = np.stack(box_matrices, axis = 2)         # stack all k*4 values along third dimension
   anchor_boxes_valid = np.stack(valid_matrices, axis = 2) # k values stacked along third dimension
-
+  
   return anchor_boxes, anchor_boxes_valid
 
 def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_boxes_valid):
@@ -174,15 +176,15 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
   for box_idx in range(num_ground_truth_boxes):
     box = ground_truth_object_boxes[box_idx]
     box_y1, box_x1, box_y2, box_x2 = box.corners
-    box_area = (box_y2 - box_y1 + 1) * (box_x2 - box_x1 + 1) 
+    box_area = (box_y2 - box_y1 + 0) * (box_x2 - box_x1 + 0)
     
     # Compute IoU of this box against every anchor
     y1 = np.maximum(box_y1, anchors_y1)
     x1 = np.maximum(box_x1, anchors_x1)
     y2 = np.minimum(box_y2, anchors_y2)
     x2 = np.minimum(box_x2, anchors_x2)
-    heights = np.maximum(y2 - y1 + 1, 0.0)
-    widths = np.maximum(x2 - x1 + 1, 0.0)
+    heights = np.maximum(y2 - y1 + 0, 0.0)
+    widths = np.maximum(x2 - x1 + 0, 0.0)
     intersections = heights * widths
     unions = box_area + anchors_area - intersections
     ious[:,:,:,box_idx] = intersections / unions
@@ -222,6 +224,26 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
         truth_map[y,x,k,3] = iou
   __associate_boxes_time = time.perf_counter() - __t0
 
+  # Associate maximum IoU boxes with anchors. Important: if multiple anchors have the
+  # same IoU, they all get assigned to the box.
+  ious_per_box = ious.reshape((height * width * num_anchors, num_ground_truth_boxes)) # IoUs with each GT box for each anchor
+  max_ious = np.max(ious_per_box, axis = 0)                                           # maximum IoU for each box
+  for y in range(height):
+    for x in range(width):
+      for k in range(num_anchors):
+        for box_idx in range(num_ground_truth_boxes):
+          best_iou_this_box = max_ious[box_idx]
+          current_iou = truth_map[y,x,k,3]
+          # Only overwrite if 1) this "best IoU" actually corresponds to this box (if it does,
+          # it will be equal to the IoU for the box in the complete IoU map) and 2) it is
+          # better than the current IoU.
+          if ious[y, x, k, box_idx] >= best_iou_this_box and ious[y, x, k, box_idx] >= current_iou:
+            truth_map[y,x,k,1] = 1.0            # this is an object
+            truth_map[y,x,k,2] = 1.0 + box_idx  # box this anchor corresponds to
+            truth_map[y,x,k,3] = ious[y, x, k, box_idx]
+            
+
+  """
   # For each box that still lacks an anchor, construct a list of (iou, (y,x,k))
   # of anchors still available for use (all negative or unassigned anchors)
   __t0 = time.perf_counter()
@@ -274,6 +296,7 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
     anchor_candidates_for_anchorless_box = { box_idx: candidates for box_idx, candidates in anchor_candidates_for_anchorless_box.items() }
     assert n == len(anchor_candidates_for_anchorless_box), "Unexpectedly ran out of anchors to assign to ground truth box"
   __unaccounted_pairing_time = time.perf_counter() - __t0
+  """
 
   # Compute regression parameters of each positive anchor onto ground truth box
   __t0 = time.perf_counter()
@@ -309,6 +332,25 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
   #print("Anchor Candidates Time  :", __anchor_candidates_time)
   #print("Unaccounted Pairing Time:", __unaccounted_pairing_time)
   #print("Regression Param Time   :", __regression_param_time)
+  """
+  print(ious[18,7,2,0], ious[18,7,2,1])
+  box1 = ground_truth_object_boxes[0].corners
+  box2 = ground_truth_object_boxes[1].corners
+  print(box1, box2)
+  for k in range(num_anchors):
+    x = int(344 / 16) # 104
+    y = int(344 / 16)
+
+    cy = anchor_boxes[y,x,k*4+0]
+    cx = anchor_boxes[y,x,k*4+1]
+    h = anchor_boxes[y,x,k*4+2]
+    w = anchor_boxes[y,x,k*4+3]
+  
+    anchor_box = [cy - 0.5 * h, cx - 0.5 * w, cy + 0.5 * h, cx + 0.5 * w]
+    iou1 = intersection_over_union(box1 = box1, box2 = anchor_box)
+    iou2 = intersection_over_union(box1 = box2, box2 = anchor_box)
+    print("*** %d,%d,%d -- (%d,%d) %1.1f x %1.1f -- %f %f .. %f %f" % (y, x, k, cy, cx, h, w, ious[y,x,k,0], ious[y,x,k,1], iou1, iou2))
+  """
 
   return truth_map, object_anchors, not_object_anchors
 
@@ -355,34 +397,36 @@ def extract_proposals(y_predicted_class, y_predicted_regression, input_image_sha
       3: x_max
       4: score
   """
-  #
-  # Find all valid proposals (object score > 0.5 and at a valid anchor) and
-  # construct a proposal map of shape (N,5), containing the proposal box 
-  # coordinates and objectness score.
-  #
-  # Note that because we assume a batch size of 1, it is safe to multiply
-  # anchor_boxes_valid, with shape (y,x,k), with a map of shape (1,y,x,k),
-  # without needing to expand its dimensions.
-  #
-  positive_indices = np.argwhere(anchor_boxes_valid * y_predicted_class > 0.5)  # positive indices at valid anchor locations
-  num_proposals = positive_indices.shape[0]
+  # Find all valid proposals (valid anchor) and construct a proposal map of
+  # shape (N,5) containing box coordinates and objectness score. Note that we
+  # do not reject proposals whose score is < 0.5 (background)! We want to
+  # consider even low-scoring proposals because there may be too few identified
+  # as objects during training.
+  valid_indices = np.argwhere(anchor_boxes_valid > 0)
+  num_proposals = valid_indices.shape[0]
   proposals = np.empty((num_proposals, 5))
   for i in range(proposals.shape[0]):
-    _, y_idx, x_idx, k_idx = positive_indices[i]  # first element is sample number, which is always 0: (0, y, x, k)
+    _, y_idx, x_idx, k_idx = valid_indices[i] # first element is sample number, which is always 0: (0, y, x, k)
     box_params = y_predicted_regression[0, y_idx, x_idx, k_idx*4+0 : k_idx*4+4]
     anchor_box = anchor_boxes[y_idx, x_idx, k_idx*4+0 : k_idx*4+4]
     proposals[i,0:4] = convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
     proposals[i,4] = y_predicted_class[0, y_idx, x_idx, k_idx]
 
-  # Limit to max_proposals
-  if max_proposals > 0:
-    sorted_indices = np.argsort(proposals[:,4])                     # sorts in ascending order of score
-    proposals = proposals[sorted_indices][-1:-(max_proposals+1):-1] # grab the top-N scores in descending order
+  # Limit to maximum pre-NMS proposals, grabbing the top-N scores
+  # TODO: make this configurable?
+  max_proposals_pre_nms = 6000
+  if max_proposals_pre_nms > 0:
+    sorted_indices = np.argsort(proposals[:,4]) # sort in ascending order of objectness score
+    proposals = proposals[sorted_indices][-1:-(max_proposals_pre_nms+1):-1] # grab the top-N scores in descending order
 
   # Perform NMS to cull redundant proposals
   proposal_indices = nms(proposals = proposals, iou_threshold = 0.7)
   proposals = proposals[proposal_indices]
 
+  # Post-NMS max proposal limit
+  if max_proposals > 0: 
+    proposals = proposals[0:max_proposals]
+  
   # Return results clipped to image boundaries
   return _clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
 
