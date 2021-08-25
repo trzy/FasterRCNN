@@ -93,13 +93,14 @@ def rpn_regression_loss_np(y_true, y_predicted):
   y_true_regression = y_true[:,:,:,:,4:8].reshape(y_predicted.shape)
   mask_shape = (y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3])
   y_included = y_true[:,:,:,:,0].reshape(mask_shape)
-  y_positive = y_true[:,:,:,:,1].reshape(mask_shape)
+  y_positive = y_true[:,:,:,:,1].reshape(mask_shape)        # object
   y_mask = y_included * y_positive
   y_mask = np.repeat(y_mask, repeats = 4, axis = 3)
   N_cls = float(np.count_nonzero(y_included)) + 1e-9
+  print("N_cls=",N_cls)
   x = y_true_regression - y_predicted_regression
   x_abs = np.sqrt(x * x)  # K.abs/tf.abs crash (Windows only?)
-  is_negative_branch = np.less(x_abs, 1.0).astype(np.float)
+  is_negative_branch = np.less(x_abs, 1.0 / sigma_squared).astype(np.float)
   R_negative_branch = 0.5 * sigma_squared * x * x
   R_positive_branch = x_abs - 0.5 / sigma_squared
   loss_all_anchors = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
@@ -140,7 +141,7 @@ def rpn_regression_loss(y_true, y_predicted):
   # components
   x = y_true_regression - y_predicted_regression
   x_abs = tf.sqrt(x * x)  # K.abs/tf.abs crash (Windows only?)
-  is_negative_branch = tf.cast(tf.less(x_abs, 1.0), dtype = tf.float32)
+  is_negative_branch = tf.cast(tf.less(x_abs, 1.0 / sigma_squared), dtype = tf.float32)
   R_negative_branch = 0.5 * x * x * sigma_squared
   R_positive_branch = x_abs - 0.5 / sigma_squared
   loss_all_anchors = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
@@ -176,7 +177,7 @@ def classifier_regression_loss(y_true, y_predicted):
   # targets
   x = y_true_targets - y_predicted
   x_abs = tf.sqrt(x * x)
-  is_negative_branch = tf.cast(tf.less(x_abs, 1.0), dtype = tf.float32)
+  is_negative_branch = tf.cast(tf.less(x_abs, 1.0 / sigma_squared), dtype = tf.float32)
   R_negative_branch = 0.5 * x * x * sigma_squared
   R_positive_branch = x_abs - 0.5 / sigma_squared
   losses = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
@@ -190,3 +191,33 @@ def classifier_regression_loss(y_true, y_predicted):
   relevant_loss_terms = y_mask * losses
   return scale_factor * K.sum(relevant_loss_terms) / N
   
+def classifier_regression_loss_np(y_true, y_predicted):
+  scale_factor = 1.0
+  sigma = 3.0
+  sigma_squared = sigma * sigma
+
+  # We want to unpack the regression targets and the mask of valid targets into
+  # tensors each of the same shape as the predicted: 
+  #   (batch_size, num_proposals, 4*(num_classes-1))
+  # y_true has shape:
+  #   (batch_size, num_proposals, 2, 4*(num_classes-1))
+  y_mask = y_true[:,:,0,:]
+  y_true_targets = y_true[:,:,1,:]
+
+  # Compute element-wise loss using robust L1 function for all 4 regression
+  # targets
+  x = y_true_targets - y_predicted
+  x_abs = np.sqrt(x * x)
+  is_negative_branch = np.less(x_abs, 1.0 / sigma_squared).astype(np.float)
+  R_negative_branch = 0.5 * x * x * sigma_squared
+  R_positive_branch = x_abs - 0.5 / sigma_squared
+  losses = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
+
+  # TODO:
+  # Not clear which of these methods of normalization are ideal, or whether it
+  # even matters
+  #N = tf.reduce_sum(y_mask) / 4.0 + K.epsilon()                      # N = number of positive boxes
+  #N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon() # N = number of proposals
+  N = np.sum(y_mask) + 1e-9                             # N = number of parameters (i.e., number of positive boxes * 4)
+  relevant_loss_terms = y_mask * losses
+  return scale_factor * np.sum(relevant_loss_terms) / N
