@@ -240,6 +240,7 @@ class ModelStatistics:
     self._classifier_regression_losses = np.zeros(num_samples)
 
     self._rpn_regression_targets = np.zeros((0,4))
+    self._rpn_regression_predictions = np.zeros((0,4))
     self._classifier_regression_targets = np.zeros((0,4))
     self._classifier_regression_predictions = np.zeros((0,4))
 
@@ -266,6 +267,10 @@ class ModelStatistics:
     std_ty, std_tx, std_th, std_tw = np.std(self._rpn_regression_targets, axis = 0)
     print("RPN Regression Target Means : %1.2f %1.2f %1.2f %1.2f" % (mean_ty, mean_tx, mean_th, mean_tw))
     print("RPN Regression Target StdDev: %1.2f %1.2f %1.2f %1.2f" % (std_ty, std_tx, std_th, std_tw))
+    mean_ty, mean_tx, mean_th, mean_tw = np.mean(self._rpn_regression_predictions, axis = 0)
+    std_ty, std_tx, std_th, std_tw = np.std(self._rpn_regression_predictions, axis = 0)
+    print("RPN Regression Prediction Means : %1.2f %1.2f %1.2f %1.2f" % (mean_ty, mean_tx, mean_th, mean_tw))
+    print("RPN Regression Prediction StdDev: %1.2f %1.2f %1.2f %1.2f" % (std_ty, std_tx, std_th, std_tw))
     # Print stats for classifier regression targets
     mean_ty, mean_tx, mean_th, mean_tw = np.mean(self._classifier_regression_targets, axis = 0)
     std_ty, std_tx, std_th, std_tw = np.std(self._classifier_regression_targets, axis = 0)
@@ -337,6 +342,18 @@ class ModelStatistics:
     true_negatives = np.sum(np.where(y_predicted_class < 0.5, True, False) * ground_truth_negatives)
     total_samples = num_ground_truth_positives + num_ground_truth_negatives
 
+    false_negatives = np.sum(ground_truth_positives) - true_positives
+    false_positives = np.sum(ground_truth_negatives) - true_negatives
+
+    #print("  recall    = %1.1f%%" % (100 * (true_positives / num_ground_truth_positives)))
+    #print("  gt_pos    = %d" % num_ground_truth_positives)
+    #print("  gt_neg    = %d" % num_ground_truth_negatives)
+    #print("  true_pos  = %d" % true_positives)
+    #print("  false_pos = %d" % false_positives)
+    #print("  true_neg  = %d" % true_negatives)
+    #print("  false_neg = %d" % false_negatives)
+
+
     # Update progress
     i = self._rpn_step_number
     self._rpn_total_losses[i] = losses[0]
@@ -362,6 +379,15 @@ class ModelStatistics:
             if y_true[i,y,x,k,2] > 0:
               targets = y_true[i,y,x,k,4:8]
               self._rpn_regression_targets = np.vstack([self._rpn_regression_targets, targets])
+    
+    # Do the same for RPN regression predictions
+    for i in range(y_predicted_regression.shape[0]):
+      for y in range(y_predicted_regression.shape[1]):
+        for x in range(int(y_predicted_regression.shape[2] / 4)):
+          for k in range(y_true.shape[3]):
+            if y_predicted_class[i,y,x,k] > 0.5:  # only count positive predictions
+              predictions = y_predicted_regression[i,y,x,k*4+0:k*4+4]
+              self._rpn_regression_predictions = np.vstack([self._rpn_regression_predictions, predictions])
 
     # Update profiling stats
     self._update_timings(timing_samples = timing_samples)
