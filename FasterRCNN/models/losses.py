@@ -140,7 +140,7 @@ def rpn_regression_loss(y_true, y_predicted):
   # Compute element-wise loss using robust L1 function for all 4 regression
   # components
   x = y_true_regression - y_predicted_regression
-  x_abs = tf.sqrt(x * x)  # K.abs/tf.abs crash (Windows only?)
+  x_abs = tf.math.abs(x) #tf.sqrt(x * x)  # K.abs/tf.abs crash (Windows only?)
   is_negative_branch = tf.cast(tf.less(x_abs, 1.0 / sigma_squared), dtype = tf.float32)
   R_negative_branch = 0.5 * x * x * sigma_squared
   R_positive_branch = x_abs - 0.5 / sigma_squared
@@ -162,7 +162,7 @@ def classifier_class_loss(y_true, y_predicted):
 
 def classifier_regression_loss(y_true, y_predicted):
   scale_factor = 1.0
-  sigma = 3.0
+  sigma = 1.0
   sigma_squared = sigma * sigma
 
   # We want to unpack the regression targets and the mask of valid targets into
@@ -176,7 +176,7 @@ def classifier_regression_loss(y_true, y_predicted):
   # Compute element-wise loss using robust L1 function for all 4 regression
   # targets
   x = y_true_targets - y_predicted
-  x_abs = tf.sqrt(x * x)
+  x_abs = tf.math.abs(x) #tf.sqrt(x * x)
   is_negative_branch = tf.cast(tf.less(x_abs, 1.0 / sigma_squared), dtype = tf.float32)
   R_negative_branch = 0.5 * x * x * sigma_squared
   R_positive_branch = x_abs - 0.5 / sigma_squared
@@ -186,14 +186,14 @@ def classifier_regression_loss(y_true, y_predicted):
   # Not clear which of these methods of normalization are ideal, or whether it
   # even matters
   #N = tf.reduce_sum(y_mask) / 4.0 + K.epsilon()                      # N = number of positive boxes
-  #N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon() # N = number of proposals
-  N = tf.reduce_sum(y_mask) + K.epsilon()                             # N = number of parameters (i.e., number of positive boxes * 4)
+  N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon() # N = number of proposals
+  #N = tf.reduce_sum(y_mask) + K.epsilon()                             # N = number of parameters (i.e., number of positive boxes * 4)
   relevant_loss_terms = y_mask * losses
   return scale_factor * K.sum(relevant_loss_terms) / N
   
 def classifier_regression_loss_np(y_true, y_predicted):
   scale_factor = 1.0
-  sigma = 3.0
+  sigma = 1.0
   sigma_squared = sigma * sigma
 
   # We want to unpack the regression targets and the mask of valid targets into
@@ -216,8 +216,9 @@ def classifier_regression_loss_np(y_true, y_predicted):
   # TODO:
   # Not clear which of these methods of normalization are ideal, or whether it
   # even matters
-  #N = tf.reduce_sum(y_mask) / 4.0 + K.epsilon()                      # N = number of positive boxes
-  #N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon() # N = number of proposals
-  N = np.sum(y_mask) + 1e-9                             # N = number of parameters (i.e., number of positive boxes * 4)
+  #N = np.sum(y_mask) / 4.0 + 1e-9                      # N = number of positive boxes
+  N = float(y_true.shape[1]) + 1e-9                     # N = number of proposals
+  #N = np.sum(y_mask) + 1e-9                             # N = number of parameters (i.e., number of positive boxes * 4)
   relevant_loss_terms = y_mask * losses
   return scale_factor * np.sum(relevant_loss_terms) / N
+  return scale_factor * np.sum(relevant_loss_terms)
