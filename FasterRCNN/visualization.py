@@ -96,7 +96,7 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
           draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (255, 100, 0, 64))
 
   # Extract proposals (which also performs NMS)
-  final_proposals = region_proposal_network.extract_proposals(y_predicted_class = y_class, y_predicted_regression = y_regression, input_image_shape = info.shape(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+  final_proposals = region_proposal_network.extract_proposals(y_predicted_class = y_class, y_predicted_regression = y_regression, input_image_shape = info.shape(), anchor_boxes = anchor_boxes, anchor_boxes_valid = np.expand_dims(anchor_boxes_valid, axis=0))
 
   # Label proposals, so we can see whether any of them would actually be assigned to a ground truth box
   final_proposals, y_class_labels, _ = region_proposal_network.label_proposals(proposals = final_proposals, ground_truth_object_boxes = info.get_boxes(), num_classes = voc.num_classes, min_iou_threshold = 0.0, max_iou_threshold = 0.5)
@@ -176,12 +176,13 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
         #    draw_rectangle(ctx, x_min = anchor_x_min, y_min = anchor_y_min, x_max = anchor_x_max, y_max = anchor_y_max, color = (255, 0, 0, 255))
 
   # Draw all anchor boxes labeled as object in yellow
+  print("num_positive_anchors=%d" % len(positive_anchors))
   for i in range(len(positive_anchors)):
     y = positive_anchors[i][0]
     x = positive_anchors[i][1]
     k = positive_anchors[i][2]
 
-    print("anchor=[%d,%d,%d]" % (y, x, k))
+    print("anchor=[%d,%d,%d] -- %d x %d" % (y, x, k, anchor_boxes[y,x,k*4+2], anchor_boxes[y,x,k*4+3]))
 
     # Extract box and draw
     box = anchor_boxes[y, x, k * 4 : k * 4 + 4]

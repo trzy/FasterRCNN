@@ -1,3 +1,13 @@
+# Note: clipnorm has been disabled by default
+#TODO:
+# - Try to take top 6000 scores, then apply NMS, and then select max_proposals
+# - Compare RoI extraction
+# - Compare class regression loss
+# x Visualize only top-N RPN inferences where N is small (10) to see how the two networks compare
+# - Compare class regression loss
+# x Compare RPN losses between our model and the other perhaps even by taking our regions and feeding them into the other model's loss function
+# - Regression RPN loss is correct IF y_included actually corresponds to number of positive and negative samples (should be 256, yielding N_cls=256 -- check this during training)
+
 # Things to try next:
 # - Rehabilitate github.com/chenyuntc/simple-faster-rcnn-pytorch and compare its RPN and then full model
 # - Are we actually RoI pooling the right cells? I have a suspicion that the division by 16 to get from
@@ -48,6 +58,8 @@ from . import visualization
 from .dataset import VOC
 from .models import vgg16
 from .models import region_proposal_network
+from .models.region_proposal_network import g_detector_regression_means
+from .models.region_proposal_network import g_detector_regression_stds
 from .models.losses import rpn_class_loss
 from .models.losses import rpn_regression_loss
 from .models.losses import classifier_class_loss
@@ -139,6 +151,7 @@ def build_rpn_model(learning_rate, clipnorm, input_image_shape = (None, None, 3)
   utils.freeze_layers(model = model, layers = freeze_layers)
 
   # Compile
+  clipnorm = clipnorm if clipnorm > 0 else None
   optimizer = SGD(lr = learning_rate, momentum = 0.9, clipnorm = clipnorm)
   loss = [ rpn_class_loss, rpn_regression_loss ]
   model.compile(optimizer = optimizer, loss = loss)
@@ -163,6 +176,7 @@ def build_classifier_model(num_classes, conv_model, learning_rate, clipnorm, dro
   utils.freeze_layers(model = model, layers = freeze_layers)
 
   # Compile
+  clipnorm = clipnorm if clipnorm > 0 else None
   optimizer = SGD(lr = learning_rate, momentum = 0.9, clipnorm = clipnorm)
   loss = [ classifier_class_loss, classifier_regression_loss ]
   model.compile(optimizer = optimizer, loss = loss)
@@ -193,19 +207,21 @@ def infer_rpn_boxes(rpn_model, voc, filename):
   """
   Run RPN model to find objects and draw their bounding boxes.
   """
-  from .models.losses import rpn_class_loss_np
+  from .models.losses import rpn_class_loss_np, rpn_regression_loss_np
   info = voc.get_image_info(path = voc.get_full_path(filename))
   x = info.load_image_data()
   x = x.reshape((1, x.shape[0], x.shape[1], x.shape[2]))
+  _, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
   y_class, y_regression = rpn_model.predict(x)
   for yy in range(y_class.shape[1]):
     for xx in range(y_class.shape[2]):
       for kk in range(y_class.shape[3]):
         if y_class[0,yy,xx,kk] > 0.5:
-          print("%d,%d,%d -> %f" % (yy, xx, kk, y_class[0,yy,xx,kk]))
+          print("%d,%d,%d -> score=%f (valid=%d)" % (yy, xx, kk, y_class[0,yy,xx,kk], anchor_boxes_valid[yy,xx,kk]))
   y_true = info.get_ground_truth_map()
   y_true = y_true.reshape((1, y_true.shape[0], y_true.shape[1], y_true.shape[2], y_true.shape[3]))
   print("class loss=", rpn_class_loss_np(y_true=y_true, y_predicted=y_class))
+  print("regression loss=", rpn_regression_loss_np(y_true = y_true, y_predicted = y_regression))
   visualization.show_proposed_regions(voc = voc, filename = filename, y_true = y_true, y_class = y_class, y_regression = y_regression)
 
 def filter_detections(proposals, classes, regressions, iou_threshold = 0.5):
@@ -259,7 +275,7 @@ def filter_detections(proposals, classes, regressions, iou_threshold = 0.5):
       proposal_center_x = 0.5 * (proposals[i,1] + proposals[i,3])
       proposal_height = proposals[i,2] - proposals[i,0] + 1
       proposal_width = proposals[i,3] - proposals[i,1] + 1
-      y1, x1, y2, x2 = region_proposal_network.convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = proposal_center_y, anchor_center_x = proposal_center_x, anchor_height = proposal_height, anchor_width = proposal_width)
+      y1, x1, y2, x2 = region_proposal_network.convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = proposal_center_y, anchor_center_x = proposal_center_x, anchor_height = proposal_height, anchor_width = proposal_width, regression_means = g_detector_regression_means, regression_stds = g_detector_regression_stds)
       result_by_class_idx[class_idx].append((y1, x1, y2, x2, classes[i,class_idx]))
 
   # Perform NMS for each class
@@ -512,6 +528,7 @@ def validate(rpn_model, classifier_model, voc):
     mAP.add_image_results(scored_boxes_by_class_index = scored_boxes_by_class_index, ground_truth_object_boxes = ground_truth_object_boxes)
 
     # Update RPN progress and progress bar
+    print("--", image_path)
     stats.on_rpn_step(
       losses = rpn_losses,
       y_predicted_class = y_rpn_predicted_class,
@@ -958,7 +975,7 @@ if __name__ == "__main__":
   parser.add_argument("--map-results", metavar = "dir", type = str, action = "store", help = "During validation, write out results for Cartucho mAP analysis to directory")
   parser.add_argument("--epochs", metavar = "count", type = utils.positive_int, action = "store", default = "10", help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "rate", type = float, action = "store", default = "0.001", help = "Learning rate")
-  parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = "1.0", help = "Clip gradient norm to value")
+  parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = "0", help = "Clip gradient norm to value (disabled if 0)")
   parser.add_argument("--mini-batch", metavar = "size", type = utils.positive_int, action = "store", default = 256, help = "Anchor mini-batch size (per image) for region proposal network")
   parser.add_argument("--max-proposals", metavar = "size", type = utils.positive_int, action = "store", default = 0, help = "Maximum number of proposals to extract")
   parser.add_argument("--proposal-batch", metavar = "size", type = utils.positive_int, action = "store", default = 4, help = "Proposal batch size (per image) for classifier network")

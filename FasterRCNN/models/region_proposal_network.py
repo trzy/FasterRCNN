@@ -18,6 +18,11 @@ from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Dense
 import time
 
+g_rpn_regression_means = (0, 0, 0, 0)         # ty, tx, th, tw
+g_rpn_regression_stds = (0.1, 0.1, 0.2, 0.2)
+g_detector_regression_means = (0, 0, 0, 0)
+g_detector_regression_stds = (0.1, 0.1, 0.2, 0.2)
+
 def layers(input_map, l2 = 0):
   assert len(input_map.shape) == 4
   anchors_per_location = 9
@@ -318,6 +323,8 @@ def compute_ground_truth_map(ground_truth_object_boxes, anchor_boxes, anchor_box
           th = log(box_height / anchor_height)
           tw = log(box_width / anchor_width)
           truth_map[y,x,k,4:8] = ty, tx, th, tw
+          truth_map[y,x,k,4:8] -= g_rpn_regression_means
+          truth_map[y,x,k,4:8] /= g_rpn_regression_stds
  
   # Store positive and negative samples (but not neutral ones) in lists
   truth_map_coords = np.transpose(np.mgrid[0:height,0:width,0:num_anchors], (1,2,3,0))  # shape (height,width,k,3): every index (y,x,k,:) returns its own coordinate (y,x,k)
@@ -409,7 +416,7 @@ def extract_proposals(y_predicted_class, y_predicted_regression, input_image_sha
     _, y_idx, x_idx, k_idx = valid_indices[i] # first element is sample number, which is always 0: (0, y, x, k)
     box_params = y_predicted_regression[0, y_idx, x_idx, k_idx*4+0 : k_idx*4+4]
     anchor_box = anchor_boxes[y_idx, x_idx, k_idx*4+0 : k_idx*4+4]
-    proposals[i,0:4] = convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3])
+    proposals[i,0:4] = convert_parameterized_box_to_points(box_params = box_params, anchor_center_y = anchor_box[0], anchor_center_x = anchor_box[1], anchor_height = anchor_box[2], anchor_width = anchor_box[3], regression_means = g_rpn_regression_means, regression_stds = g_rpn_regression_stds)
     proposals[i,4] = y_predicted_class[0, y_idx, x_idx, k_idx]
 
   # Limit to maximum pre-NMS proposals, grabbing the top-N scores
@@ -430,8 +437,12 @@ def extract_proposals(y_predicted_class, y_predicted_regression, input_image_sha
   # Return results clipped to image boundaries
   return _clip_box_coordinates_to_map_boundaries(boxes = proposals, map_shape = input_image_shape)
 
-def convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width):
+def convert_parameterized_box_to_points(box_params, anchor_center_y, anchor_center_x, anchor_height, anchor_width, regression_means, regression_stds):
   ty, tx, th, tw = box_params
+  ty = ty * regression_stds[0] + regression_means[0]
+  tx = tx * regression_stds[1] + regression_means[1]
+  th = th * regression_stds[2] + regression_means[2]
+  tw = tw * regression_stds[3] + regression_means[3]
   center_x = anchor_width * tx + anchor_center_x
   center_y = anchor_height * ty + anchor_center_y
   width = exp(tw) * anchor_width
@@ -528,6 +539,8 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes, min_iou_t
       index = best_class_idx - 1
       y_regression_labels[i,0,4*index:4*index+4] = 1, 1, 1, 1 # mask indicating which targets are valid
       y_regression_labels[i,1,4*index:4*index+4] = ty, tx, th, tw
+      y_regression_labels[i,1,4*index:4*index+4] -= g_detector_regression_means
+      y_regression_labels[i,1,4*index:4*index+4] /= g_detector_regression_stds
       valid_indices.append(i) # include this sample
     elif passed_min_iou_threshold:
       valid_indices.append(i)
