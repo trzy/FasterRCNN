@@ -85,6 +85,18 @@ from tensorflow.keras import backend as K
 import time
 
 
+def get_gradients(model, x, y_true):
+  with tf.GradientTape() as tape:
+    loss = model.compiled_loss(y_true, model(x))
+  return tape.gradient(loss, model.trainable_weights)
+
+def get_gradient_norm(model, x, y_true):
+  grads = get_gradients(model = model, x = tf.convert_to_tensor(x), y_true = tf.convert_to_tensor(y_true))
+  grads = [ grad.numpy().flatten() for grad in grads ]
+  norm2 = np.sum([ np.sum(grad * grad) for grad in grads ])
+  norm = np.sqrt(norm2)
+  return norm
+
 def prepare_mAP_directories():
   gt_dir = os.path.join(options.map_results, "ground-truth")
   results_dir = os.path.join(options.map_results, "detection-results")
