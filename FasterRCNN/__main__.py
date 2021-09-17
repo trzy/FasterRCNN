@@ -540,7 +540,6 @@ def validate(rpn_model, classifier_model, voc):
     mAP.add_image_results(scored_boxes_by_class_index = scored_boxes_by_class_index, ground_truth_object_boxes = ground_truth_object_boxes)
 
     # Update RPN progress and progress bar
-    print("--", image_path)
     stats.on_rpn_step(
       losses = rpn_losses,
       y_predicted_class = y_rpn_predicted_class,
@@ -575,7 +574,7 @@ def validate(rpn_model, classifier_model, voc):
   stats.on_epoch_end()
   
   # Print mAP
-  print("Mean Average Precision: %1.2f%%" % (100.0 * mAP.compute_mean_average_precision(interpolated = True)))
+  print("Mean Average Precision: %1.2f%%" % (100.0 * mAP.compute_mean_average_precision()))
 
 def train_rpn(rpn_model, voc):
   """

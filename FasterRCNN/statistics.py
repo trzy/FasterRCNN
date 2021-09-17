@@ -104,7 +104,7 @@ class AveragePrecision:
     for class_index, count in object_count_by_class_index.items():
       self._object_count_by_class_index[class_index] += object_count_by_class_index[class_index]
 
-  def _compute_average_precision(self, class_index, interpolated):
+  def _compute_average_precision(self, class_index):
     # Sort predictions in descending order of score
     sorted_predictions = sorted(self._unsorted_predictions_by_class_index[class_index], key = lambda prediction: prediction[0], reverse = True)
     num_ground_truth_positives = self._object_count_by_class_index[class_index]
@@ -122,22 +122,30 @@ class AveragePrecision:
       recall_array.append(recall)
       precision_array.append(precision)
 
+    # Insert 0 at the beginning and end of the list. The 0 at the beginning won't
+    # matter due to how interpolation works, below.
+    recall_array.insert(0, 0.0)
+    recall_array.append(1.0)
+    precision_array.insert(0, 0.0)
+    precision_array.append(0.0)
+
     # Interpolation means we compute the highest precision observed at a given
     # recall value. Specifically, it means taking the maximum value seen from
     # each point onward. See URL below:
     # https://towardsdatascience.com/breaking-down-mean-average-precision-map-ae462f623a52#1a59
-    # AP often uses interpolated precision but we make it optional here.
-    if interpolated:
-      for i in range(len(precision_array)):
-        precision_array[i] = np.max(precision_array[i:])
+    for i in range(len(precision_array)):
+      precision_array[i] = np.max(precision_array[i:])
     
-    # Compute AP by integrating under the curve. Numpy seems perfectly capable
-    # of handling x arrays with repeating values.
-    average_precision = np.trapz(x = recall_array, y = precision_array)
+    # Compute AP using simple rectangular integration under the curve
+    average_precision = 0
+    for i in range(len(recall_array) - 1):
+      dx = recall_array[i + 1] - recall_array[i + 0]
+      dy = precision_array[i + 1]
+      average_precision += dy * dx
 
     return average_precision, recall_array, precision_array
 
-  def compute_mean_average_precision(self, interpolated = False):
+  def compute_mean_average_precision(self):
     """
     Calculates mAP (mean average precision) using all the data accumulated thus
     far. This should be called only after all image results have been
@@ -150,7 +158,7 @@ class AveragePrecision:
     """
     average_precisions = []
     for class_index in self._object_count_by_class_index:
-      average_precision, _, _ = self._compute_average_precision(class_index = class_index, interpolated = interpolated)
+      average_precision, _, _ = self._compute_average_precision(class_index = class_index)
       average_precisions.append(average_precision)
     return np.mean(average_precisions)
   
