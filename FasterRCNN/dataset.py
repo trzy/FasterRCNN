@@ -1,3 +1,5 @@
+from .models.pytorch_anchor_generator import compute_rpn_maps
+
 from .models import region_proposal_network
 from . import utils
 
@@ -51,7 +53,7 @@ class VOC:
       self.class_index = class_index
 
     def __repr__(self):
-      return "[x=%d, y=%d, width=%d, height=%d, class=%d]" % (self.corners[1], self.corners[0], self.corners[3] - self.corners[1] + 1, self.corners[2] - self.corners[0] + 1, self.class_index)
+      return "[x=%f, y=%f, width=%f, height=%f, class=%d]" % (self.corners[1], self.corners[0], self.corners[3] - self.corners[1] + 1, self.corners[2] - self.corners[0] + 1, self.class_index)
 
     def __str__(self):
       return repr(self)
@@ -98,6 +100,7 @@ class VOC:
       if self._ground_truth_map is None:
         anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
         self._ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+#        self._ground_truth_map, _, _, _, _ = compute_rpn_maps(input_image_shape = self.shape(), ground_truth_object_boxes = self.get_boxes())
         #print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(self._ground_truth_map[:,:,:,0])))
         #print("anchor_boxes_valid=%f, count=%f" % (np.sum(anchor_boxes_valid), (len(positive_anchors) + len(negative_anchors))))
       return self._ground_truth_map
@@ -233,10 +236,10 @@ class VOC:
       assert len(bndbox.findall("ymin")) == 1
       assert len(bndbox.findall("xmax")) == 1
       assert len(bndbox.findall("ymax")) == 1
-      original_x_min = int(bndbox.find("xmin").text)
-      original_y_min = int(bndbox.find("ymin").text)
-      original_x_max = int(bndbox.find("xmax").text)
-      original_y_max = int(bndbox.find("ymax").text)
+      original_x_min = int(bndbox.find("xmin").text) - 1  # convert to 0-based pixel coordinates
+      original_y_min = int(bndbox.find("ymin").text) - 1
+      original_x_max = int(bndbox.find("xmax").text) - 1
+      original_y_max = int(bndbox.find("ymax").text) - 1
       y_min = original_y_min * scale_factor
       y_max = original_y_max * scale_factor
       if not horizontal_flip:
@@ -286,6 +289,7 @@ class VOC:
       # and a second one that will be used by the dataset iterator to define
       # new mini-batches each epoch.
       complete_ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = ground_truth_object_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+#      complete_ground_truth_map, anchor_boxes, anchor_boxes_valid, positive_anchors, negative_anchors = compute_rpn_maps(input_image_shape = info.shape(), ground_truth_object_boxes = ground_truth_object_boxes)
       minibatch_ground_truth_map = np.copy(complete_ground_truth_map)
       y_per_image_path[image_path] = (complete_ground_truth_map, minibatch_ground_truth_map, positive_anchors, negative_anchors, ground_truth_object_boxes)
       anchor_boxes_per_image_path[image_path] = anchor_boxes

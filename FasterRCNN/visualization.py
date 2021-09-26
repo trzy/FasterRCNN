@@ -86,6 +86,7 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
   anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = (info.height, info.width, 3))
 
   # Draw positive anchors we got correct (true positives) as green and those we mispredicted as orange (false negatives)
+  """
   for y in range(y_class.shape[1]):
     for x in range(y_class.shape[2]):
       for k in range(y_class.shape[3]):
@@ -94,7 +95,7 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
           draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (0, 255, 0, 64))
         elif y_class[0,y,x,k] < 0.5 and y_true[0,y,x,k,1] > 0.5:  # false negative
           draw_filled_rectangle(ctx = ctx, x_min = anchor_box[1] - 0.5 * anchor_box[3], x_max = anchor_box[1] + 0.5 * anchor_box[3], y_min = anchor_box[0] - 0.5 * anchor_box[2], y_max = anchor_box[0] + 0.5 * anchor_box[2], color = (255, 100, 0, 64))
-
+  """
   # Extract proposals (which also performs NMS)
   final_proposals = region_proposal_network.extract_proposals(y_predicted_class = y_class, y_predicted_regression = y_regression, input_image_shape = info.shape(), anchor_boxes = anchor_boxes, anchor_boxes_valid = np.expand_dims(anchor_boxes_valid, axis=0))
 
@@ -107,6 +108,7 @@ def show_proposed_regions(voc, filename, y_true, y_class, y_regression):
     if np.argmax(y_class_labels[i]) != 0:
       color = (0, 255, 0, 255)
     else:
+      continue
       color = (255, 255, 0, 255)
     y_min, x_min, y_max, x_max = final_proposals[i,0:4]
     #print("proposal =", y_min, x_min, y_max, x_max)
@@ -130,6 +132,41 @@ def _draw_ground_truth_boxes(image, boxes):
   for box in boxes:
     draw_rectangle(ctx, x_min = box.corners[1], y_min = box.corners[0], x_max = box.corners[3], y_max = box.corners[2], color = (0, 255, 0, 255))
     print("box=%s" % str(box))
+
+def _debug_anchors(anchor_boxes, ground_truth_boxes):
+
+  for box in ground_truth_boxes:
+    cx = 0.5 * (box.corners[1] + box.corners[3])
+    cy = 0.5 * (box.corners[0] + box.corners[2])
+    print("Box: class=%d, center=(%1.0f,%1.0f)" % (box.class_index, cx, cy))
+
+    y1, x1, y2, x2 = box.corners
+    
+    intersecting_anchors = []
+
+    for y in range(anchor_boxes.shape[0]):
+      for x in range(anchor_boxes.shape[1]):
+        for k in range(anchor_boxes.shape[2] // 4):
+          ax1 = anchor_boxes[y,x,k*4+1] - 0.5 * anchor_boxes[y,x,k*4+3]
+          ax2 = anchor_boxes[y,x,k*4+1] + 0.5 * anchor_boxes[y,x,k*4+3]
+          ay1 = anchor_boxes[y,x,k*4+0] - 0.5 * anchor_boxes[y,x,k*4+2]
+          ay2 = anchor_boxes[y,x,k*4+0] + 0.5 * anchor_boxes[y,x,k*4+2]
+          no_intersection = ax2 < x1 or ax1 > x2 or ay2 < y1 or ay1 > y2
+          intersects = not no_intersection
+          if intersects:
+            iou = intersection_over_union.intersection_over_union(box1 = box.corners, box2 = (ay1, ax1, ay2, ax2))
+            intersecting_anchors.append((y, x, k, iou))
+
+    sorted_anchors = sorted(intersecting_anchors, key = lambda a: a[3], reverse = True)
+    print("  Num anchors=", len(sorted_anchors))
+    for a in sorted_anchors:
+      y, x, k, iou = a
+      ax1 = anchor_boxes[y,x,k*4+1] - 0.5 * anchor_boxes[y,x,k*4+3]
+      ax2 = anchor_boxes[y,x,k*4+1] + 0.5 * anchor_boxes[y,x,k*4+3]
+      ay1 = anchor_boxes[y,x,k*4+0] - 0.5 * anchor_boxes[y,x,k*4+2]
+      ay2 = anchor_boxes[y,x,k*4+0] + 0.5 * anchor_boxes[y,x,k*4+2]
+      print("  Anchor: %d,%d  %1.1f x %1.1f  IoU=%f    (%f,%f,%f,%f)" % (anchor_boxes[y,x,k*4+1], anchor_boxes[y,x,k*4+0], anchor_boxes[y,x,k*4+3], anchor_boxes[y,x,k*4+2], iou, ay1, ax1, ay2, ax2))
+
 
 def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points, input_image_shape):
   ctx = ImageDraw.Draw(image, mode = "RGBA")
@@ -182,7 +219,7 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
     x = positive_anchors[i][1]
     k = positive_anchors[i][2]
 
-    print("anchor=[%d,%d,%d] -- %d x %d" % (y, x, k, anchor_boxes[y,x,k*4+2], anchor_boxes[y,x,k*4+3]))
+    print("anchor=[%d,%d,%d] -- %d,%d -- %d x %d" % (y, x, k, anchor_boxes[y,x,k*4+1], anchor_boxes[y,x,k*4+0], anchor_boxes[y,x,k*4+2], anchor_boxes[y,x,k*4+3]))
 
     # Extract box and draw
     box = anchor_boxes[y, x, k * 4 : k * 4 + 4]
@@ -196,3 +233,5 @@ def _draw_anchor_box_intersections(image, ground_truth_boxes, draw_anchor_points
     anchor_x_max = center_x + 0.5 * width
 
     draw_rectangle(ctx, x_min = anchor_x_min, y_min = anchor_y_min, x_max = anchor_x_max, y_max = anchor_y_max, color = (255, 255, 0, 255))
+
+  _debug_anchors(anchor_boxes = anchor_boxes, ground_truth_boxes = ground_truth_boxes)

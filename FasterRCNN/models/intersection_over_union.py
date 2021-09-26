@@ -36,7 +36,7 @@ def _intersection_area(box1, box2):
   y2 = min(y1_max, y2_max)
   if x2 < x1 or y2 < y1:
     return 0
-  return (x2 - x1 + 1) * (y2 - y1 + 1)
+  return (x2 - x1 + 0) * (y2 - y1 + 0)
 
 def _union_area(box1, box2, intersection_area):
   y1_min = box1[0]
@@ -47,6 +47,6 @@ def _union_area(box1, box2, intersection_area):
   x2_min = box2[1]
   y2_max = box2[2]
   x2_max = box2[3]  
-  area_1 = (x1_max - x1_min + 1) * (y1_max - y1_min + 1)
-  area_2 = (x2_max - x2_min + 1) * (y2_max - y2_min + 1)
+  area_1 = (x1_max - x1_min + 0) * (y1_max - y1_min + 0)
+  area_2 = (x2_max - x2_min + 0) * (y2_max - y2_min + 0)
   return area_1 + area_2 - intersection_area

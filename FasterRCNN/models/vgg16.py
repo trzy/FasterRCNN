@@ -50,6 +50,7 @@ def load_imagenet_weights(model):
     if len(weights) > 0:
       our_layer = [ layer for layer in model.layers if layer.name == keras_layer.name ]
       if len(our_layer) > 0:
+        print("Loading VGG-16 ImageNet weights into layer: %s" % our_layer[0].name)
         our_layer[0].set_weights(weights)
 
 def compute_output_map_shape(input_image_shape):
@@ -59,7 +60,7 @@ def compute_output_map_shape(input_image_shape):
   """
   return (input_image_shape[0] // 16, input_image_shape[1] // 16)
 
-def convert_box_coordinates_from_image_to_output_map_space(box, output_map_shape):
+def convert_box_coordinates_from_image_to_output_map_space(box, output_map_shape, roi_quantization):
   """
   Returns box coordinates converted from image space to VGG-16 output map space
   (i.e., RPN input map) as integers.
@@ -77,7 +78,11 @@ def convert_box_coordinates_from_image_to_output_map_space(box, output_map_shape
   at the far edges, hence why we clamp to the boundary here.
   """
   map_limits = np.array([ output_map_shape[0], output_map_shape[1], output_map_shape[0], output_map_shape[1] ]) - 1
-  return np.minimum(box // 16, map_limits).astype(np.int32)
+  if roi_quantization == "floor":
+    return np.minimum(box // 16, map_limits).astype(np.int32)
+  else:
+    coords = np.floor((box - 8) / 16) + 1
+    return np.minimum(coords, map_limits).astype(np.int32)
 
 def convert_coordinate_from_output_map_to_image_space(y, x):
   """
