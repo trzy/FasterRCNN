@@ -98,9 +98,9 @@ class VOC:
 
     def get_ground_truth_map(self):
       if self._ground_truth_map is None:
-        anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
-        self._ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
-#        self._ground_truth_map, _, _, _, _ = compute_rpn_maps(input_image_shape = self.shape(), ground_truth_object_boxes = self.get_boxes())
+        #anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = self.shape())
+        #self._ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = self.get_boxes(), anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+        self._ground_truth_map, _, _, _, _ = compute_rpn_maps(input_image_shape = self.shape(), ground_truth_object_boxes = self.get_boxes())
         #print("pos=%d neg=%d count=%f" % (len(positive_anchors), len(negative_anchors), np.sum(self._ground_truth_map[:,:,:,0])))
         #print("anchor_boxes_valid=%f, count=%f" % (np.sum(anchor_boxes_valid), (len(positive_anchors) + len(negative_anchors))))
       return self._ground_truth_map
@@ -132,7 +132,7 @@ class VOC:
     with open(image_list_file) as fp:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(dataset_dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
-    return image_paths
+    #return image_paths
     # Debug: 60 car training images
     image_paths = [
       "2008_000028",
@@ -280,27 +280,27 @@ class VOC:
   @staticmethod
   def _prepare_data_thread(thread_num, image_paths, image_info_per_path):
     y_per_image_path = {}
-    anchor_boxes_per_image_path = {}
+    anchor_maps_per_image_path = {}
     for image_path in image_paths:
       info = image_info_per_path[image_path]
-      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = info.shape())
+#      anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = info.shape())
       ground_truth_object_boxes = info.get_boxes()
       # Create two copies of the ground truth map: one with all valid anchors
       # and a second one that will be used by the dataset iterator to define
       # new mini-batches each epoch.
-      complete_ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = ground_truth_object_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
-#      complete_ground_truth_map, anchor_boxes, anchor_boxes_valid, positive_anchors, negative_anchors = compute_rpn_maps(input_image_shape = info.shape(), ground_truth_object_boxes = ground_truth_object_boxes)
+#      complete_ground_truth_map, positive_anchors, negative_anchors = region_proposal_network.compute_ground_truth_map(ground_truth_object_boxes = ground_truth_object_boxes, anchor_boxes = anchor_boxes, anchor_boxes_valid = anchor_boxes_valid)
+      complete_ground_truth_map, anchor_boxes, anchor_boxes_valid, positive_anchors, negative_anchors = compute_rpn_maps(input_image_shape = info.shape(), ground_truth_object_boxes = ground_truth_object_boxes)
       minibatch_ground_truth_map = np.copy(complete_ground_truth_map)
       y_per_image_path[image_path] = (complete_ground_truth_map, minibatch_ground_truth_map, positive_anchors, negative_anchors, ground_truth_object_boxes)
-      anchor_boxes_per_image_path[image_path] = anchor_boxes
-    return y_per_image_path, anchor_boxes_per_image_path
+      anchor_maps_per_image_path[image_path] = (anchor_boxes, anchor_boxes_valid)
+    return y_per_image_path, anchor_maps_per_image_path
 
   def _prepare_data(self, dataset, augmented, num_threads):
     import concurrent.futures
 
     # Precompute ground truth maps (y) for each image
     y_per_image_path = {}
-    anchor_boxes_per_image_path = {}
+    anchor_maps_per_image_path = {}
 
     # Shard the data for faster processing
     dataset_pretty_name = "training" if dataset.startswith("train") else "validation"
@@ -322,13 +322,13 @@ class VOC:
         futures.append( executor.submit(self._prepare_data_thread, i, subset_image_paths, subset_image_info_per_path) )
       # Wait for threads to finish and then assemble results
       results = [ f.result() for f in futures ]
-      for subset_y_per_image_path, subset_anchor_boxes_per_image_path in results:
+      for subset_y_per_image_path, subset_anchor_maps_per_image_path in results:
         y_per_image_path.update(subset_y_per_image_path)
-        anchor_boxes_per_image_path.update(subset_anchor_boxes_per_image_path)
+        anchor_maps_per_image_path.update(subset_anchor_maps_per_image_path)
     toc = time.perf_counter()
     print("VOC dataset: Processed %d samples in %1.1f minutes" % (len(y_per_image_path), ((toc - tic) / 60.0)))
 
-    return y_per_image_path, anchor_boxes_per_image_path
+    return y_per_image_path, anchor_maps_per_image_path
 
   # TODO: add note cautioning against mutation of any of the returned objects because they are reused 
   def train_data(self, mini_batch_size = 256, shuffle = True, augment = False, num_threads = os.cpu_count(), cache_images = False):
@@ -339,14 +339,14 @@ class VOC:
 
   def _data_iterator(self, normal_dataset, augmented_dataset, mini_batch_size, shuffle, num_threads, cache_images):
     # Precompute the ground truth maps, including augmented version if needed
-    normal_y_per_image_path, normal_anchor_boxes_per_image_path = self._prepare_data(dataset = normal_dataset, augmented = False, num_threads = num_threads)
+    normal_y_per_image_path, normal_anchor_maps_per_image_path = self._prepare_data(dataset = normal_dataset, augmented = False, num_threads = num_threads)
     y_per_image_path = { normal_dataset: normal_y_per_image_path }
-    anchor_boxes_per_image_path = { normal_dataset: normal_anchor_boxes_per_image_path }
+    anchor_maps_per_image_path = { normal_dataset: normal_anchor_maps_per_image_path }
     assert normal_y_per_image_path.keys() == self._image_info_per_path[normal_dataset].keys()
     if augmented_dataset is not None:
-      augmented_y_per_image_path, augmented_anchor_boxes_per_image_path = self._prepare_data(dataset = augmented_dataset, augmented = True, num_threads = num_threads)
+      augmented_y_per_image_path, augmented_anchor_maps_per_image_path = self._prepare_data(dataset = augmented_dataset, augmented = True, num_threads = num_threads)
       y_per_image_path[augmented_dataset] = augmented_y_per_image_path
-      anchor_boxes_per_image_path[augmented_dataset] = augmented_anchor_boxes_per_image_path
+      anchor_maps_per_image_path[augmented_dataset] = augmented_anchor_maps_per_image_path
       assert augmented_y_per_image_path.keys() == normal_y_per_image_path.keys()
     
     # Image cache
@@ -383,7 +383,7 @@ class VOC:
         # Retrieve pre-computed ground truth maps (i.e., y value for training),
         # anchor boxes, and ground truth object boxes
         complete_ground_truth_map, minibatch_ground_truth_map, positive_anchors, negative_anchors, ground_truth_object_boxes = y_per_image_path[specific_dataset][image_path]
-        anchor_boxes = anchor_boxes_per_image_path[specific_dataset][image_path]
+        anchor_boxes, anchor_boxes_valid = anchor_maps_per_image_path[specific_dataset][image_path]
 
         # Randomly choose anchors to use in this mini-batch
         positive_anchors, negative_anchors = self._create_anchor_minibatch(positive_anchors = positive_anchors, negative_anchors = negative_anchors, mini_batch_size = mini_batch_size, image_path = image_path)
@@ -396,4 +396,4 @@ class VOC:
           k = anchor_position[2]
           minibatch_ground_truth_map[y,x,k,0] = 1.0
 
-        yield image_path, image_data, minibatch_ground_truth_map, complete_ground_truth_map, anchor_boxes, ground_truth_object_boxes
+        yield image_path, image_data, minibatch_ground_truth_map, complete_ground_truth_map, anchor_boxes, anchor_boxes_valid, ground_truth_object_boxes

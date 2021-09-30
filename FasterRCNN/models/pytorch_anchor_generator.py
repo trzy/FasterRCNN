@@ -8,6 +8,8 @@ from math import log
 
 from collections import defaultdict
 
+from . import region_proposal_network
+
 
 def compute_rpn_maps(input_image_shape, ground_truth_object_boxes):
   ratios=[0.5, 1, 2]
@@ -26,6 +28,7 @@ def compute_rpn_maps(input_image_shape, ground_truth_object_boxes):
   gt_rpn_anchor_boxes, gt_rpn_label, targets = anchor_target_creator(bbox, anchor, img_size)
 
   # Create anchor map and anchor valid map
+  """
   anchor_boxes = np.zeros((height, width, num_anchors * 4))
   for y in range(height):
     for x in range(width):
@@ -34,6 +37,8 @@ def compute_rpn_maps(input_image_shape, ground_truth_object_boxes):
         center_x = (x + 0.5) * 16
         center_y = (y + 0.5) * 16
         anchor_boxes[y,x,k*4+0:k*4+4] = (center_y, center_x, h, w)
+  """
+  anchor_boxes, _ = region_proposal_network.compute_all_anchor_boxes(input_image_shape = input_image_shape)
 
   # Create truth map
   anchor_boxes_valid = np.zeros((height, width, num_anchors))

@@ -486,10 +486,10 @@ def validate(rpn_model, classifier_model, voc, max_proposals):
     stats.on_step_begin()
 
     # Fetch next sample
-    image_path, x, y_true_minibatch, y_true, anchor_boxes, ground_truth_object_boxes = next(val_data)
+    image_path, x, y_true_minibatch, y_true, anchor_boxes, anchor_boxes_valid, ground_truth_object_boxes = next(val_data)
     input_image_shape = x.shape
     rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
-    anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = input_image_shape)
+    #anchor_boxes, anchor_boxes_valid = region_proposal_network.compute_all_anchor_boxes(input_image_shape = input_image_shape)
     x = np.expand_dims(x, axis = 0)
     y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
     anchor_boxes_valid = np.expand_dims(anchor_boxes_valid, axis = 0)
@@ -644,11 +644,12 @@ def train_rpn(rpn_model, voc):
       stats.on_step_begin()
 
       # Fetch one sample and reshape to batch size of 1
-      image_path, x, y_true_minibatch, y_true, anchor_boxes, ground_truth_object_boxes = next(train_data)
+      image_path, x, y_true_minibatch, y_true, anchor_boxes, anchor_boxes_valid, ground_truth_object_boxes = next(train_data)
       input_image_shape = x.shape
       rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
       y_true = np.expand_dims(y_true, axis = 0)
       y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
+      anchor_boxes_valid = np.expand_dims(anchor_boxes_valid, axis = 0)
       x = np.expand_dims(x, axis = 0)
 
       # RPN: back prop one step (and then predict so we can evaluate accuracy)
@@ -757,11 +758,12 @@ def train_detector(rpn_model, classifier_model, voc):
       stats.on_step_begin()
 
       # Fetch one sample and reshape to batch size of 1
-      image_path, x, y_true_minibatch, y_true, anchor_boxes, ground_truth_object_boxes = next(train_data)
+      image_path, x, y_true_minibatch, y_true, anchor_boxes, anchor_boxes_valid, ground_truth_object_boxes = next(train_data)
       input_image_shape = x.shape
       rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
       y_true = np.expand_dims(y_true, axis = 0)
       y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
+      anchor_boxes_valid = np.expand_dims(anchor_boxes_valid, axis = 0)
       x = np.expand_dims(x, axis = 0)
 
       # RPN: run forward step only to generate region proposals
@@ -773,7 +775,7 @@ def train_detector(rpn_model, classifier_model, voc):
         y_predicted_regression = y_rpn_predicted_regression,
         input_image_shape = input_image_shape,
         anchor_boxes = anchor_boxes,
-        anchor_boxes_valid = y_true[:,:,:,:,0],
+        anchor_boxes_valid = anchor_boxes_valid,
         max_proposals = options.max_proposals
       )
 
@@ -888,11 +890,12 @@ def train_joint(joint_model, rpn_model, classifier_model, voc):
 
       # Fetch one sample and reshape to batch size of 1
       rpn_train_t0 = time.perf_counter()
-      image_path, x, y_true_minibatch, y_true, anchor_boxes, ground_truth_object_boxes = next(train_data)
+      image_path, x, y_true_minibatch, y_true, anchor_boxes, anchor_boxes_valid, ground_truth_object_boxes = next(train_data)
       input_image_shape = x.shape
       rpn_shape = vgg16.compute_output_map_shape(input_image_shape = input_image_shape)
       y_true = np.expand_dims(y_true, axis = 0)
       y_true_minibatch = np.expand_dims(y_true_minibatch, axis = 0)
+      anchor_boxes_valid = np.expand_dims(anchor_boxes_valid, axis = 0)
       x = np.expand_dims(x, axis = 0)
 
       # RPN: back prop one step (and then predict so we can evaluate accuracy)
@@ -908,7 +911,7 @@ def train_joint(joint_model, rpn_model, classifier_model, voc):
           y_predicted_regression = y_rpn_predicted_regression,
           input_image_shape = input_image_shape,
           anchor_boxes = anchor_boxes,
-          anchor_boxes_valid = y_true[:,:,:,:,0],
+          anchor_boxes_valid = anchor_boxes_valid,
           max_proposals = options.max_proposals
         )
         extract_proposals_time = time.perf_counter() - extract_proposals_t0
