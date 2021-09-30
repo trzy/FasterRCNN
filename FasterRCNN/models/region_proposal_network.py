@@ -567,12 +567,13 @@ def label_proposals(proposals, ground_truth_object_boxes, num_classes, min_iou_t
       proposal_box_coords = proposals[i,0:4]
       object_box_coords = box.corners
       iou = intersection_over_union(box1 = proposal_box_coords, box2 = object_box_coords)
-      if iou >= max_iou_threshold and iou > best_iou:
+      if iou > best_iou:
         best_iou = iou
-        best_class_idx = box.class_index
-        best_box = box
-      elif iou >= min_iou_threshold:
-        passed_min_iou_threshold = True      
+        if iou >= max_iou_threshold:
+          best_class_idx = box.class_index
+          best_box = box
+    if best_iou >= min_iou_threshold and best_iou < max_iou_threshold:
+      passed_min_iou_threshold = True # this is a negative sample -- doesn't sufficiently overlap with any GT bounding box and is within IoU range of a hard-negative example of at least one box
 
     # Create one-hot encoded label for this proposal
     y_class_labels[i,best_class_idx] = 1.0
