@@ -2,6 +2,7 @@
 
 __pycache__
 .vs
+venv
 
 *.hdf5
 *.h5
