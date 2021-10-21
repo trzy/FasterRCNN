@@ -2,7 +2,7 @@ import itertools
 from math import sqrt
 import numpy as np
 
-from FasterRCNN import utils
+from FasterRCNN.models import math_utils
 
 
 def _compute_anchor_sizes():
@@ -181,7 +181,7 @@ def generate_rpn_map(anchor_map, anchor_valid_map, gt_boxes, object_iou_threshol
   gt_box_assignments = np.full(n, -1) # -1 means no box
   
   # Compute IoU between each anchor and each ground truth box, (N,M).
-  ious = utils.parallel_intersection_over_union(boxes1 = anchors, boxes2 = gt_box_corners)
+  ious = math_utils.intersection_over_union(boxes1 = anchors, boxes2 = gt_box_corners)
 
   # Need to remove anchors that are invalid (straddle image boundaries) from
   # consideration entirely and the easiest way to do this is to wipe out their

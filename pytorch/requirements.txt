@@ -6,3 +6,4 @@ torchnet==0.0.4
 imageio
 matplotlib
 h5py
+tqdm

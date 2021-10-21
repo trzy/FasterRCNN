@@ -14,12 +14,13 @@ def _compute_scale_factor(original_width, original_height, min_dimension_pixels)
   return scale_factor
 
 def _preprocess_vgg16(image_data):
-  image_data = image_data[:, :, ::-1]     # RGB -> BGR
+  image_data = image_data[:, :, ::-1]           # RGB -> BGR
   # NOTE: Yun Chen's code actually has the ImageNet means incorrectly flipped and we replicate that here, e.g., subtracting the R mean from the B component
-  image_data[:, :, 2] -= 103.939          # ImageNet B mean
-  image_data[:, :, 1] -= 116.779          # ImageNet G mean
-  image_data[:, :, 0] -= 123.680          # ImageNet R mean 
-  return image_data.transpose([2, 0, 1])  # (height,width,3) -> (3,height,width)
+  image_data[:, :, 2] -= 103.939                # ImageNet B mean
+  image_data[:, :, 1] -= 116.779                # ImageNet G mean
+  image_data[:, :, 0] -= 123.680                # ImageNet R mean 
+  image_data = image_data.transpose([2, 0, 1])  # (height,width,3) -> (3,height,width)
+  return image_data.copy()                      # copy required to eliminate negative stride (which Torch doesn't like)
 
 def load_image(url, min_dimension_pixels = None, horizontal_flip = False):
   """
