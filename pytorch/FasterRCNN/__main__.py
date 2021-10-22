@@ -8,6 +8,7 @@
 # - Reorg utils, separate out computations from pure utilities like nograd decorator
 # - Can we load VGG-16 from Keras?
 # - Support multiple batches by padding right side with zeros to a common image width
+# - Add tqdm to render_anchors, predict_all, etc.
 #
 import argparse
 import os
@@ -20,11 +21,11 @@ from . import utils
 from . import visualize
 
 
-def dump_anchors():
+def render_anchors():
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = False, shuffle = False)
   if not os.path.exists(options.dump_anchors):
     os.makedirs(options.dump_anchors)
-  print("Dumping anchors from '%s' to '%s'..." % (options.train_split, options.dump_anchors))
+  print("Rendering anchors from '%s' to set '%s'..." % (options.train_split, options.dump_anchors))
   for sample in iter(training_data):
     output_path = os.path.join(options.dump_anchors, "anchors_" + os.path.basename(sample.filepath) + ".png")
     visualize.show_anchors(
@@ -35,7 +36,6 @@ def dump_anchors():
       gt_rpn_map = sample.gt_rpn_map,
       gt_boxes = sample.gt_boxes
     )
-
 
 def train(model):
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = options.augment, shuffle = True)
@@ -57,10 +57,7 @@ def train(model):
     t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, options.save_to)
     print("Saved final model weights to '%s'" % options.save_to)
 
-
-def predict(model, url, show_image, output_path):
-  from .datasets.image import load_image
-  image_data, image, _, _ = load_image(url = url, min_dimension_pixels = 600)
+def predict(model, image_data, image, show_image, output_path):
   image_data = t.from_numpy(image_data).unsqueeze(dim = 0).cuda()
   scored_boxes_by_class_index = model.predict(image_data = image_data, score_threshold = 0.7)
   visualize.show_detections(
@@ -71,13 +68,28 @@ def predict(model, url, show_image, output_path):
     class_index_to_name = voc.Dataset.class_index_to_name
   )
 
+def predict_one(model, url, show_image, output_path):
+  from .datasets.image import load_image
+  image_data, image, _, _ = load_image(url = url, min_dimension_pixels = 600)
+  predict(model = model, image_data = image_data, image = image, show_image = show_image, output_path = output_path)
+
+def predict_all(model, split):
+  dirname = "predictions_" + split
+  if not os.path.exists(dirname):
+    os.makedirs(dirname)
+  print("Rendering predictions from '%s' set to '%s'..." % (split, dirname))
+  dataset = voc.Dataset(dir = options.dataset_dir, split = split, augment = False, shuffle = False)
+  for sample in iter(dataset):
+    output_path = os.path.join(dirname, os.path.splitext(os.path.basename(sample.filepath))[0] + ".png")
+    predict(model = model, image_data = sample.image_data, image = sample.image, show_image = False, output_path = output_path)
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser("FasterRCNN-pytorch")
   group = parser.add_mutually_exclusive_group()
   group.add_argument("--train", action = "store_true", help = "Train model")
   group.add_argument("--predict", metavar = "url", action = "store", type = str, help = "Run inference on image and display detected boxes")
-  group.add_argument("--predict-to-file", metavar = "url", action = "store", type = str, help = "Run inference on image and render detected boxes to 'detections.png'")
+  group.add_argument("--predict-to-file", metavar = "url", action = "store", type = str, help = "Run inference on image and render detected boxes to 'predictions.png'")
+  group.add_argument("--predict-all", metavar = "name", action = "store", type = str, help = "Run inference on all images in the specified dataset split and write to directory 'predictions_${split}'")
   parser.add_argument("--load-from", metavar = "file", action = "store", help = "Load initial model weights from file")
   parser.add_argument("--save-to", metavar = "file", action = "store", help = "Save final trained weights to file")
   parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "../../VOCdevkit/VOC2012", help = "VOC dataset directory")
@@ -107,7 +119,9 @@ if __name__ == "__main__":
   if options.train:
     train(model = model)
   elif options.predict:
-    predict(model = model, url = options.predict, show_image = True, output_path = None)
+    predict_one(model = model, url = options.predict, show_image = True, output_path = None)
   elif options.predict_to_file:
-    predict(model = model, url = options.predict_to_file, show_image = False, output_path = "detections.png")
+    predict_one(model = model, url = options.predict_to_file, show_image = False, output_path = "predictions.png")
+  elif options.predict_all:
+    predict_all(model = model, split = options.predict_all)
   
