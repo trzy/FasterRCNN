@@ -189,7 +189,7 @@ def regression_loss(predicted_regressions, y_true):
     A tensor of shape (batch_size, height, width, num_anchors * 4) containing
     RoI box regressions for each anchor, stored as: ty, tx, th, tw.
   y_true : torch.Tensor
-    Ground truth tensor of shape (batch_size, height, width, num_anchors, 8).
+    Ground truth tensor of shape (batch_size, height, width, num_anchors, 6).
 
   Returns
   -------
@@ -203,14 +203,13 @@ def regression_loss(predicted_regressions, y_true):
   sigma_squared = sigma * sigma
 
   y_predicted_regression = predicted_regressions
-  y_true_regression = y_true[:,:,:,:,4:8].reshape(y_predicted_regression.shape)
+  y_true_regression = y_true[:,:,:,:,2:6].reshape(y_predicted_regression.shape)
 
   # Include only anchors that are used in the mini-batch and which correspond
   # to objects (positive samples)
-  y_included = y_true[:,:,:,:,0].reshape(y_true.shape[0:4]) # valid anchors map: (batch_size, height, width, num_anchors)
+  y_included = y_true[:,:,:,:,0].reshape(y_true.shape[0:4]) # trainable anchors map: (batch_size, height, width, num_anchors)
   y_positive = y_true[:,:,:,:,1].reshape(y_true.shape[0:4]) # positive anchors
   y_mask = y_included * y_positive
-
 
   # y_mask is of the wrong shape. We have one value per (y,x,k) position but in
   # fact need to have 4 values (one for each of the regression variables). For

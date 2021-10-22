@@ -41,7 +41,7 @@ class FeatureExtractor(nn.Module):
     self._block2_conv2.bias.requires_grad = False
 
     # Load Caffe weights
-    """
+    #TODO: remove this
     state = t.load("vgg16_caffe.pth")
     mapping = {
       "features.0.":  self._block1_conv1,
@@ -64,7 +64,6 @@ class FeatureExtractor(nn.Module):
         mapping[key].weight.data = state[key + "weight"]
         mapping[key].bias.data = state[key + "bias"]
         print("Loaded %s" % mapping[key])
-    """
 
 
   def forward(self, image_data):

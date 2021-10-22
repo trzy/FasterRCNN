@@ -127,7 +127,7 @@ def generate_rpn_map(anchor_map, anchor_valid_map, gt_boxes, object_iou_threshol
   anchor_valid_map : np.ndarray
     Map of shape (height, width, num_anchors) defining anchors that are valid
     and may be included in training.
-  gt_boxes : List[Box]
+  gt_boxes : List[training_sample.Box]
     List of ground truth boxes.
   object_iou_threshold : float
     IoU threshold between an anchor and a ground truth box above which an

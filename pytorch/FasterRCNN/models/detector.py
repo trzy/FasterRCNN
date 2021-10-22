@@ -23,13 +23,11 @@ class DetectorNetwork(nn.Module):
 
     # Load Caffe model
     #TODO: these initial conditions may differ from the Chen model. 
-    """
     state = t.load("vgg16_caffe.pth")
     self._fc1.weight.data = state["classifier.0.weight"]
     self._fc1.bias.data = state["classifier.0.bias"]
     self._fc2.weight.data = state["classifier.3.weight"]
     self._fc2.bias.data = state["classifier.3.bias"]
-    """
 
   def forward(self, feature_map, proposals):
     # Batch size of one for now, so no need to associate proposals with batches
