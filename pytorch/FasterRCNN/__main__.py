@@ -11,9 +11,9 @@
 # - Add tqdm to render_anchors, predict_all, etc.
 # - Move anchor code from dataset/ to models/
 # - Add dropout and regularization
+# - Once a new Keras implementation exists, add support for loading complete state from h5
 #
 import argparse
-import h5py
 import os
 import torch as t
 from tqdm import tqdm
@@ -21,6 +21,7 @@ from tqdm import tqdm
 from .datasets import voc
 from .models.faster_rcnn import FasterRCNNModel
 from .statistics import PrecisionRecallCurveCalculator
+from . import state
 from . import utils
 from . import visualize
 
@@ -127,8 +128,6 @@ if __name__ == "__main__":
   group.add_argument("--predict", metavar = "url", action = "store", type = str, help = "Run inference on image and display detected boxes")
   group.add_argument("--predict-to-file", metavar = "url", action = "store", type = str, help = "Run inference on image and render detected boxes to 'predictions.png'")
   group.add_argument("--predict-all", metavar = "name", action = "store", type = str, help = "Run inference on all images in the specified dataset split and write to directory 'predictions_${split}'")
-  parser.add_argument("--load-caffe-vgg16", metavar = "file", action = "store", help = "Load initial model weights for VGG-16 layers from a Caffe model as a PyTorch state file")
-  parser.add_argument("--load-keras-vgg16", metavar = "file", action = "store", help = "Load initial model weights for VGG-16 layers from a Keras HDF5 state file")
   parser.add_argument("--load-from", metavar = "file", action = "store", help = "Load initial model weights from file")
   parser.add_argument("--save-to", metavar = "file", action = "store", help = "Save final trained weights to file")
   parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "../../VOCdevkit/VOC2007", help = "VOC dataset directory")
@@ -152,18 +151,8 @@ if __name__ == "__main__":
 
   # Construct model and load initial weights
   model = FasterRCNNModel(num_classes = voc.Dataset.num_classes, allow_edge_proposals = not options.exclude_edge_proposals).cuda()
-  if options.load_caffe_vgg16:
-    state = t.load(options.load_caffe_vgg16)
-    model.load_caffe_vgg16_weights(state = state)
-    print("Loaded initial VGG-16 layer weights from Caffe model '%s'" % options.load_caffe_vgg16)
-  if options.load_keras_vgg16:
-    hdf5_file = h5py.File(options.load_keras_vgg16, "r")
-    model.load_keras_vgg16_weights(hdf5_file = hdf5_file)
-    print("Loaded initial VGG-16 layer weights from Keras model '%s'" % options.load_keras_vgg16)
   if options.load_from:
-    state = t.load(options.load_from)
-    model.load_state_dict(state["model_state_dict"])
-    print("Loaded initial weights from '%s'" % options.load_from)
+    state.load(model = model, filepath = options.load_from)
 
   # Perform mutually exclusive procedures
   if options.train:

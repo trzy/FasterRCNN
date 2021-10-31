@@ -44,14 +44,6 @@ class FasterRCNNModel(nn.Module):
     self._stage2_region_proposal_network = rpn.RegionProposalNetwork(allow_edge_proposals = allow_edge_proposals)
     self._stage3_detector_network = detector.DetectorNetwork(num_classes = num_classes)
 
-  def load_caffe_vgg16_weights(self, state):
-    self._stage1_feature_extractor.load_caffe_vgg16_weights(state = state)
-    self._stage3_detector_network.load_caffe_vgg16_weights(state = state)
-
-  def load_keras_vgg16_weights(self, hdf5_file):
-    self._stage1_feature_extractor.load_keras_vgg16_weights(hdf5_file = hdf5_file)
-    self._stage3_detector_network.load_keras_vgg16_weights(hdf5_file = hdf5_file)
-
   def forward(self, image_data, anchor_map = None, anchor_valid_map = None):
     """
     Forward inference. Use for test and evaluation only.
