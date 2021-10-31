@@ -44,6 +44,14 @@ class FasterRCNNModel(nn.Module):
     self._stage2_region_proposal_network = rpn.RegionProposalNetwork(allow_edge_proposals = allow_edge_proposals)
     self._stage3_detector_network = detector.DetectorNetwork(num_classes = num_classes)
 
+  def load_caffe_vgg16_weights(self, state):
+    self._stage1_feature_extractor.load_caffe_vgg16_weights(state = state)
+    self._stage3_detector_network.load_caffe_vgg16_weights(state = state)
+
+  def load_keras_vgg16_weights(self, hdf5_file):
+    self._stage1_feature_extractor.load_keras_vgg16_weights(hdf5_file = hdf5_file)
+    self._stage3_detector_network.load_keras_vgg16_weights(hdf5_file = hdf5_file)
+
   def forward(self, image_data, anchor_map = None, anchor_valid_map = None):
     """
     Forward inference. Use for test and evaluation only.
@@ -408,7 +416,7 @@ class FasterRCNNModel(nn.Module):
     assert min_background_iou_threshold < min_object_iou_threshold, "Object threshold must be greater than background threshold"
 
     # Convert ground truth box corners to (M,4) tensor and class indices to (M,)
-    gt_box_corners = np.array([ box.corners for box in gt_boxes ])
+    gt_box_corners = np.array([ box.corners for box in gt_boxes ]).astype(np.float32)
     gt_box_class_idxs = np.array([ box.class_index for box in gt_boxes ]).astype(np.int32)
 
     # Let's be crafty and create some fake proposals that match the ground
@@ -442,7 +450,7 @@ class FasterRCNNModel(nn.Module):
     
     # One-hot encode class labels
     num_proposals = proposals.shape[0]
-    gt_classes = np.zeros((num_proposals, self._num_classes)) # (N,num_classes)
+    gt_classes = np.zeros((num_proposals, self._num_classes)).astype(np.float32)  # (N,num_classes)
     gt_classes[ np.arange(num_proposals), gt_box_class_idxs ] = 1.0
 
     # Convert proposals and ground truth boxes into "anchor" format (center
@@ -468,7 +476,7 @@ class FasterRCNNModel(nn.Module):
     # Background class 0 does not have a box and its mask components will be 0
     # even though regression target values (corresponding a box candidate whose
     # IoU was insufficiently high) will be populated.
-    gt_regressions = np.zeros((num_proposals, 2, 4 * self._num_classes))
+    gt_regressions = np.zeros((num_proposals, 2, 4 * self._num_classes)).astype(np.float32)
     gt_regressions[:,0,:] = np.repeat(gt_classes, repeats = 4, axis = 1)    # create masks using interleaved repetition
     gt_regressions[:,0,0:4] = 0                                             # but remember to mask off class 0 (background) because there is no valid box to regress here
     gt_regressions[:,1,:] = np.tile(regression_targets, reps = self._num_classes) # populate regression targets with straightforward repetition (only those columns corresponding to class are masked on)

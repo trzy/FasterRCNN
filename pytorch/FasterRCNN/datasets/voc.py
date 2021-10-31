@@ -67,7 +67,7 @@ class Dataset:
     """
     if not os.path.exists(dir):
       raise FileNotFoundError("Dataset directory does not exist: %s" % dir)
-    self._split = split
+    self.split = split
     self._dir = dir
     self.class_index_to_name = self._get_classes()
     self.class_name_to_index = { class_name: class_index for (class_index, class_name) in self.class_index_to_name.items() }
@@ -158,14 +158,14 @@ class Dataset:
 
   def _get_classes(self):
     imageset_dir = os.path.join(self._dir, "ImageSets", "Main")
-    classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_" + self._split + ".txt") ])
-    assert len(classes) > 0, "No classes found in ImageSets/Main for '%s' split" % self._split
+    classes = set([ os.path.basename(path).split("_")[0] for path in Path(imageset_dir).glob("*_" + self.split + ".txt") ])
+    assert len(classes) > 0, "No classes found in ImageSets/Main for '%s' split" % self.split
     class_index_to_name = { (1 + v[0]): v[1] for v in enumerate(sorted(classes)) }
     class_index_to_name[0] = "background"
     return class_index_to_name
 
   def _get_filepaths(self):
-    image_list_file = os.path.join(self._dir, "ImageSets", "Main", self._split + ".txt")
+    image_list_file = os.path.join(self._dir, "ImageSets", "Main", self.split + ".txt")
     with open(image_list_file) as fp:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(self._dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]

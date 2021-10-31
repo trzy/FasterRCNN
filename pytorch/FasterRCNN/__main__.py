@@ -1,22 +1,26 @@
 #
 # TODO:
-# - Load VGG-16 from PyTorch
-# - Add eval code (sampling 20% or 25% of the validation set except at the very end)
+# - Detector network should be reduced in size so as not to regression class=0
 # - Investigate performance impact of generating anchor and GT maps on the fly rather than caching them
-#   in the dataset code.
+#   in the dataset code. If no impact, just calculate them when needed.
+# - Print other statistics
+# - Add automatic checkpoints
 # - Print losses during training in tqdm bar
 # - Reorg utils, separate out computations from pure utilities like nograd decorator
-# - Can we load VGG-16 from Keras?
 # - Support multiple batches by padding right side with zeros to a common image width
 # - Add tqdm to render_anchors, predict_all, etc.
+# - Move anchor code from dataset/ to models/
+# - Add dropout and regularization
 #
 import argparse
+import h5py
 import os
 import torch as t
 from tqdm import tqdm
 
 from .datasets import voc
 from .models.faster_rcnn import FasterRCNNModel
+from .statistics import PrecisionRecallCurveCalculator
 from . import utils
 from . import visualize
 
@@ -37,8 +41,33 @@ def render_anchors():
       gt_boxes = sample.gt_boxes
     )
 
+def evaluate(model, eval_data = None, num_samples = None, plot = False):
+  if eval_data is None:
+    eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False)
+  if num_samples is None:
+    num_samples = eval_data.num_samples
+  precision_recall_curve = PrecisionRecallCurveCalculator()
+  i = 0
+  print("Evaluating '%s'..." % eval_data.split)
+  for sample in tqdm(iterable = iter(eval_data), total = num_samples):
+    scored_boxes_by_class_index = model.predict(
+      image_data = t.from_numpy(sample.image_data).unsqueeze(dim = 0).cuda(),
+      score_threshold = 0.05  # lower threshold for evaluation
+    )  
+    precision_recall_curve.add_image_results(
+      scored_boxes_by_class_index = scored_boxes_by_class_index,
+      gt_boxes = sample.gt_boxes
+    )
+    i += 1
+    if i >= num_samples:
+      break
+  print("Mean Average Precision = %1.2f%%" % (100.0 * precision_recall_curve.compute_mean_average_precision()))
+  if plot:
+    precision_recall_curve.plot_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
+
 def train(model):
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = options.augment, shuffle = True)
+  eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False)
   optimizer = t.optim.SGD(model.parameters(), lr = options.learning_rate, momentum = options.momentum)
   for epoch in range(1, 1 + options.epochs):
     print("Epoch %d/%d" % (epoch, options.epochs))
@@ -53,6 +82,13 @@ def train(model):
           gt_rpn_background_indices = [ sample.gt_rpn_background_indices ],
           gt_boxes = [ sample.gt_boxes ]
         )
+    last_epoch = epoch == options.epochs
+    evaluate(
+      model = model,
+      eval_data = eval_data,
+      num_samples = None if last_epoch else options.periodic_eval_samples, # use full number of samples at last epoch
+      plot = options.plot if last_epoch else False
+    )
   if options.save_to:
     t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, options.save_to)
     print("Saved final model weights to '%s'" % options.save_to)
@@ -87,13 +123,19 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser("FasterRCNN-pytorch")
   group = parser.add_mutually_exclusive_group()
   group.add_argument("--train", action = "store_true", help = "Train model")
+  group.add_argument("--eval", action = "store_true", help = "Evaluate model")
   group.add_argument("--predict", metavar = "url", action = "store", type = str, help = "Run inference on image and display detected boxes")
   group.add_argument("--predict-to-file", metavar = "url", action = "store", type = str, help = "Run inference on image and render detected boxes to 'predictions.png'")
   group.add_argument("--predict-all", metavar = "name", action = "store", type = str, help = "Run inference on all images in the specified dataset split and write to directory 'predictions_${split}'")
+  parser.add_argument("--load-caffe-vgg16", metavar = "file", action = "store", help = "Load initial model weights for VGG-16 layers from a Caffe model as a PyTorch state file")
+  parser.add_argument("--load-keras-vgg16", metavar = "file", action = "store", help = "Load initial model weights for VGG-16 layers from a Keras HDF5 state file")
   parser.add_argument("--load-from", metavar = "file", action = "store", help = "Load initial model weights from file")
   parser.add_argument("--save-to", metavar = "file", action = "store", help = "Save final trained weights to file")
-  parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "../../VOCdevkit/VOC2012", help = "VOC dataset directory")
-  parser.add_argument("--train-split", metavar = "name", action = "store", default = "train", help = "Dataset split to use for training")
+  parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "../../VOCdevkit/VOC2007", help = "VOC dataset directory")
+  parser.add_argument("--train-split", metavar = "name", action = "store", default = "trainval", help = "Dataset split to use for training")
+  parser.add_argument("--eval-split", metavar = "name", action = "store", default = "test", help = "Dataset split to use for evaluation")
+  parser.add_argument("--periodic-eval-samples", metavar = "count", action = "store", default = 1000, help = "Number of samples to use during evaluation after each epoch")
+  parser.add_argument("--plot", action = "store_true", help = "Plots the average precision of each class after evaluation (use with --train or --eval)")
   parser.add_argument("--epochs", metavar = "count", type = int, action = "store", default = 1, help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
   parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "Momentum")
@@ -110,6 +152,14 @@ if __name__ == "__main__":
 
   # Construct model and load initial weights
   model = FasterRCNNModel(num_classes = voc.Dataset.num_classes, allow_edge_proposals = not options.exclude_edge_proposals).cuda()
+  if options.load_caffe_vgg16:
+    state = t.load(options.load_caffe_vgg16)
+    model.load_caffe_vgg16_weights(state = state)
+    print("Loaded initial VGG-16 layer weights from Caffe model '%s'" % options.load_caffe_vgg16)
+  if options.load_keras_vgg16:
+    hdf5_file = h5py.File(options.load_keras_vgg16, "r")
+    model.load_keras_vgg16_weights(hdf5_file = hdf5_file)
+    print("Loaded initial VGG-16 layer weights from Keras model '%s'" % options.load_keras_vgg16)
   if options.load_from:
     state = t.load(options.load_from)
     model.load_state_dict(state["model_state_dict"])
@@ -118,10 +168,14 @@ if __name__ == "__main__":
   # Perform mutually exclusive procedures
   if options.train:
     train(model = model)
+  elif options.eval:
+    evaluate(model = model, plot = options.plot)
   elif options.predict:
     predict_one(model = model, url = options.predict, show_image = True, output_path = None)
   elif options.predict_to_file:
     predict_one(model = model, url = options.predict_to_file, show_image = False, output_path = "predictions.png")
   elif options.predict_all:
     predict_all(model = model, split = options.predict_all)
+  else:
+    print("Nothing to do. Did you mean to use --train or --predict?")
   
