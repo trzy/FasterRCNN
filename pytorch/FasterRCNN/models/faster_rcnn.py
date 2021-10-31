@@ -1,7 +1,6 @@
 #
 # TODO:
 # -----
-# - Detector network regressions should be of shape N,(num_classes-1)*4 (eliminate the unneeded outputs for background)
 # - IoU threshold for prediction. Is it 0.3 as here or 0.5? Check the paper.
 #
 
@@ -29,13 +28,14 @@ class FasterRCNNModel(nn.Module):
     detector_regression:  t.Tensor
     total:                t.Tensor
 
-  def __init__(self, num_classes, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True):
+  def __init__(self, num_classes, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True, fixed_proposal_batch = False):
     super().__init__()
 
     # Constants
     self._num_classes = num_classes
     self._rpn_minibatch_size = rpn_minibatch_size
     self._proposal_batch_size = proposal_batch_size
+    self._fixed_proposal_batch = fixed_proposal_batch
     self._detector_regression_means = (0, 0, 0, 0)
     self._detector_regression_stds = (0.1, 0.1, 0.2, 0.2)
 
@@ -70,7 +70,7 @@ class FasterRCNNModel(nn.Module):
     np.ndarray, torch.Tensor, torch.Tensor
       - Proposals (N, 4) from region proposal network
       - Classes (M, num_classes) from detector network
-      - Box regression parameters (M, (num_classes - 0) * 4) from detector
+      - Box regression parameters (M, (num_classes - 1) * 4) from detector
         network
     """
     assert image_data.shape[0] == 1, "Batch size must be 1"
@@ -153,7 +153,7 @@ class FasterRCNNModel(nn.Module):
     for class_idx in range(1, classes.shape[1]):  # skip class 0 (background)
       # Get the regression parameters (ty, tx, th, tw) corresponding to this
       # class, for all proposals
-      regression_idx = (class_idx - 0) * 4
+      regression_idx = (class_idx - 1) * 4
       regression_params = regressions[:, (regression_idx + 0) : (regression_idx + 4)] # (N, 4)
       proposal_boxes_this_class = math_utils.convert_regressions_to_boxes(
         regressions = regression_params,
@@ -395,7 +395,7 @@ class FasterRCNNModel(nn.Module):
       Proposals, (N, 4), labeled as either objects or background (depending on
       IoU thresholds, some proposals can end up as neither and are excluded
       here); one-hot encoded class labels, (N, num_classes), for each proposal;
-      and regression targets, (N, 2, (num_classes - 0) * 4), for each proposal.
+      and regression targets, (N, 2, (num_classes - 1) * 4), for each proposal.
       Regression target values are present at locations [:,1,:] and consist of
       (ty, tx, th, tw) for the class that the box corresponds to. The entries
       for all other classes and the background classes should be ignored. A
@@ -462,16 +462,13 @@ class FasterRCNNModel(nn.Module):
     regression_targets[:,:] -= self._detector_regression_means              # mean adjustment
     regression_targets[:,:] /= self._detector_regression_stds               # standard deviation scaling
 
-    # Convert regression targets into a map of shape (N,2,4*C) where C is the
-    # number of classes and [:,0,:] specifies a mask for the corresponding
+    # Convert regression targets into a map of shape (N,2,4*(C-1)) where C is
+    # the number of classes and [:,0,:] specifies a mask for the corresponding
     # target components at [:,1,:]. Targets are ordered (ty, tx, th, tw).
-    # Background class 0 does not have a box and its mask components will be 0
-    # even though regression target values (corresponding a box candidate whose
-    # IoU was insufficiently high) will be populated.
-    gt_regressions = np.zeros((num_proposals, 2, 4 * self._num_classes)).astype(np.float32)
-    gt_regressions[:,0,:] = np.repeat(gt_classes, repeats = 4, axis = 1)    # create masks using interleaved repetition
-    gt_regressions[:,0,0:4] = 0                                             # but remember to mask off class 0 (background) because there is no valid box to regress here
-    gt_regressions[:,1,:] = np.tile(regression_targets, reps = self._num_classes) # populate regression targets with straightforward repetition (only those columns corresponding to class are masked on)
+    # Background class 0 is not present at all.
+    gt_regressions = np.zeros((num_proposals, 2, 4 * (self._num_classes - 1))).astype(np.float32)
+    gt_regressions[:,0,:] = np.repeat(gt_classes, repeats = 4, axis = 1)[:,4:]        # create masks using interleaved repetition, remembering to ignore class 0
+    gt_regressions[:,1,:] = np.tile(regression_targets, reps = self._num_classes - 1) # populate regression targets with straightforward repetition (only those columns corresponding to class are masked on)
 
     return proposals, gt_classes, gt_regressions
 
@@ -489,8 +486,10 @@ class FasterRCNNModel(nn.Module):
     # Select positive and negative samples, if there are enough
     #TODO: how often is num_samples < max_proposals? Should we compute positive number of samples based on max_proposals instead of the actual number of proposals left?
     num_samples = min(max_proposals, len(class_indices))
-#    num_positive_samples = min(round(num_samples * positive_fraction), num_positive_proposals)
-    num_positive_samples = min(round(max_proposals * positive_fraction), num_positive_proposals) #<-- does this help? it's very rare that we get < 128 samples to begin wtih
+    if self._fixed_proposal_batch:
+      num_positive_samples = min(round(max_proposals * positive_fraction), num_positive_proposals)  # use a fixed number of positive samples based on the maximum proposals, whether or not that many exist
+    else:
+      num_positive_samples = min(round(num_samples * positive_fraction), num_positive_proposals)    # use a proportional number of positive samples based on how many total proposals actually exist
     num_negative_samples = min(num_samples - num_positive_samples, num_negative_proposals)
   
     # Do we have enough?

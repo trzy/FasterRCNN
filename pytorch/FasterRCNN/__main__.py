@@ -1,6 +1,6 @@
 #
 # TODO:
-# - Detector network should be reduced in size so as not to regression class=0
+# - Investigate impact of proposal sampling
 # - Investigate performance impact of generating anchor and GT maps on the fly rather than caching them
 #   in the dataset code. If no impact, just calculate them when needed.
 # - Print other statistics
@@ -68,7 +68,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False):
 
 def train(model):
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True)
-  eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False)
+  eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   optimizer = t.optim.SGD(model.parameters(), lr = options.learning_rate, momentum = options.momentum)
   for epoch in range(1, 1 + options.epochs):
     print("Epoch %d/%d" % (epoch, options.epochs))
@@ -139,6 +139,7 @@ if __name__ == "__main__":
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
   parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "Momentum")
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
+  parser.add_argument("--fixed-proposal-batch", action = "store_true", help = "Use a fixed number of positive region proposals based on the positive ratio and maximum proposal batch size (rather than the actual proposal batch size), which will generate slightly more positive training samples in some cases")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
   #TODO: proposal batch
@@ -150,7 +151,7 @@ if __name__ == "__main__":
     dump_anchors()
 
   # Construct model and load initial weights
-  model = FasterRCNNModel(num_classes = voc.Dataset.num_classes, allow_edge_proposals = not options.exclude_edge_proposals).cuda()
+  model = FasterRCNNModel(num_classes = voc.Dataset.num_classes, allow_edge_proposals = not options.exclude_edge_proposals, fixed_proposal_batch = options.fixed_proposal_batch).cuda()
   if options.load_from:
     state.load(model = model, filepath = options.load_from)
 

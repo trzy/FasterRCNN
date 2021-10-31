@@ -16,7 +16,7 @@ class DetectorNetwork(nn.Module):
     self._fc1 = nn.Linear(in_features = 512*7*7, out_features = 4096)
     self._fc2 = nn.Linear(in_features = 4096, out_features = 4096)
     self._classifier = nn.Linear(in_features = 4096, out_features = num_classes)
-    self._regressor = nn.Linear(in_features = 4096, out_features = (num_classes - 0) * 4) 
+    self._regressor = nn.Linear(in_features = 4096, out_features = (num_classes - 1) * 4) 
    
     # Initialize weights
     self._classifier.weight.data.normal_(mean = 0.0, std = 0.01)
