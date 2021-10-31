@@ -169,7 +169,6 @@ def _load_vgg16_from_bart_keras_model(filepath):
 
 def _load_vgg16_from_caffe_model(filepath):
   state = {}
-  missing_layers = []
   caffe = t.load(filepath)
 
   # Attempt to load all layers
@@ -190,21 +189,21 @@ def _load_vgg16_from_caffe_model(filepath):
     "classifier.0.":  "_stage3_detector_network._fc1",
     "classifier.3.":  "_stage3_detector_network._fc2"
   }
+  missing_layers = set([ layer_name[:-1] for layer_name in mapping.keys() ])  # we will remove as we load
   for key, tensor in caffe.items():
     caffe_layer_name = ".".join(key.split(".")[0:2])  # grab first two parts
-    caffe_key = caffe_layer_name + "."
+    caffe_key = caffe_layer_name + "."                # add trailing '.' for key in mapping dict
     if caffe_key in mapping:
       weight_key = caffe_key + "weight"
       bias_key = caffe_key + "bias"
       if weight_key in caffe and bias_key in caffe:
         state[mapping[caffe_key] + ".weight"] = caffe[weight_key]
         state[mapping[caffe_key] + ".bias"] = caffe[bias_key]
-      else:
-        missing_layers.append(caffe_layer_name)
+        missing_layers.discard(caffe_layer_name)
 
   # If *all* were missing, this file must not contain the Caffe VGG-16 model
   if len(missing_layers) == len(mapping):
-    return None
+    raise ValueError("File '%s' is not a Caffe VGG-16 model" % filepath)
 
   if len(missing_layers) > 0:
     print("Some layers were missing from '%s' and not loaded: %s" % (filepath, ", ".join(missing_layers)))
@@ -246,12 +245,15 @@ def load(model, filepath):
     try:
       state = _load_vgg16_from_caffe_model(filepath = filepath)
       print("Loaded initial VGG-16 layer weights from Caffe model '%s'" % filepath)
-    except:
+    except Exception as e:
       pass
 
   # Assume complete PyTorch state
   if state is None:
     state = t.load(filepath)
+    if "model_state_dict" not in state:
+      raise KeyError("Model state file '%s' is missing top-level key 'model_state_dict'" % filepath)
+    state = state["model_state_dict"]
 
   # Load
   try:
