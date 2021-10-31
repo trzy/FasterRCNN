@@ -67,7 +67,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False):
     precision_recall_curve.plot_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
 
 def train(model):
-  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = options.augment, shuffle = True)
+  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False)
   optimizer = t.optim.SGD(model.parameters(), lr = options.learning_rate, momentum = options.momentum)
   for epoch in range(1, 1 + options.epochs):
@@ -138,7 +138,7 @@ if __name__ == "__main__":
   parser.add_argument("--epochs", metavar = "count", type = int, action = "store", default = 1, help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
   parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "Momentum")
-  parser.add_argument("--augment", action = "store_true", help = "Augment images during training using random horizontal flips")
+  parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
   #TODO: proposal batch
