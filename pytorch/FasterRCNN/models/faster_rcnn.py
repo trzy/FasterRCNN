@@ -28,14 +28,13 @@ class FasterRCNNModel(nn.Module):
     detector_regression:  t.Tensor
     total:                t.Tensor
 
-  def __init__(self, num_classes, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True, fixed_proposal_batch = False):
+  def __init__(self, num_classes, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True):
     super().__init__()
 
     # Constants
     self._num_classes = num_classes
     self._rpn_minibatch_size = rpn_minibatch_size
     self._proposal_batch_size = proposal_batch_size
-    self._fixed_proposal_batch = fixed_proposal_batch
     self._detector_regression_means = (0, 0, 0, 0)
     self._detector_regression_stds = (0.1, 0.1, 0.2, 0.2)
 
@@ -483,13 +482,18 @@ class FasterRCNNModel(nn.Module):
     num_positive_proposals = len(positive_indices)
     num_negative_proposals = len(negative_indices)
     
-    # Select positive and negative samples, if there are enough
-    #TODO: how often is num_samples < max_proposals? Should we compute positive number of samples based on max_proposals instead of the actual number of proposals left?
+    # Select positive and negative samples, if there are enough. Note that the
+    # number of positive samples can be either the positive fraction of the
+    # *actual* number of proposals *or* the *desired* number (max_proposals).
+    # In practice, these yield virtually identical results but the latter
+    # method will yield slightly more positive samples in the rare cases when 
+    # the number of proposals is below the desired number. Here, we use the
+    # former method but others, such as Yun Chen, use the latter. To implement
+    # it, replace num_samples with max_proposals in the line that computes
+    # num_positive_samples. I am not sure what the original FasterRCNN
+    # implementation does.
     num_samples = min(max_proposals, len(class_indices))
-    if self._fixed_proposal_batch:
-      num_positive_samples = min(round(max_proposals * positive_fraction), num_positive_proposals)  # use a fixed number of positive samples based on the maximum proposals, whether or not that many exist
-    else:
-      num_positive_samples = min(round(num_samples * positive_fraction), num_positive_proposals)    # use a proportional number of positive samples based on how many total proposals actually exist
+    num_positive_samples = min(round(num_samples * positive_fraction), num_positive_proposals)
     num_negative_samples = min(num_samples - num_positive_samples, num_negative_proposals)
   
     # Do we have enough?

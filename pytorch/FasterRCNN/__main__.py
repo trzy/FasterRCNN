@@ -140,7 +140,6 @@ if __name__ == "__main__":
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
   parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "Momentum")
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
-  parser.add_argument("--fixed-proposal-batch", action = "store_true", help = "Use a fixed number of positive region proposals based on the positive ratio and maximum proposal batch size (rather than the actual proposal batch size), which will generate slightly more positive training samples in some cases")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
   #TODO: proposal batch
@@ -152,7 +151,7 @@ if __name__ == "__main__":
     dump_anchors()
 
   # Construct model and load initial weights
-  model = FasterRCNNModel(num_classes = voc.Dataset.num_classes, allow_edge_proposals = not options.exclude_edge_proposals, fixed_proposal_batch = options.fixed_proposal_batch).cuda()
+  model = FasterRCNNModel(num_classes = voc.Dataset.num_classes, allow_edge_proposals = not options.exclude_edge_proposals).cuda()
   if options.load_from:
     state.load(model = model, filepath = options.load_from)
 
