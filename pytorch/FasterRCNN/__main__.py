@@ -67,7 +67,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False):
     precision_recall_curve.plot_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
 
 def train(model):
-  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True)
+  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   optimizer = t.optim.SGD(model.parameters(), lr = options.learning_rate, momentum = options.momentum)
   for epoch in range(1, 1 + options.epochs):
@@ -134,6 +134,7 @@ if __name__ == "__main__":
   parser.add_argument("--train-split", metavar = "name", action = "store", default = "trainval", help = "Dataset split to use for training")
   parser.add_argument("--eval-split", metavar = "name", action = "store", default = "test", help = "Dataset split to use for evaluation")
   parser.add_argument("--periodic-eval-samples", metavar = "count", action = "store", default = 1000, help = "Number of samples to use during evaluation after each epoch")
+  parser.add_argument("--no-cache", action = "store_true", help = "Disable image caching during training (reduces memory usage)")
   parser.add_argument("--plot", action = "store_true", help = "Plots the average precision of each class after evaluation (use with --train or --eval)")
   parser.add_argument("--epochs", metavar = "count", type = int, action = "store", default = 1, help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
