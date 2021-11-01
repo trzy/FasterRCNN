@@ -121,7 +121,7 @@ def predict_all(model, split):
     predict(model = model, image_data = sample.image_data, image = sample.image, show_image = False, output_path = output_path)
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser("FasterRCNN-pytorch")
+  parser = argparse.ArgumentParser("FasterRCNN")
   group = parser.add_mutually_exclusive_group()
   group.add_argument("--train", action = "store_true", help = "Train model")
   group.add_argument("--eval", action = "store_true", help = "Evaluate model")
