@@ -2,6 +2,7 @@
 # TODO:
 # -----
 # - IoU threshold for prediction. Is it 0.3 as here or 0.5? Check the paper.
+# - Document return values for train_step()
 #
 
 from dataclasses import dataclass

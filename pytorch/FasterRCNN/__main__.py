@@ -1,9 +1,7 @@
 #
 # TODO:
-# - Test weight decay by making it very large
 # - Investigate performance impact of generating anchor and GT maps on the fly rather than caching them
 #   in the dataset code. If no impact, just calculate them when needed.
-# - Print other statistics
 # - Add automatic checkpoints
 # - Reorg utils, separate out computations from pure utilities like nograd decorator
 # - Support multiple batches by padding right side with zeros to a common image width
