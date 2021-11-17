@@ -1,5 +1,3 @@
-#TODO: fix order of RGB subtraction
-
 import imageio
 from PIL import Image
 import numpy as np
@@ -15,7 +13,6 @@ def _compute_scale_factor(original_width, original_height, min_dimension_pixels)
 
 def _preprocess_vgg16(image_data):
   image_data = image_data[:, :, ::-1]           # RGB -> BGR
-  # NOTE: Yun Chen's code actually has the ImageNet means incorrectly flipped and we replicate that here, e.g., subtracting the R mean from the B component
   image_data[:, :, 2] -= 103.939                # ImageNet B mean
   image_data[:, :, 1] -= 116.779                # ImageNet G mean
   image_data[:, :, 0] -= 123.680                # ImageNet R mean 

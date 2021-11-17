@@ -1,7 +1,6 @@
 #
 # TODO:
-# - Investigate impact of proposal sampling
-# - Fix RGB mean subtraction ordering
+# - Test weight decay by making it very large
 # - Investigate performance impact of generating anchor and GT maps on the fly rather than caching them
 #   in the dataset code. If no impact, just calculate them when needed.
 # - Print other statistics
