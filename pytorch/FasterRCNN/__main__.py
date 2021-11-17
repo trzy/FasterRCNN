@@ -5,10 +5,8 @@
 #   in the dataset code. If no impact, just calculate them when needed.
 # - Print other statistics
 # - Add automatic checkpoints
-# - Print losses during training in tqdm bar
 # - Reorg utils, separate out computations from pure utilities like nograd decorator
 # - Support multiple batches by padding right side with zeros to a common image width
-# - Add tqdm to render_anchors, predict_all, etc.
 # - Move anchor code from dataset/ to models/
 # - Add dropout and regularization
 # - Once a new Keras implementation exists, add support for loading complete state from h5
@@ -20,6 +18,7 @@ from tqdm import tqdm
 
 from .datasets import voc
 from .models.faster_rcnn import FasterRCNNModel
+from .statistics import TrainingStatistics
 from .statistics import PrecisionRecallCurveCalculator
 from . import state
 from . import utils
@@ -88,7 +87,9 @@ def train(model):
   optimizer = create_optimizer(model = model)
   for epoch in range(1, 1 + options.epochs):
     print("Epoch %d/%d" % (epoch, options.epochs))
-    for sample in tqdm(iterable = iter(training_data), total = training_data.num_samples):
+    stats = TrainingStatistics()
+    progbar = tqdm(iterable = iter(training_data), total = training_data.num_samples, postfix = stats.get_progbar_postfix())
+    for sample in progbar:
       loss, rpn_score_map, rpn_regressions_map, classes, regressions, gt_classes, gt_regressions = model.train_step(
           optimizer = optimizer,
           image_data = t.from_numpy(sample.image_data).unsqueeze(dim = 0).cuda(),
@@ -99,6 +100,8 @@ def train(model):
           gt_rpn_background_indices = [ sample.gt_rpn_background_indices ],
           gt_boxes = [ sample.gt_boxes ]
         )
+      stats.on_training_step(loss = loss)
+      progbar.set_postfix(stats.get_progbar_postfix())
     last_epoch = epoch == options.epochs
     evaluate(
       model = model,
