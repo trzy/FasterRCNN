@@ -2,7 +2,6 @@
 # TODO:
 # - Investigate performance impact of generating anchor and GT maps on the fly rather than caching them
 #   in the dataset code. If no impact, just calculate them when needed.
-# - Add automatic checkpoints
 # - Reorg utils, separate out computations from pure utilities like nograd decorator
 # - Support multiple batches by padding right side with zeros to a common image width
 # - Move anchor code from dataset/ to models/
@@ -59,9 +58,11 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False):
     i += 1
     if i >= num_samples:
       break
-  print("Mean Average Precision = %1.2f%%" % (100.0 * precision_recall_curve.compute_mean_average_precision()))
+  mean_average_precision = 100.0 * precision_recall_curve.compute_mean_average_precision() 
+  print("Mean Average Precision = %1.2f%%" % mean_average_precision)
   if plot:
     precision_recall_curve.plot_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
+  return mean_average_precision
 
 def create_optimizer(model):
   params = []
@@ -75,14 +76,20 @@ def create_optimizer(model):
 def train(model):
   print("Training Parameters")
   print("-------------------")
-  print("Epochs       : %d" % options.epochs)
-  print("Learning rate: %f" % options.learning_rate)
-  print("Momentum     : %f" % options.momentum)
-  print("Weight decay : %f" % options.weight_decay)
-  print("Augmentation : %s" % ("disabled" if options.no_augment else "enabled"))
+  print("Initial weights : %s" % (options.load_from if options.load_from else "none"))
+  print("Training split  : %s" % options.train_split)
+  print("Evaluation split: %s" % options.eval_split)
+  print("Epochs          : %d" % options.epochs)
+  print("Learning rate   : %f" % options.learning_rate)
+  print("Momentum        : %f" % options.momentum)
+  print("Weight decay    : %f" % options.weight_decay)
+  print("Augmentation    : %s" % ("disabled" if options.no_augment else "enabled"))
+  print("Edge proposals  : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   optimizer = create_optimizer(model = model)
+  if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):
+    os.makedirs(options.checkpoint_dir)
   for epoch in range(1, 1 + options.epochs):
     print("Epoch %d/%d" % (epoch, options.epochs))
     stats = TrainingStatistics()
@@ -101,12 +108,16 @@ def train(model):
       stats.on_training_step(loss = loss)
       progbar.set_postfix(stats.get_progbar_postfix())
     last_epoch = epoch == options.epochs
-    evaluate(
+    mean_average_precision = evaluate(
       model = model,
       eval_data = eval_data,
       num_samples = None if last_epoch else options.periodic_eval_samples, # use full number of samples at last epoch
       plot = options.plot if last_epoch else False
     )
+    if options.checkpoint_dir:
+      checkpoint_file = os.path.join(options.checkpoint_dir, "checkpoint-epoch-%d-mAP-%1.1f.pth" % (epoch, mean_average_precision))
+      t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, checkpoint_file)
+      print("Saved model checkpoint to '%s'" % checkpoint_file)
   if options.save_to:
     t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, options.save_to)
     print("Saved final model weights to '%s'" % options.save_to)
@@ -151,6 +162,7 @@ if __name__ == "__main__":
   parser.add_argument("--train-split", metavar = "name", action = "store", default = "trainval", help = "Dataset split to use for training")
   parser.add_argument("--eval-split", metavar = "name", action = "store", default = "test", help = "Dataset split to use for evaluation")
   parser.add_argument("--periodic-eval-samples", metavar = "count", action = "store", default = 1000, help = "Number of samples to use during evaluation after each epoch")
+  parser.add_argument("--checkpoint-dir", metavar = "dir", action = "store", help = "Save checkpoints after each epoch to the given directory")
   parser.add_argument("--no-cache", action = "store_true", help = "Disable image caching during training (reduces memory usage)")
   parser.add_argument("--plot", action = "store_true", help = "Plots the average precision of each class after evaluation (use with --train or --eval)")
   parser.add_argument("--epochs", metavar = "count", type = int, action = "store", default = 1, help = "Number of epochs to train for")
