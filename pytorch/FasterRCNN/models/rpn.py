@@ -149,7 +149,7 @@ def class_loss(predicted_scores, y_true):
     A tensor of shape (batch_size, height, width, num_anchors) containing
     objectness scores (0 = background, 1 = object).
   y_true : torch.Tensor
-    Ground truth tensor of shape (batch_size, height, width, num_anchors, 8).
+    Ground truth tensor of shape (batch_size, height, width, num_anchors, 6).
 
   Returns
   -------

@@ -2,7 +2,6 @@
 # TODO:
 # -----
 # - IoU threshold for prediction. Is it 0.3 as here or 0.5? Check the paper.
-# - Document return values for train_step()
 #
 
 from dataclasses import dataclass
@@ -236,6 +235,26 @@ class FasterRCNNModel(nn.Module):
       background anchors in the RPN ground truth map.
     gt_boxes : List[List[datasets.training_sample.Box]]
       For each image in the batch, a list of ground truth object boxes.
+
+    Returns
+    -------
+    Loss, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, np.ndarray,
+    np.ndarray
+   
+      1. Loss (a dataclass with class and regression losses for both the RPN
+         and detector states).
+      2. RPN objectness score map: (batch_size, height, width, num_anchors).
+      3. RPN regressions map: (batch_size, height, width, num_anchors * 4),
+         where the regressions are stored in the final dimension in
+         parameterized form ((ty, tx, th, tw) for each anchor).
+      4. Detected classes: (num_proposals, num_classes).
+      5. Detected regressions: (num_proposals, 4*(num_classes-1)), stored in
+         parameterized form relative to the proposal boxes (which are not
+         returned). Note that class index 0 is the first non-background class.
+      6. Ground truth classes: (num_proposals, num_classes), for the final
+         detection stage.
+      7. Ground truth regressions: (num_proposals, 4*(num_classes-1)), for the
+         final detection stage.
     """
     self.train()
 

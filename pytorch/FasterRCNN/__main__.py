@@ -77,6 +77,7 @@ def train(model):
   print("Training Parameters")
   print("-------------------")
   print("Initial weights : %s" % (options.load_from if options.load_from else "none"))
+  print("Dataset         : %s" % options.dataset_dir)
   print("Training split  : %s" % options.train_split)
   print("Evaluation split: %s" % options.eval_split)
   print("Epochs          : %d" % options.epochs)
@@ -85,11 +86,16 @@ def train(model):
   print("Weight decay    : %f" % options.weight_decay)
   print("Augmentation    : %s" % ("disabled" if options.no_augment else "enabled"))
   print("Edge proposals  : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
+  print("CSV log         : %s" % ("none" if not options.log_csv else options.log_csv))
+  print("Checkpoints     : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
+  print("Final model file: %s" % ("none" if not options.save_to else options.save_to))
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   optimizer = create_optimizer(model = model)
   if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):
     os.makedirs(options.checkpoint_dir)
+  if options.log_csv:
+    csv = utils.CSVLog(options.log_csv)
   for epoch in range(1, 1 + options.epochs):
     print("Epoch %d/%d" % (epoch, options.epochs))
     stats = TrainingStatistics()
@@ -118,6 +124,10 @@ def train(model):
       checkpoint_file = os.path.join(options.checkpoint_dir, "checkpoint-epoch-%d-mAP-%1.1f.pth" % (epoch, mean_average_precision))
       t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, checkpoint_file)
       print("Saved model checkpoint to '%s'" % checkpoint_file)
+    if csv:
+      log_items = { "epoch": epoch, "learning_rate": options.learning_rate, "momentum": options.momentum, "weight_decay": options.weight_decay }
+      log_items.update(stats.get_progbar_postfix())
+      csv.log(log_items)
   if options.save_to:
     t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, options.save_to)
     print("Saved final model weights to '%s'" % options.save_to)
@@ -161,10 +171,11 @@ if __name__ == "__main__":
   parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "../../VOCdevkit/VOC2007", help = "VOC dataset directory")
   parser.add_argument("--train-split", metavar = "name", action = "store", default = "trainval", help = "Dataset split to use for training")
   parser.add_argument("--eval-split", metavar = "name", action = "store", default = "test", help = "Dataset split to use for evaluation")
+  parser.add_argument("--no-cache", action = "store_true", help = "Disable image caching during training (reduces memory usage)")
   parser.add_argument("--periodic-eval-samples", metavar = "count", action = "store", default = 1000, help = "Number of samples to use during evaluation after each epoch")
   parser.add_argument("--checkpoint-dir", metavar = "dir", action = "store", help = "Save checkpoints after each epoch to the given directory")
-  parser.add_argument("--no-cache", action = "store_true", help = "Disable image caching during training (reduces memory usage)")
   parser.add_argument("--plot", action = "store_true", help = "Plots the average precision of each class after evaluation (use with --train or --eval)")
+  parser.add_argument("--log-csv", metavar = "file", action = "store", help = "Log training metrics to CSV file")
   parser.add_argument("--epochs", metavar = "count", type = int, action = "store", default = 1, help = "Number of epochs to train for")
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
   parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "Momentum")
@@ -172,8 +183,6 @@ if __name__ == "__main__":
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
-  #TODO: proposal batch
-  #TODO: anchor minibatch
   options = parser.parse_args()
 
   # Perform optional procedures

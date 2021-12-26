@@ -25,6 +25,30 @@ class DetectorNetwork(nn.Module):
     self._regressor.bias.data.zero_()
 
   def forward(self, feature_map, proposals):
+    """
+    Predict final class and box regressions for region-of-interest proposals.
+    The proposals serve as "anchors" for the box regressions, which refine the
+    proposals into final boxes.
+
+    Parameters
+    ----------
+    feature_map : torch.Tensor
+      Feature map of shape (batch_size, 512, height, width).
+    proposals : torch.Tensor
+      Region-of-interest box proposals that are likely to contain objects.
+      Has shape (N, 4), where N is the number of proposals, with each box given
+      as (y1, x1, y2, x2) in pixel coordinates.
+    
+    Returns
+    -------
+    torch.Tensor, torch.Tensor
+      Predicted classes, (N, num_classes), encoded as a one-hot vector, and
+      predicted regressions, (N, 4*(num_classes-1)), where the regressions are
+      expressed as (ty, tx, th, tw) and are relative to each corresponding
+      proposal box. Because there is no box for the background class 0, it is
+      excluded entirely and only (num_classes-1) sets of regression targets are
+      computed.
+    """
     # Batch size of one for now, so no need to associate proposals with batches
     assert feature_map.shape[0] == 1, "Batch size must be 1"
     batch_idxs = t.zeros((proposals.shape[0], 1)).cuda()
@@ -72,6 +96,26 @@ def class_loss(predicted_classes, y_true):
   return scale_factor * cross_entropy
 
 def regression_loss(predicted_regressions, y_true):
+  """
+  Computes detector regression loss.
+
+  Parameters
+  ----------
+  predicted_regressions : torch.Tensor
+    RoI predicted regressions, (N, 4*(num_classes-1)). The background class is
+    excluded and only the non-background classes are included. Each regression
+    is stored in parameterized form as (ty, tx, th, tw).
+  y_true : torch.Tensor
+    RoI regression ground truth labels, (N, 2, 4*(num_classes-1)). These are
+    stored as mask values (1 or 0) in (:,0,:) and regression parameters in
+    (:,1,:). Note that it is important to mask off the predicted and ground
+    truth regression values because they may be set to invalid values.
+
+  Returns
+  -------
+  torch.Tensor
+    Scalar loss.
+  """
   epsilon = 1e-7
   scale_factor = 1.0
   sigma = 1.0
