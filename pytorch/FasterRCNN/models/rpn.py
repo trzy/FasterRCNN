@@ -46,7 +46,7 @@ class RegionProposalNetwork(nn.Module):
       coordinate of the feature map.
     anchor_valid_map : np.ndarray
       Map indicating which anchors are valid (do not intersect image bounds),
-      shaped (height, width).
+      shaped (height, width, num_anchors).
     max_proposals_pre_nms : int
       How many of the best proposals (sorted by objectness score) to extract
       before applying non-maximum suppression.

@@ -8,7 +8,7 @@ from FasterRCNN import utils
 
 
 class DetectorNetwork(nn.Module):
-  def __init__(self, num_classes):
+  def __init__(self, num_classes, dropout_probability):
     super().__init__()
   
     # Define network
@@ -17,6 +17,10 @@ class DetectorNetwork(nn.Module):
     self._fc2 = nn.Linear(in_features = 4096, out_features = 4096)
     self._classifier = nn.Linear(in_features = 4096, out_features = num_classes)
     self._regressor = nn.Linear(in_features = 4096, out_features = (num_classes - 1) * 4) 
+
+    # Dropout layers
+    self._dropout1 = nn.Dropout(p = dropout_probability)
+    self._dropout2 = nn.Dropout(p = dropout_probability)
    
     # Initialize weights
     self._classifier.weight.data.normal_(mean = 0.0, std = 0.01)
@@ -63,8 +67,10 @@ class DetectorNetwork(nn.Module):
     rois = rois.reshape((rois.shape[0], 512*7*7)) # flatten each RoI: (N, 512*7*7)
 
     # Forward propagate
-    y1 = F.relu(self._fc1(rois))
-    y2 = F.relu(self._fc2(y1))
+    y1o = F.relu(self._fc1(rois))
+    y1 = self._dropout1(y1o)
+    y2o = F.relu(self._fc2(y1))
+    y2 = self._dropout2(y2o)
     classes_raw = self._classifier(y2)
     classes = F.softmax(classes_raw, dim = 1)
     regressions = self._regressor(y2)

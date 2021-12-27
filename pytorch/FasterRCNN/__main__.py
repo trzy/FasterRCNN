@@ -2,10 +2,8 @@
 # TODO:
 # - Investigate performance impact of generating anchor and GT maps on the fly rather than caching them
 #   in the dataset code. If no impact, just calculate them when needed.
-# - Reorg utils, separate out computations from pure utilities like nograd decorator
 # - Support multiple batches by padding right side with zeros to a common image width
 # - Move anchor code from dataset/ to models/
-# - Add dropout and regularization
 # - Once a new Keras implementation exists, add support for loading complete state from h5
 #
 import argparse
@@ -84,6 +82,7 @@ def train(model):
   print("Learning rate   : %f" % options.learning_rate)
   print("Momentum        : %f" % options.momentum)
   print("Weight decay    : %f" % options.weight_decay)
+  print("Dropout         : %f" % options.dropout)
   print("Augmentation    : %s" % ("disabled" if options.no_augment else "enabled"))
   print("Edge proposals  : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
   print("CSV log         : %s" % ("none" if not options.log_csv else options.log_csv))
@@ -125,7 +124,14 @@ def train(model):
       t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, checkpoint_file)
       print("Saved model checkpoint to '%s'" % checkpoint_file)
     if csv:
-      log_items = { "epoch": epoch, "learning_rate": options.learning_rate, "momentum": options.momentum, "weight_decay": options.weight_decay }
+      log_items = {
+        "epoch": epoch,
+        "learning_rate": options.learning_rate,
+        "momentum": options.momentum,
+        "weight_decay": options.weight_decay,
+        "dropout": options.dropout,
+        "mAP": mean_average_precision
+      }
       log_items.update(stats.get_progbar_postfix())
       csv.log(log_items)
   if options.save_to:
@@ -180,6 +186,7 @@ if __name__ == "__main__":
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
   parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "Momentum")
   parser.add_argument("--weight-decay", metavar = "value", type = float, action = "store", default = 0.0, help = "Weight decay")
+  parser.add_argument("--dropout", metavar = "probability", type = float, action = "store", default = 0.0, help = "Dropout probability after each of the two fully-connected detector layers")
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
@@ -190,7 +197,11 @@ if __name__ == "__main__":
     dump_anchors()
 
   # Construct model and load initial weights
-  model = FasterRCNNModel(num_classes = voc.Dataset.num_classes, allow_edge_proposals = not options.exclude_edge_proposals).cuda()
+  model = FasterRCNNModel(
+    num_classes = voc.Dataset.num_classes,
+    allow_edge_proposals = not options.exclude_edge_proposals,
+    dropout_probability = options.dropout
+  ).cuda()
   if options.load_from:
     state.load(model = model, filepath = options.load_from)
 

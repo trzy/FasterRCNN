@@ -28,7 +28,7 @@ class FasterRCNNModel(nn.Module):
     detector_regression:  t.Tensor
     total:                t.Tensor
 
-  def __init__(self, num_classes, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True):
+  def __init__(self, num_classes, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True, dropout_probability = 0):
     super().__init__()
 
     # Constants
@@ -41,7 +41,7 @@ class FasterRCNNModel(nn.Module):
     # Network stages
     self._stage1_feature_extractor = vgg16.FeatureExtractor()
     self._stage2_region_proposal_network = rpn.RegionProposalNetwork(allow_edge_proposals = allow_edge_proposals)
-    self._stage3_detector_network = detector.DetectorNetwork(num_classes = num_classes)
+    self._stage3_detector_network = detector.DetectorNetwork(num_classes = num_classes, dropout_probability = dropout_probability)
 
   def forward(self, image_data, anchor_map = None, anchor_valid_map = None):
     """
