@@ -1,9 +1,6 @@
 #
 # TODO:
-# - Investigate performance impact of generating anchor and GT maps on the fly rather than caching them
-#   in the dataset code. If no impact, just calculate them when needed.
 # - Support multiple batches by padding right side with zeros to a common image width
-# - Move anchor code from dataset/ to models/
 # - Once a new Keras implementation exists, add support for loading complete state from h5
 #
 import argparse
