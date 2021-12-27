@@ -4,7 +4,6 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.ops import nms
 
-from FasterRCNN.datasets import anchors
 from . import math_utils
 
 

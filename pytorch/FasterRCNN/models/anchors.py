@@ -2,7 +2,7 @@ import itertools
 from math import sqrt
 import numpy as np
 
-from FasterRCNN.models import math_utils
+from . import math_utils
 
 
 def _compute_anchor_sizes():

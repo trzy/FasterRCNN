@@ -11,8 +11,8 @@ import torch as t
 from torch import nn
 from torchvision.ops import nms
 
-from FasterRCNN.datasets import anchors
 from FasterRCNN import utils
+from . import anchors
 from . import math_utils
 from . import vgg16
 from . import rpn
