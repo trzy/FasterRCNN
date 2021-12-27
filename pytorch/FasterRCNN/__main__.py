@@ -123,7 +123,7 @@ def train(model):
       checkpoint_file = os.path.join(options.checkpoint_dir, "checkpoint-epoch-%d-mAP-%1.1f.pth" % (epoch, mean_average_precision))
       t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, checkpoint_file)
       print("Saved model checkpoint to '%s'" % checkpoint_file)
-    if csv:
+    if options.log_csv:
       log_items = {
         "epoch": epoch,
         "learning_rate": options.learning_rate,
