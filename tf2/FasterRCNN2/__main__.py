@@ -65,26 +65,25 @@ if __name__ == "__main__":
 
   training_data = voc.Dataset(dir = "../../VOCdevkit/VOC2007", split = "trainval", augment = True, shuffle = True, cache = True)
 
-  model = faster_rcnn.faster_rcnn_model(mode = "train")
-  model.compile()
+  model = faster_rcnn.faster_rcnn_model(mode = "train", num_classes = voc.Dataset.num_classes)
   optimizer = SGD(learning_rate = 1e-3, momentum = 0.9)
   model.compile(optimizer = optimizer, loss = [ None ] * len(model.outputs))
 
   # Test maps
-  height = 256
-  width = 256
-  anchor_map = np.zeros((height // 16, width // 16, 9 * 4))
-  anchor_valid_map = np.zeros((height // 16, width // 16, 9))
-  gt_rpn_map = np.zeros((height // 16, width // 16, 9, 6))
-  anchor_valid_map[0,0,1] = 1
-  anchor_valid_map[1,1,0] = 1
-  anchor_map = np.expand_dims(anchor_map, axis = 0)
-  anchor_valid_map = np.expand_dims(anchor_valid_map, axis = 0)
-  gt_rpn_map = np.expand_dims(gt_rpn_map, axis = 0)
-  image_map = np.zeros((1, height, width, 3))
-  image_shape_map = np.array([ [ height, width, 3 ] ])  # (1,3)
+  #height = 256
+  #width = 256
+  #anchor_map = np.zeros((height // 16, width // 16, 9 * 4))
+  #anchor_valid_map = np.zeros((height // 16, width // 16, 9))
+  #gt_rpn_map = np.zeros((height // 16, width // 16, 9, 6))
+  #anchor_valid_map[0,0,1] = 1
+  #anchor_valid_map[1,1,0] = 1
+  #anchor_map = np.expand_dims(anchor_map, axis = 0)
+  #anchor_valid_map = np.expand_dims(anchor_valid_map, axis = 0)
+  #gt_rpn_map = np.expand_dims(gt_rpn_map, axis = 0)
+  #image_map = np.zeros((1, height, width, 3))
+  #image_shape_map = np.array([ [ height, width, 3 ] ])  # (1,3)
 
-  y = model.predict(x = [ image_map, image_shape_map, anchor_map, anchor_valid_map, gt_rpn_map ])
+  #y = model.predict(x = [ image_map, image_shape_map, anchor_map, anchor_valid_map, gt_rpn_map ])
   #for i in range(len(y)):
   #  print(y[i].shape)
 
@@ -107,10 +106,13 @@ if __name__ == "__main__":
         background_indices = gt_rpn_background_indices,
         rpn_minibatch_size = 256
       )
-      gt_boxes = [ sample.gt_boxes ]
-      x = [ image_data, image_shape_map, anchor_map, anchor_valid_map, gt_rpn_minibatch_map ]
+      gt_box_corners = np.array([ box.corners for box in sample.gt_boxes ]).astype(np.float32)
+      gt_box_class_idxs = np.array([ box.class_index for box in sample.gt_boxes ]).astype(np.int32)
+      gt_box_corners = np.expand_dims(gt_box_corners, axis = 0)
+      gt_box_class_idxs = np.expand_dims(gt_box_class_idxs, axis = 0)
+      x = [ image_data, image_shape_map, anchor_map, anchor_valid_map, gt_rpn_minibatch_map, gt_box_class_idxs, gt_box_corners ]
       losses = model.train_on_batch(x = x, y = gt_rpn_map, return_dict = True)
       stats.on_training_step(loss = losses)
       progbar.set_postfix(stats.get_progbar_postfix())
-      #_, _, _, rpn_class_loss, rpn_regression_loss = model.predict(x = [ image_data, image_shape_map, anchor_map, anchor_valid_map, gt_rpn_map ])
-      #print(rpn_class_loss, rpn_regression_loss)
+      #_, _, _, _, _, zzz = model.predict(x = x)
+      #print(zzz) 
