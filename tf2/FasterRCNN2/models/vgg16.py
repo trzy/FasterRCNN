@@ -1,3 +1,4 @@
+import fnmatch
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras
@@ -53,9 +54,29 @@ def load_imagenet_weights(model):
         print("Loading VGG-16 ImageNet weights into layer: %s" % our_layer[0].name)
         our_layer[0].set_weights(weights)
 
-def compute_feature_map_shape(input_image_shape):
+def _matches_any_filter(string, filters):
+  for f in filters:
+    if len(fnmatch.filter([ string ], f)) > 0:
+      return True
+  return False
+
+def freeze_layers(model, layers):
   """
-  Returns the 2D shape of the VGG-16 output map (height, width), which will be
-  1/16th of the input image for VGG-16.
+  Sets specified layers in a model to non-trainable. Layers may be specified as
+  a string of comma-separated layer filers or as a list of layer filters using
+  fnmatch syntax. For example: "block*_conv*,dense?,predictions"
   """
-  return (input_image_shape[0] // 16, input_image_shape[1] // 16)
+  frozen = []
+  filters = []
+  if type(layers) == str:
+    filters = [ frozen_layer.strip() for frozen_layer in layers.split(",") ]
+  elif type(layers) == list:
+    filters = layers
+  elif layers != None:
+    raise RuntimeError("freeze_layers: 'layers' must be a string or a list of strings")
+  for layer in model.layers:
+    if _matches_any_filter(string = layer.name, filters = filters):
+      layer.trainable = False
+      frozen.append(layer.name)
+  if len(frozen) > 0:
+    print("Froze layers: %s" % ", ".join(frozen))

@@ -30,12 +30,12 @@ class TrainingStatistics:
     """
     self._rpn_class_losses.append(loss["rpn_class_loss"])
     self._rpn_regression_losses.append(loss["rpn_regression_loss"])
-    #self._detector_class_losses.append(loss.detector_class.detach().cpu().numpy())
-    #self._detector_regression_losses.append(loss.detector_regression.detach().cpu().numpy())
+    self._detector_class_losses.append(loss["detector_class_loss"])
+    self._detector_regression_losses.append(loss["detector_regression_loss"])
     self.rpn_class_loss = np.mean(self._rpn_class_losses)
     self.rpn_regression_loss = np.mean(self._rpn_regression_losses)
-    #self.detector_class_loss = np.mean(self._detector_class_losses)
-    #self.detector_regression_loss = np.mean(self._detector_regression_losses)
+    self.detector_class_loss = np.mean(self._detector_class_losses)
+    self.detector_regression_loss = np.mean(self._detector_regression_losses)
 
   def get_progbar_postfix(self):
     """

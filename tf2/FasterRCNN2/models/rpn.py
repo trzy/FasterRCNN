@@ -77,7 +77,7 @@ def layers(input_map, image_shape_map, anchor_map, anchor_valid_map, max_proposa
   return [ rpn_class, rpn_boxes, proposals ]
 
 def _extract_valid(anchor_map, anchor_valid_map, objectness_score_map, box_regression_map, allow_edge_proposals):
-  # anchor_valid_map shape is (batch,height,width,num_anchors)i
+  # anchor_valid_map shape is (batch,height,width,num_anchors)
   height = tf.shape(anchor_valid_map)[1]
   width = tf.shape(anchor_valid_map)[2]
   num_anchors = tf.shape(anchor_valid_map)[3]
