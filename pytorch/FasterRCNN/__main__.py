@@ -191,7 +191,7 @@ if __name__ == "__main__":
 
   # Perform optional procedures
   if options.dump_anchors:
-    dump_anchors()
+    render_anchors()
 
   # Construct model and load initial weights
   model = FasterRCNNModel(
