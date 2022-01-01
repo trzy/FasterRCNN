@@ -369,6 +369,7 @@ if __name__ == "__main__":
   parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = 1.0, help = "Gradient norm clipping (helps prevent instability and NaNs)")
   #parser.add_argument("--weight-decay", metavar = "value", type = float, action = "store", default = 0.0, help = "Weight decay")
   #parser.add_argument("--dropout", metavar = "probability", type = float, action = "store", default = 0.0, help = "Dropout probability after each of the two fully-connected detector layers")
+  parser.add_argument("--crop-resize-pool", action = "store_true", help = "Use TensorFlow crop-and-resize with max-pool to implement RoI pooling instead of custom layer")
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
@@ -389,12 +390,14 @@ if __name__ == "__main__":
   infer_model = faster_rcnn.faster_rcnn_model(
     mode = "infer",
     num_classes = voc.Dataset.num_classes,
-    allow_edge_proposals = not options.exclude_edge_proposals
+    allow_edge_proposals = not options.exclude_edge_proposals,
+    custom_roi_pool = not options.crop_resize_pool
   )
   train_model = faster_rcnn.faster_rcnn_model(
     mode = "train",
     num_classes = voc.Dataset.num_classes,
-    allow_edge_proposals = not options.exclude_edge_proposals
+    allow_edge_proposals = not options.exclude_edge_proposals,
+    custom_roi_pool = not options.crop_resize_pool
   )
   optimizer = SGD(learning_rate = options.learning_rate, momentum = options.momentum, clipnorm = options.clipnorm)
   infer_model.compile()

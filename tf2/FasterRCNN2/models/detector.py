@@ -10,7 +10,7 @@ from tensorflow.keras import backend as K
 from .roi_pooling_layer import RoIPoolingLayer
 
 
-def layers(feature_map, proposals, num_classes):
+def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool):
   assert len(feature_map.shape) == 4
 
   l2 = 0
@@ -19,27 +19,45 @@ def layers(feature_map, proposals, num_classes):
   class_initializer = tf.keras.initializers.RandomNormal(mean = 0.0, stddev = 0.01)
   regressor_initializer = tf.keras.initializers.RandomNormal(mean = 0.0, stddev = 0.001)
 
-  # Convert proposals from image-space (y1, x1, y2, x2) to feature map space
-  # (y1, x1, height, width)
-  proposals = tf.cast(proposals, dtype = tf.int32)                  # RoIs must be integral for RoIPoolingLayer
-  map_dimensions = tf.shape(feature_map)[1:3]                       # (batches, height, width, channels) -> (height, width)
-  map_limits = tf.tile(map_dimensions, multiples = [2]) - 1         # (height, width, height, width)
-  roi_corners = tf.minimum(proposals // 16, map_limits)             # to feature map space and clamp against map edges
-  roi_corners = tf.maximum(roi_corners, 0)
-  roi_dimensions = roi_corners[:,2:4] - roi_corners[:,0:2] + 1
-  rois = tf.concat([ roi_corners[:,0:2], roi_dimensions ], axis = 1)  # (N,4), where each row is (y1, x2, height, width) in feature map units
-  rois = tf.expand_dims(rois, axis = 0)                             # (1,N,4), batch size of 1, as expected by RoIPoolingLayer
-
-  # Do not backprop through RoIs (treat them as constant)
-  rois = tf.stop_gradient(rois)
 
   # RoI pool layer creates 7x7 map for each proposal. These are independently
   # passed through two fully-connected layers.
-  pool = RoIPoolingLayer(pool_size = 7, name = "roi_pool")([feature_map, rois])
-  flattened = TimeDistributed(Flatten())(pool)
+  if custom_roi_pool:
+    # Convert proposals from image-space (y1, x1, y2, x2) to feature map space
+    # (y1, x1, height, width)
+    proposals = tf.cast(proposals, dtype = tf.int32)                  # RoIs must be integral for RoIPoolingLayer
+    map_dimensions = tf.shape(feature_map)[1:3]                       # (batches, height, width, channels) -> (height, width)
+    map_limits = tf.tile(map_dimensions, multiples = [2]) - 1         # (height, width, height, width)
+    roi_corners = tf.minimum(proposals // 16, map_limits)             # to feature map space and clamp against map edges
+    roi_corners = tf.maximum(roi_corners, 0)
+    roi_dimensions = roi_corners[:,2:4] - roi_corners[:,0:2] + 1
+    rois = tf.concat([ roi_corners[:,0:2], roi_dimensions ], axis = 1)  # (N,4), where each row is (y1, x2, height, width) in feature map units
+    rois = tf.expand_dims(rois, axis = 0)                             # (1,N,4), batch size of 1, as expected by RoIPoolingLayer
+
+    # Do not backprop through RoIs (treat them as constant)
+    rois = tf.stop_gradient(rois)
+
+    # Pool
+    pool = RoIPoolingLayer(pool_size = 7, name = "roi_pool")([feature_map, rois])
+  else:
+    # Convert to normalized RoIs with each coordinate in [0,1]
+    proposals = proposals / [ image_shape[1], image_shape[2], image_shape[1], image_shape[2] ]
+
+    # Convert from (y1,x1,y2,x2) -> (x1,y1,x2,y2)
+    rois = tf.stack([ proposals[:,1], proposals[:,0], proposals[:,3], proposals[:,2] ], axis = 1)
+
+    # Do not backprop through RoIs (treat them as constant)
+    rois = tf.stop_gradient(rois)
+
+    # Crop and resize to 14x14 and then max pool
+    num_rois = tf.shape(rois)[0];
+    region = tf.image.crop_and_resize(image = feature_map, boxes = rois, box_indices = tf.zeros(num_rois, dtype = tf.int32), crop_size = [14, 14])
+    pool = tf.nn.max_pool(region, ksize = [1, 2, 2, 1], strides = [1, 2, 2, 1], padding = "SAME")
+    pool = tf.expand_dims(pool, axis = 0) # (num_rois, 7, 7, 512) -> (1, num_rois, 7, 7, 512)
  
   # Fully-connected layers act as classifiers as in VGG-16 and use the same
   # layer names so that they can be pre-initialized with VGG-16 weights
+  flattened = TimeDistributed(Flatten())(pool)
   fc1 = TimeDistributed(name = "fc1", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(flattened)
   fc2 = TimeDistributed(name = "fc2", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(fc1)
   out = fc2

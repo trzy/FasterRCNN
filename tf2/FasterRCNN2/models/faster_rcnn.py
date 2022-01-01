@@ -8,14 +8,14 @@ from . import rpn
 from . import detector
 
 
-def faster_rcnn_model(mode, num_classes, allow_edge_proposals):
+def faster_rcnn_model(mode, num_classes, allow_edge_proposals, custom_roi_pool):
   assert mode == "train" or mode == "infer"
   if mode == "train":
-    return _training_model(num_classes, allow_edge_proposals)
+    return _training_model(num_classes, allow_edge_proposals, custom_roi_pool)
   else:
-    return _inference_model(num_classes, allow_edge_proposals)
+    return _inference_model(num_classes, allow_edge_proposals, custom_roi_pool)
 
-def _inference_model(num_classes, allow_edge_proposals):
+def _inference_model(num_classes, allow_edge_proposals, custom_roi_pool):
   image_shape_map = Input(shape = (3,), name = "image_shape_map")                         # holds shape of image: height, width, channels
   num_anchors = 9
   anchor_map = Input(shape = (None, None, num_anchors * 4), name = "anchor_map")          # (height, width, k*4)
@@ -41,9 +41,11 @@ def _inference_model(num_classes, allow_edge_proposals):
  
   # Stage 3: Detector
   detector_class_output, detector_regression_output = detector.layers(
+    image_shape = tf.shape(stage1_feature_extractor_model.input),
     feature_map = stage1_feature_extractor_model.outputs[0],
     proposals = proposals_output,
-    num_classes = num_classes
+    num_classes = num_classes,
+    custom_roi_pool = custom_roi_pool
   )
 
   # Build model
@@ -67,7 +69,7 @@ def _inference_model(num_classes, allow_edge_proposals):
 
   return model
 
-def _training_model(num_classes, allow_edge_proposals):
+def _training_model(num_classes, allow_edge_proposals, custom_roi_pool):
   image_shape_map = Input(shape = (3,), name = "image_shape_map")                         # holds shape of image: height, width, channels
   num_anchors = 9
   anchor_map = Input(shape = (None, None, num_anchors * 4), name = "anchor_map")          # (height, width, k*4)
@@ -115,9 +117,11 @@ def _training_model(num_classes, allow_edge_proposals):
 
   # Stage 3: Detector
   detector_class_output, detector_regression_output = detector.layers(
+    image_shape = tf.shape(stage1_feature_extractor_model.input),
     feature_map = stage1_feature_extractor_model.outputs[0],
     proposals = proposals,
-    num_classes = num_classes
+    num_classes = num_classes,
+    custom_roi_pool = custom_roi_pool
   )
 
   # Losses
