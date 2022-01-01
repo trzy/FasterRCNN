@@ -13,9 +13,9 @@ def _compute_scale_factor(original_width, original_height, min_dimension_pixels)
 
 def _preprocess_vgg16(image_data):
   image_data = image_data[:, :, ::-1]           # RGB -> BGR
-  image_data[:, :, 2] -= 103.939                # ImageNet B mean
+  image_data[:, :, 0] -= 103.939                # ImageNet B mean
   image_data[:, :, 1] -= 116.779                # ImageNet G mean
-  image_data[:, :, 0] -= 123.680                # ImageNet R mean 
+  image_data[:, :, 2] -= 123.680                # ImageNet R mean 
   return image_data
 
 def load_image(url, min_dimension_pixels = None, horizontal_flip = False):
