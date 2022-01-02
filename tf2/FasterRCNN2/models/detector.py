@@ -10,10 +10,9 @@ from tensorflow.keras import backend as K
 from .roi_pooling_layer import RoIPoolingLayer
 
 
-def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool):
+def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool, detector_class_activations, l2):
   assert len(feature_map.shape) == 4
 
-  l2 = 0
   regularizer = tf.keras.regularizers.l2(l2)
 
   class_initializer = tf.keras.initializers.RandomNormal(mean = 0.0, stddev = 0.01)
@@ -41,14 +40,12 @@ def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool):
     pool = RoIPoolingLayer(pool_size = 7, name = "roi_pool")([feature_map, rois])
   else:
     # Convert to normalized RoIs with each coordinate in [0,1]
-    proposals = proposals / [ image_shape[1], image_shape[2], image_shape[1], image_shape[2] ]
-
-    # Convert from (y1,x1,y2,x2) -> (x1,y1,x2,y2)
-    rois = tf.stack([ proposals[:,1], proposals[:,0], proposals[:,3], proposals[:,2] ], axis = 1)
+    rois = proposals / [ image_shape[1], image_shape[2], image_shape[1], image_shape[2] ]
 
     # Do not backprop through RoIs (treat them as constant)
     rois = tf.stop_gradient(rois)
 
+    # https://github.com/kevinjliang/tf-Faster-RCNN/blob/master/Lib/roi_pool.py
     # Crop and resize to 14x14 and then max pool
     num_rois = tf.shape(rois)[0];
     region = tf.image.crop_and_resize(image = feature_map, boxes = rois, box_indices = tf.zeros(num_rois, dtype = tf.int32), crop_size = [14, 14])
@@ -63,7 +60,8 @@ def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool):
   out = fc2
 
   # Output: classifier
-  classifier = TimeDistributed(name = "classifier_class", layer = Dense(units = num_classes, activation = "softmax", kernel_initializer = class_initializer))(out)
+  class_activation = "softmax" if detector_class_activations else None
+  classifier = TimeDistributed(name = "classifier_class", layer = Dense(units = num_classes, activation = class_activation, kernel_initializer = class_initializer))(out)
 
   # Output: box regressions. Unique regression weights for each possible class
   # excluding background class, hence the use of (num_classes-1). Class index 1
@@ -72,7 +70,7 @@ def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool):
 
   return classifier, regressor
 
-def class_loss(y_predicted, y_true):
+def class_loss(y_predicted, y_true, from_logits):
   """
   Keras implementation of classifier network classification loss. The inputs
   are shaped (M,N,C), where M is the number of batches (i.e., 1), N is the
@@ -80,7 +78,10 @@ def class_loss(y_predicted, y_true):
   encoding is used, hence categorical crossentropy.
   """
   scale_factor = 1.0
-  return scale_factor * K.mean(K.categorical_crossentropy(y_true, y_predicted))
+  if from_logits:
+    return scale_factor * K.mean(K.categorical_crossentropy(target = y_true, output = y_predicted, from_logits = True))
+  else:
+    return scale_factor * K.mean(K.categorical_crossentropy(y_true, y_predicted))
 
 def regression_loss(y_predicted, y_true):
   scale_factor = 1.0

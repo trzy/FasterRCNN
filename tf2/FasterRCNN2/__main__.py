@@ -7,6 +7,8 @@
 # - Freezing layers should be part of model construction
 # - stats.on_train_step: loss -> losses
 # - Verify mAP using external program
+# - Document why L2 = 0.5 * weight decay
+# - If we keep logits option, crop-and-resize option, etc. make sure these are printed out at start of training
 #
 import argparse
 import numpy as np
@@ -108,6 +110,10 @@ def _predictions_to_scored_boxes(image_data, classes, regressions, proposals, sc
   image_data = np.squeeze(image_data, axis = 0)
   classes = np.squeeze(classes, axis = 0)
   regressions = np.squeeze(regressions, axis = 0)
+
+  # Convert logits to probability distribution if using logits mode
+  if options.detector_logits:
+    classes = tf.nn.softmax(classes, axis = 1).numpy()
   
   # Convert proposal boxes -> center point and size
   proposal_anchors = np.empty(proposals.shape)
@@ -125,7 +131,7 @@ def _predictions_to_scored_boxes(image_data, classes, regressions, proposals, sc
     proposal_boxes_this_class = math_utils.convert_regressions_to_boxes(
       regressions = regression_params,
       anchors = proposal_anchors,
-      regression_means = [0, 0, 0, 0],
+      regression_means = [0.0, 0.0, 0.0, 0.0],
       regression_stds = [0.1, 0.1, 0.2, 0.2]
     )
 
@@ -256,7 +262,7 @@ def train(train_model, infer_model):
   print("Learning rate         : %f" % options.learning_rate)
   print("Momentum              : %f" % options.momentum)
   print("Gradient norm clipping: %f" % options.clipnorm)
-  #print("Weight decay          : %f" % options.weight_decay)
+  print("Weight decay          : %f" % options.weight_decay)
   #print("Dropout               : %f" % options.dropout)
   print("Augmentation          : %s" % ("disabled" if options.no_augment else "enabled"))
   print("Edge proposals        : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
@@ -296,7 +302,7 @@ def train(train_model, infer_model):
         "learning_rate": options.learning_rate,
         "momentum": options.momentum,
         "clipnorm": options.clipnorm,
-#        "weight_decay": options.weight_decay,
+        "weight_decay": options.weight_decay,
 #        "dropout": options.dropout,
         "mAP": mean_average_precision
       }
@@ -367,9 +373,10 @@ if __name__ == "__main__":
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
   parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "Momentum")
   parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = 1.0, help = "Gradient norm clipping (helps prevent instability and NaNs)")
-  #parser.add_argument("--weight-decay", metavar = "value", type = float, action = "store", default = 0.0, help = "Weight decay")
+  parser.add_argument("--weight-decay", metavar = "value", type = float, action = "store", default = 0.0, help = "Weight decay")
   #parser.add_argument("--dropout", metavar = "probability", type = float, action = "store", default = 0.0, help = "Dropout probability after each of the two fully-connected detector layers")
   parser.add_argument("--crop-resize-pool", action = "store_true", help = "Use TensorFlow crop-and-resize with max-pool to implement RoI pooling instead of custom layer")
+  parser.add_argument("--detector-logits", action = "store_true", help = "Do not apply softmax to detector class output and compute loss from logits directly")
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
@@ -391,13 +398,16 @@ if __name__ == "__main__":
     mode = "infer",
     num_classes = voc.Dataset.num_classes,
     allow_edge_proposals = not options.exclude_edge_proposals,
-    custom_roi_pool = not options.crop_resize_pool
+    custom_roi_pool = not options.crop_resize_pool,
+    detector_class_activations = not options.detector_logits
   )
   train_model = faster_rcnn.faster_rcnn_model(
     mode = "train",
     num_classes = voc.Dataset.num_classes,
     allow_edge_proposals = not options.exclude_edge_proposals,
-    custom_roi_pool = not options.crop_resize_pool
+    custom_roi_pool = not options.crop_resize_pool,
+    detector_class_activations = not options.detector_logits,
+    l2 = 0.5 * options.weight_decay
   )
   optimizer = SGD(learning_rate = options.learning_rate, momentum = options.momentum, clipnorm = options.clipnorm)
   infer_model.compile()

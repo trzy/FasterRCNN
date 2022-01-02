@@ -37,8 +37,8 @@ def layers(input_map, image_shape_map, anchor_map, anchor_valid_map, max_proposa
   proposals = _convert_regressions_to_boxes(
     regressions = box_regressions,
     anchors = anchors,
-    regression_means = [ 0, 0, 0, 0 ],
-    regression_stds = [ 1, 1, 1, 1 ]
+    regression_means = [ 0.0, 0.0, 0.0, 0.0 ],
+    regression_stds = [ 1.0, 1.0, 1.0, 1.0 ]
   )
   
   # Keep only the top-N scores. Note that we do not care whether the
@@ -53,7 +53,7 @@ def layers(input_map, image_shape_map, anchor_map, anchor_valid_map, max_proposa
   # Clip to image boundaries
   image_height = image_shape_map[0, 0]  # batch 0, height in pixels
   image_width = image_shape_map[0, 1]   # batch 0, width in pixels
-  proposals_top_left = tf.maximum(proposals[:,0:2], 0)
+  proposals_top_left = tf.maximum(proposals[:,0:2], 0.0)
   proposals_y2 = tf.reshape(tf.minimum(proposals[:,2], image_height), shape = (-1, 1))  # slice operation produces [N,], reshape to [N,1]
   proposals_x2 = tf.reshape(tf.minimum(proposals[:,3], image_width), shape = (-1, 1))
   proposals = tf.concat([ proposals_top_left, proposals_y2, proposals_x2 ], axis = 1) # [N,4] proposal tensor

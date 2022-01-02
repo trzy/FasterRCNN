@@ -8,14 +8,14 @@ from . import rpn
 from . import detector
 
 
-def faster_rcnn_model(mode, num_classes, allow_edge_proposals, custom_roi_pool):
+def faster_rcnn_model(mode, num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = 0):
   assert mode == "train" or mode == "infer"
   if mode == "train":
-    return _training_model(num_classes, allow_edge_proposals, custom_roi_pool)
+    return _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = l2)
   else:
-    return _inference_model(num_classes, allow_edge_proposals, custom_roi_pool)
+    return _inference_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations)
 
-def _inference_model(num_classes, allow_edge_proposals, custom_roi_pool):
+def _inference_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations):
   image_shape_map = Input(shape = (3,), name = "image_shape_map")                         # holds shape of image: height, width, channels
   num_anchors = 9
   anchor_map = Input(shape = (None, None, num_anchors * 4), name = "anchor_map")          # (height, width, k*4)
@@ -45,7 +45,9 @@ def _inference_model(num_classes, allow_edge_proposals, custom_roi_pool):
     feature_map = stage1_feature_extractor_model.outputs[0],
     proposals = proposals_output,
     num_classes = num_classes,
-    custom_roi_pool = custom_roi_pool
+    custom_roi_pool = custom_roi_pool,
+    detector_class_activations = detector_class_activations,
+    l2 = 0
   )
 
   # Build model
@@ -69,7 +71,7 @@ def _inference_model(num_classes, allow_edge_proposals, custom_roi_pool):
 
   return model
 
-def _training_model(num_classes, allow_edge_proposals, custom_roi_pool):
+def _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = 0):
   image_shape_map = Input(shape = (3,), name = "image_shape_map")                         # holds shape of image: height, width, channels
   num_anchors = 9
   anchor_map = Input(shape = (None, None, num_anchors * 4), name = "anchor_map")          # (height, width, k*4)
@@ -83,7 +85,7 @@ def _training_model(num_classes, allow_edge_proposals, custom_roi_pool):
   #
 
   # Stage 1: Extract features 
-  stage1_feature_extractor_model = vgg16.conv_layers()
+  stage1_feature_extractor_model = vgg16.conv_layers(l2 = l2)
 
   # Stage 2: Generate object proposals using RPN 
   rpn_score_output, rpn_regression_output, proposals_output = rpn.layers(
@@ -93,7 +95,8 @@ def _training_model(num_classes, allow_edge_proposals, custom_roi_pool):
     anchor_valid_map = anchor_valid_map,
     max_proposals_pre_nms = 12000,
     max_proposals_post_nms = 2000,
-    allow_edge_proposals = allow_edge_proposals 
+    allow_edge_proposals = allow_edge_proposals,
+    l2 = l2
   )
 
   # Assign labels to proposals and take random sample (for detector training)
@@ -121,13 +124,15 @@ def _training_model(num_classes, allow_edge_proposals, custom_roi_pool):
     feature_map = stage1_feature_extractor_model.outputs[0],
     proposals = proposals,
     num_classes = num_classes,
-    custom_roi_pool = custom_roi_pool
+    custom_roi_pool = custom_roi_pool,
+    detector_class_activations = detector_class_activations,
+    l2 = l2
   )
 
   # Losses
   rpn_class_loss = rpn.class_loss(y_predicted = rpn_score_output, gt_rpn_map = gt_rpn_map)
   rpn_regression_loss = rpn.regression_loss(y_predicted = rpn_regression_output, gt_rpn_map = gt_rpn_map)
-  detector_class_loss = detector.class_loss(y_predicted = detector_class_output, y_true = gt_classes)
+  detector_class_loss = detector.class_loss(y_predicted = detector_class_output, y_true = gt_classes, from_logits = not detector_class_activations)
   detector_regression_loss = detector.regression_loss(y_predicted = detector_regression_output, y_true = gt_regressions)
 
   # Build model
