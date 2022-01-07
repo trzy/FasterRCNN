@@ -170,7 +170,7 @@ class Dataset:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(self._dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
     return image_paths
-    # Debug: 60 car training images
+    # Debug: 60 car training images from VOC2012
     image_paths = [
       "2008_000028",
       "2008_000074",

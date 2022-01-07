@@ -5,6 +5,7 @@ from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Dense
 from tensorflow.keras import backend as K
+from tensorflow.keras.initializers import glorot_normal
 
 #TODO: describe that image_shape_map is a (batch_size,3) map that exists solely to communicate image size.
 # would be better if we were predicting in normalized space, though, to avoid this.

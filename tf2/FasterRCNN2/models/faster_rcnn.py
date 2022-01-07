@@ -2,6 +2,7 @@ import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import Model
 from tensorflow.keras import Input
+from tensorflow.keras.layers import Lambda
 
 from . import vgg16
 from . import rpn
@@ -216,6 +217,17 @@ def _label_proposals(proposals, gt_box_class_idxs, gt_box_corners, num_classes, 
     box_idxs = tf.math.argmax(ious, axis = 1)       # (N,) of ground truth box index for each proposal
     gt_box_class_idxs = tf.gather(gt_box_class_idxs, indices = box_idxs)  # (N,) of class indices of highest-IoU box for each proposal
     gt_box_corners = tf.gather(gt_box_corners, indices = box_idxs)     # (N,4) of box corners of highest-IoU box for each proposal
+  
+    """
+    def do_log1(x):
+      tf.print("best_ious=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+      return x
+    best_ious = Lambda(do_log1)(best_ious)
+    def do_log2(x):
+      tf.print("best_ious=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+      return x
+    box_idxs = Lambda(do_log2)(box_idxs)
+    """
 
     # Remove all proposals whose best IoU is less than the minimum threshold
     # for a negative (background) sample. We also check for IoUs > 0 because
@@ -225,9 +237,26 @@ def _label_proposals(proposals, gt_box_class_idxs, gt_box_corners, num_classes, 
     best_ious = tf.gather_nd(best_ious, indices = idxs)
     gt_box_class_idxs = tf.gather_nd(gt_box_class_idxs, indices = idxs)
     gt_box_corners = tf.gather_nd(gt_box_corners, indices = idxs)
+    
+    """
+    def do_log3(x):
+      tf.print("best_ious_filtered=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+      return x
+    best_ious = Lambda(do_log3)(best_ious)
+    def do_log4(x):
+      tf.print("gt_box_class_idxs=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+      return x
+    gt_box_class_idxs = Lambda(do_log4)(gt_box_class_idxs)
+    """
 
     # IoUs less than min_object_iou_threshold will be labeled as background
     retain_mask = tf.cast(best_ious >= min_object_iou_threshold, dtype = gt_box_class_idxs.dtype) # (N,), with 0 wherever best_iou < threshold, else 1
+    """
+    def do_log5(x):
+      tf.print("retain_mask=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+      return x
+    retain_mask = Lambda(do_log5)(retain_mask)
+    """
     gt_box_class_idxs = gt_box_class_idxs * retain_mask
 
     # One-hot encode class labels
@@ -246,9 +275,9 @@ def _label_proposals(proposals, gt_box_class_idxs, gt_box_corners, num_classes, 
     # the best box selected
     detector_regression_means = tf.constant([0, 0, 0, 0], dtype = tf.float32)
     detector_regression_stds = tf.constant([0.1, 0.1, 0.2, 0.2], dtype = tf.float32)
-    txy = (gt_box_centers - proposal_centers) / proposal_sides  # ty = (gt_center_y - proposal_center_y) / proposal_height, tx = (gt_center_x - proposal_center_x) / proposal_width
+    tyx = (gt_box_centers - proposal_centers) / proposal_sides  # ty = (gt_center_y - proposal_center_y) / proposal_height, tx = (gt_center_x - proposal_center_x) / proposal_width
     thw = tf.math.log(gt_box_sides / proposal_sides)        # th = log(gt_height / proposal_height), tw = (gt_width / proposal_width)
-    regression_targets = tf.concat([ txy, thw ], axis = 1)  # (N,4) regression targets tensor
+    regression_targets = tf.concat([ tyx, thw ], axis = 1)  # (N,4) regression targets tensor
     regression_targets = (regression_targets - detector_regression_means) / detector_regression_stds  # mean and standard deviation adjustment
  
     # Convert regression targets into a map of shape (N,2,4*(C-1)) where C is
@@ -262,8 +291,13 @@ def _label_proposals(proposals, gt_box_class_idxs, gt_box_corners, num_classes, 
     gt_regressions = tf.concat([ gt_regressions_mask, gt_regressions_values ], axis = 0)  # (2,N,4*(C-1))
     gt_regressions = tf.transpose(gt_regressions, perm = [ 1, 0, 2])        # (N,2,4*(C-1)) 
 
+    """
+    def do_log6(x):
+      tf.print("proposals=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+      return x
+    proposals = Lambda(do_log6)(proposals)
+    """
     return proposals, gt_classes, gt_regressions
-
 
 def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, positive_fraction):
   if max_proposals <= 0:
@@ -275,6 +309,17 @@ def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, posi
   negative_indices = tf.squeeze(tf.where(class_indices <= 0), axis = 1) # (N,), tensor of N indices (the negative, background classes in class_indices)
   num_positive_proposals = tf.size(positive_indices)
   num_negative_proposals = tf.size(negative_indices)
+
+  """
+  def do_log1(x):
+    tf.print("num_positive_proposals=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+    return x
+  num_positive_proposals = Lambda(do_log1)(num_positive_proposals)
+  def do_log2(x):
+    tf.print("num_negative_proposals=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+    return x
+  num_negative_proposals = Lambda(do_log2)(num_negative_proposals)
+  """
   
   # Select positive and negative samples, if there are enough. Note that the
   # number of positive samples can be either the positive fraction of the
@@ -297,6 +342,13 @@ def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, posi
   positive_sample_indices = tf.random.shuffle(positive_indices)[:num_positive_samples]
   negative_sample_indices = tf.random.shuffle(negative_indices)[:num_negative_samples]
   indices = tf.concat([ positive_sample_indices, negative_sample_indices ], axis = 0)
+    
+  """
+  def do_log(x):
+    tf.print("indices=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+    return x
+  indices = Lambda(do_log)(indices)
+  """
 
   # Return (if we have any samples)
   """

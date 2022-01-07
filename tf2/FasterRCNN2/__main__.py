@@ -1,6 +1,8 @@
 #
 # TODO
 # ----
+# - Don't do a full evaluation on last epoch here or in PyTorch. It is misleading. Instead, perform a full evaluation at the end,
+#   after a partial evaluation of final epoch, on the final model (or, in case of save-best-to option, the best one)
 # - Remove image_shape_map and just pass image shape when needed
 # - FasterRCNN model should be a class with methods to load weights, freeze layers, etc.,
 #   as well as prediction code that returns scored boxes
@@ -9,6 +11,7 @@
 # - Verify mAP using external program
 # - Document why L2 = 0.5 * weight decay
 # - If we keep logits option, crop-and-resize option, etc. make sure these are printed out at start of training
+# - Move BestModelTracker to state.py, similar to PyTorch version
 #
 import argparse
 import numpy as np
@@ -16,6 +19,7 @@ import os
 import random
 from tqdm import tqdm
 from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.optimizers import Adam
 import tensorflow as tf
 
 from .statistics import TrainingStatistics
@@ -26,6 +30,23 @@ from .models import vgg16
 from .models import math_utils
 from .models import anchors
 from . import visualize
+
+class BestWeightsTracker:
+  def __init__(self, filepath):
+    self._filepath = filepath
+    self._best_weights = None
+    self._best_mAP = 0
+
+  def on_epoch_end(self, model, mAP):
+    if mAP > self._best_mAP:
+      self._best_mAP = mAP
+      self._best_weights = model.get_weights()
+
+  def restore_and_save_best_weights(self, model):
+    if self._best_weights is not None:
+      model.set_weights(self._best_weights)
+      model.save_weights(filepath = self._filepath, overwrite = True, save_format = "h5")
+      print("Saved best model weights (Mean Average Precision = %1.2f%%) to '%s'" % (self._best_mAP, self._filepath))
 
 def render_anchors():
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = False, shuffle = False)
@@ -259,22 +280,28 @@ def train(train_model, infer_model):
   print("Training split        : %s" % options.train_split)
   print("Evaluation split      : %s" % options.eval_split)
   print("Epochs                : %d" % options.epochs)
+  print("Optimizer             : %s" % options.optimizer)
   print("Learning rate         : %f" % options.learning_rate)
-  print("Momentum              : %f" % options.momentum)
-  print("Gradient norm clipping: %f" % options.clipnorm)
+  print("Gradient norm clipping: %s" % ("disabled" if options.clipnorm <= 0 else ("%f" % options.clipnorm)))
+  print("SGD Momentum          : %f" % options.momentum)
+  print("Adam Beta-1           : %f" % options.beta1)
+  print("Adam Beta-2           : %f" % options.beta2)
   print("Weight decay          : %f" % options.weight_decay)
   #print("Dropout               : %f" % options.dropout)
   print("Augmentation          : %s" % ("disabled" if options.no_augment else "enabled"))
   print("Edge proposals        : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
   print("CSV log               : %s" % ("none" if not options.log_csv else options.log_csv))
   print("Checkpoints           : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
-  print("Final model file      : %s" % ("none" if not options.save_to else options.save_to))
+  print("Final weights file    : %s" % ("none" if not options.save_to else options.save_to))
+  print("Best weights file     : %s" % ("none" if not options.save_best_to else options.save_best_to))
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):
     os.makedirs(options.checkpoint_dir)
   if options.log_csv:
     csv = utils.CSVLog(options.log_csv)
+  if options.save_best_to:
+    best_weights_tracker = BestWeightsTracker(filepath = options.save_best_to)
   for epoch in range(1, 1 + options.epochs):
     print("Epoch %d/%d" % (epoch, options.epochs))
     stats = TrainingStatistics()
@@ -300,17 +327,23 @@ def train(train_model, infer_model):
       log_items = {
         "epoch": epoch,
         "learning_rate": options.learning_rate,
-        "momentum": options.momentum,
         "clipnorm": options.clipnorm,
+        "momentum": options.momentum,
+        "beta1": options.beta1,
+        "beta2": options.beta2,
         "weight_decay": options.weight_decay,
 #        "dropout": options.dropout,
         "mAP": mean_average_precision
       }
       log_items.update(stats.get_progbar_postfix())
       csv.log(log_items)
+    if options.save_best_to:
+      best_weights_tracker.on_epoch_end(model = train_model, mAP = mean_average_precision)
   if options.save_to:
     train_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
     print("Saved final model weights to '%s'" % options.save_to)
+  if options.save_best_to:
+    best_weights_tracker.restore_and_save_best_weights(model = train_model)
 
 def _predict(model, image_data, image, show_image, output_path):
   anchor_map, anchor_valid_map = anchors.generate_anchor_maps(image_shape = image_data.shape, feature_pixels = 16)
@@ -350,6 +383,18 @@ def predict_all(model, split):
     output_path = os.path.join(dirname, os.path.splitext(os.path.basename(sample.filepath))[0] + ".png")
     _predict(model = model, image_data = sample.image_data, image = sample.image, show_image = False, output_path = output_path)
 
+def create_optimizer():
+  kwargs = {}
+  if options.clipnorm > 0:
+    kwargs = { "clipnorm": options.clipnorm }
+  if options.optimizer == "sgd":
+    optimizer = SGD(learning_rate = options.learning_rate, momentum = options.momentum, **kwargs)
+  elif options.optimizer == "adam":
+    optimizer = Adam(learning_rate = options.learning_rate, beta_1 = options.beta1, beta_2 = options.beta2, **kwargs)
+  else:
+    raise ValueError("Optimizer must be \"sgd\" for stochastic gradient descent or \"adam\" for Adam")
+  return optimizer
+
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser("FasterRCNN")
@@ -361,6 +406,7 @@ if __name__ == "__main__":
   group.add_argument("--predict-all", metavar = "name", action = "store", type = str, help = "Run inference on all images in the specified dataset split and write to directory 'predictions_${split}'")
   parser.add_argument("--load-from", metavar = "file", action = "store", help = "Load initial model weights from file")
   parser.add_argument("--save-to", metavar = "file", action = "store", help = "Save final trained weights to file")
+  parser.add_argument("--save-best-to", metavar = "file", action = "store", help = "Save best weights (highest mean average precision) to file")
   parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "../../VOCdevkit/VOC2007", help = "VOC dataset directory")
   parser.add_argument("--train-split", metavar = "name", action = "store", default = "trainval", help = "Dataset split to use for training")
   parser.add_argument("--eval-split", metavar = "name", action = "store", default = "test", help = "Dataset split to use for evaluation")
@@ -370,9 +416,12 @@ if __name__ == "__main__":
   parser.add_argument("--plot", action = "store_true", help = "Plots the average precision of each class after evaluation (use with --train or --eval)")
   parser.add_argument("--log-csv", metavar = "file", action = "store", help = "Log training metrics to CSV file")
   parser.add_argument("--epochs", metavar = "count", type = int, action = "store", default = 1, help = "Number of epochs to train for")
+  parser.add_argument("--optimizer", metavar = "name", type = str, action = "store", default = "sgd", help = "Optimizer to use (\"sgd\" or \"adam\")")
   parser.add_argument("--learning-rate", metavar = "value", type = float, action = "store", default = 1e-3, help = "Learning rate")
-  parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "Momentum")
-  parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = 1.0, help = "Gradient norm clipping (helps prevent instability and NaNs)")
+  parser.add_argument("--clipnorm", metavar = "value", type = float, action = "store", default = 0.0, help = "Gradient norm clipping (use 0 for none)")
+  parser.add_argument("--momentum", metavar = "value", type = float, action = "store", default = 0.9, help = "SGD momentum")
+  parser.add_argument("--beta1", metavar = "value", type = float, action = "store", default = 0.9, help = "Adam beta1 parameter (decay rate for 1st moment estimates)")
+  parser.add_argument("--beta2", metavar = "value", type = float, action = "store", default = 0.999, help = "Adam beta2 parameter (decay rate for 2nd moment estimates)")
   parser.add_argument("--weight-decay", metavar = "value", type = float, action = "store", default = 0.0, help = "Weight decay")
   #parser.add_argument("--dropout", metavar = "probability", type = float, action = "store", default = 0.0, help = "Dropout probability after each of the two fully-connected detector layers")
   parser.add_argument("--crop-resize-pool", action = "store_true", help = "Use TensorFlow crop-and-resize with max-pool to implement RoI pooling instead of custom layer")
@@ -380,6 +429,7 @@ if __name__ == "__main__":
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
+  parser.add_argument("--debug-dir", metavar = "dir", action = "store", help = "Enable full TensorFlow Debugger V2 logging to specified directory")
   options = parser.parse_args()
 
   # Run-time environment
@@ -392,6 +442,10 @@ if __name__ == "__main__":
   # Perform optional procedures
   if options.dump_anchors:
     render_anchors()
+
+  # Debug logging
+  if options.debug_dir:
+    tf.debugging.experimental.enable_dump_debug_info(options.debug_dir, tensor_debug_mode = "FULL_HEALTH", circular_buffer_size = -1)
 
   # Construct model and load initial weights
   infer_model = faster_rcnn.faster_rcnn_model(
@@ -409,9 +463,8 @@ if __name__ == "__main__":
     detector_class_activations = not options.detector_logits,
     l2 = 0.5 * options.weight_decay
   )
-  optimizer = SGD(learning_rate = options.learning_rate, momentum = options.momentum, clipnorm = options.clipnorm)
   infer_model.compile()
-  train_model.compile(optimizer = optimizer, loss = [ None ] * len(train_model.outputs))  # losses were baked in at model construction
+  train_model.compile(optimizer = create_optimizer(), loss = [ None ] * len(train_model.outputs))  # losses were baked in at model construction
   if options.load_from:
     infer_model.load_weights(filepath = options.load_from, by_name = True)
     train_model.load_weights(filepath = options.load_from, by_name = True)

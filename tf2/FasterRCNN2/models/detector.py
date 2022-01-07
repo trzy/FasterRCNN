@@ -1,11 +1,15 @@
+
+import sys 
 import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import models
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Lambda
 from tensorflow.keras.layers import TimeDistributed
 from tensorflow.keras import backend as K
+from tensorflow.keras.initializers import glorot_normal
 
 from .roi_pooling_layer import RoIPoolingLayer
 
@@ -17,7 +21,6 @@ def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool, de
 
   class_initializer = tf.keras.initializers.RandomNormal(mean = 0.0, stddev = 0.01)
   regressor_initializer = tf.keras.initializers.RandomNormal(mean = 0.0, stddev = 0.001)
-
 
   # RoI pool layer creates 7x7 map for each proposal. These are independently
   # passed through two fully-connected layers.
@@ -78,10 +81,18 @@ def class_loss(y_predicted, y_true, from_logits):
   encoding is used, hence categorical crossentropy.
   """
   scale_factor = 1.0
+  N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon()  # number of proposals
   if from_logits:
-    return scale_factor * K.mean(K.categorical_crossentropy(target = y_true, output = y_predicted, from_logits = True))
+    #def do_log(x):
+    #  y_predicted = x[0]
+    #  y_true = x[1]
+    #  loss = K.mean(K.categorical_crossentropy(target = y_true, output = y_predicted, from_logits = True))
+    #  tf.print("loss=", loss, "y_predicted=", y_predicted, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+    #  return y_predicted
+    #y_predicted = Lambda(do_log)((y_predicted, y_true))
+    return scale_factor * K.sum(K.categorical_crossentropy(target = y_true, output = y_predicted, from_logits = True)) / N
   else:
-    return scale_factor * K.mean(K.categorical_crossentropy(y_true, y_predicted))
+    return scale_factor * K.sum(K.categorical_crossentropy(y_true, y_predicted)) / N
 
 def regression_loss(y_predicted, y_true):
   scale_factor = 1.0
