@@ -316,8 +316,8 @@ def train(train_model, infer_model):
     mean_average_precision = evaluate(
       model = infer_model,
       eval_data = eval_data,
-      num_samples = None if last_epoch else options.periodic_eval_samples, # use full number of samples at last epoch
-      plot = options.plot if last_epoch else False
+      num_samples = options.periodic_eval_samples,
+      plot = False
     )
     if options.checkpoint_dir:
       checkpoint_file = os.path.join(options.checkpoint_dir, "checkpoint-epoch-%d-mAP-%1.1f.h5" % (epoch, mean_average_precision))
@@ -344,6 +344,13 @@ def train(train_model, infer_model):
     print("Saved final model weights to '%s'" % options.save_to)
   if options.save_best_to:
     best_weights_tracker.restore_and_save_best_weights(model = train_model)
+  print("Evaluating %s model on all samples in '%s'..." % (("best" if options.save_best_to else "final"), options.eval_split))  # evaluate final or best model on full dataset
+  evaluate(
+    model = infer_model,
+    eval_data = eval_data,
+    num_samples = eval_data.num_samples,
+    plot = options.plot 
+  )
 
 def _predict(model, image_data, image, show_image, output_path):
   anchor_map, anchor_valid_map = anchors.generate_anchor_maps(image_shape = image_data.shape, feature_pixels = 16)
@@ -392,7 +399,7 @@ def create_optimizer():
   elif options.optimizer == "adam":
     optimizer = Adam(learning_rate = options.learning_rate, beta_1 = options.beta1, beta_2 = options.beta2, **kwargs)
   else:
-    raise ValueError("Optimizer must be \"sgd\" for stochastic gradient descent or \"adam\" for Adam")
+    raise ValueError("Optimizer must be 'sgd' for stochastic gradient descent or 'adam' for Adam")
   return optimizer
 
 
