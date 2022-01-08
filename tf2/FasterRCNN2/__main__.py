@@ -1,3 +1,6 @@
+#TODO: restore randomness to anchor minibatch
+
+
 #
 # TODO
 # ----
@@ -109,8 +112,10 @@ def _sample_rpn_minibatch(rpn_map, object_indices, background_indices, rpn_minib
   num_negative_anchors = len(negative_anchors)
   num_positive_samples = min(rpn_minibatch_size // 2, num_positive_anchors) # up to half the samples should be positive, if possible
   num_negative_samples = rpn_minibatch_size - num_positive_samples          # the rest should be negative
-  positive_anchor_idxs = random.sample(range(num_positive_anchors), num_positive_samples)
-  negative_anchor_idxs = random.sample(range(num_negative_anchors), num_negative_samples)
+#  positive_anchor_idxs = random.sample(range(num_positive_anchors), num_positive_samples)
+#  negative_anchor_idxs = random.sample(range(num_negative_anchors), num_negative_samples)
+  positive_anchor_idxs = np.arange(num_positive_anchors)
+  negative_anchor_idxs = np.arange(num_negative_anchors)
   
   # Construct index expressions into RPN map
   positive_anchors = positive_anchors[positive_anchor_idxs]
@@ -294,7 +299,8 @@ def train(train_model, infer_model):
   print("Checkpoints           : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
   print("Final weights file    : %s" % ("none" if not options.save_to else options.save_to))
   print("Best weights file     : %s" % ("none" if not options.save_best_to else options.save_best_to))
-  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
+  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = False, shuffle = False, cache = not options.no_cache)
+#  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):
     os.makedirs(options.checkpoint_dir)
@@ -482,6 +488,8 @@ if __name__ == "__main__":
     print("Initialized VGG-16 layers to Keras ImageNet weights")
   vgg16.freeze_layers(infer_model, "block1_*,block2_*")
   vgg16.freeze_layers(train_model, "block1_*,block2_*") #TODO: this should be part of model construction
+  #TODO: tmp
+  vgg16.freeze_layers(train_model, "*")
 
   # Perform mutually exclusive procedures
   if options.train:

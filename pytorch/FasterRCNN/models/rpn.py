@@ -28,6 +28,14 @@ class RegionProposalNetwork(nn.Module):
     self._rpn_boxes.weight.data.normal_(mean = 0.0, std = 0.01)
     self._rpn_boxes.bias.data.zero_()
 
+    #TODO: remove this
+    self._rpn_conv1.weight.requires_grad = False
+    self._rpn_class.weight.requires_grad = False
+    self._rpn_boxes.weight.requires_grad = False
+    self._rpn_conv1.bias.requires_grad = False
+    self._rpn_class.bias.requires_grad = False
+    self._rpn_boxes.bias.requires_grad = False
+
   def forward(self, feature_map, image_shape, anchor_map, anchor_valid_map, max_proposals_pre_nms, max_proposals_post_nms):
     """
     Predict objectness scores and regress region-of-interest box proposals on

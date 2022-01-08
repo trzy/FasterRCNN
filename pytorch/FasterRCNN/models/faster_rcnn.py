@@ -90,6 +90,7 @@ class FasterRCNNModel(nn.Module):
       max_proposals_pre_nms = 6000, # test time values
       max_proposals_post_nms = 300
     )
+    print(proposals)
     classes, regressions = self._stage3_detector_network(
       feature_map = feature_map,
       proposals = proposals
@@ -369,8 +370,10 @@ class FasterRCNNModel(nn.Module):
     num_negative_anchors = len(negative_anchors)
     num_positive_samples = min(self._rpn_minibatch_size // 2, num_positive_anchors) # up to half the samples should be positive, if possible
     num_negative_samples = self._rpn_minibatch_size - num_positive_samples          # the rest should be negative
-    positive_anchor_idxs = random.sample(range(num_positive_anchors), num_positive_samples)
-    negative_anchor_idxs = random.sample(range(num_negative_anchors), num_negative_samples)
+    #positive_anchor_idxs = random.sample(range(num_positive_anchors), num_positive_samples)
+    #negative_anchor_idxs = random.sample(range(num_negative_anchors), num_negative_samples)
+    positive_anchor_idxs = np.arange(num_positive_anchors)
+    negative_anchor_idxs = np.arange(num_negative_anchors)
     
     # Construct index expressions into RPN map
     positive_anchors = positive_anchors[positive_anchor_idxs]
@@ -488,6 +491,11 @@ class FasterRCNNModel(nn.Module):
     gt_regressions = np.zeros((num_proposals, 2, 4 * (self._num_classes - 1))).astype(np.float32)
     gt_regressions[:,0,:] = np.repeat(gt_classes, repeats = 4, axis = 1)[:,4:]        # create masks using interleaved repetition, remembering to ignore class 0
     gt_regressions[:,1,:] = np.tile(regression_targets, reps = self._num_classes - 1) # populate regression targets with straightforward repetition (only those columns corresponding to class are masked on)
+
+    np.set_printoptions(threshold=np.inf)
+    print("proposals=", proposals)
+    print("gt_classes=", gt_classes)
+    print("gt_regressions=", gt_regressions)
 
     return proposals, gt_classes, gt_regressions
 

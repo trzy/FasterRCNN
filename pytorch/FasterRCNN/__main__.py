@@ -85,7 +85,8 @@ def train(model):
   print("CSV log         : %s" % ("none" if not options.log_csv else options.log_csv))
   print("Checkpoints     : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
   print("Final model file: %s" % ("none" if not options.save_to else options.save_to))
-  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
+  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = False, shuffle = False, cache = not options.no_cache)
+#  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   optimizer = create_optimizer(model = model)
   if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):

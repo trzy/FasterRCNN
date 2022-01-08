@@ -42,6 +42,27 @@ class FeatureExtractor(nn.Module):
     self._block2_conv1.bias.requires_grad = False
     self._block2_conv2.weight.requires_grad = False
     self._block2_conv2.bias.requires_grad = False
+    
+    self._block3_conv1.weight.requires_grad = False
+    self._block3_conv1.bias.requires_grad = False
+    self._block3_conv2.weight.requires_grad = False
+    self._block3_conv2.bias.requires_grad = False
+    self._block3_conv3.weight.requires_grad = False
+    self._block3_conv3.bias.requires_grad = False
+
+    self._block4_conv1.weight.requires_grad = False
+    self._block4_conv1.bias.requires_grad = False
+    self._block4_conv2.weight.requires_grad = False
+    self._block4_conv2.bias.requires_grad = False
+    self._block4_conv3.weight.requires_grad = False
+    self._block4_conv3.bias.requires_grad = False
+
+    self._block5_conv1.weight.requires_grad = False
+    self._block5_conv1.bias.requires_grad = False
+    self._block5_conv2.weight.requires_grad = False
+    self._block5_conv2.bias.requires_grad = False
+    self._block5_conv3.weight.requires_grad = False
+    self._block5_conv3.bias.requires_grad = False
 
   def forward(self, image_data):
     """

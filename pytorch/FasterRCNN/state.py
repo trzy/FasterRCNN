@@ -20,12 +20,15 @@ def _load_keras_weights(hdf5_file, layer_name):
   torch.Tensor
     Weights or None if layer not found.
   """
-  primary_keypath = "model_weights/" + layer_name
-  for keypath, node in hdf5_file[primary_keypath].items():
-    if keypath.startswith("conv") or keypath.startswith("dense"):
-      kernel_keypath = "/".join([primary_keypath, keypath, "kernel:0"])
-      weights = np.array(hdf5_file[kernel_keypath]).astype(np.float32)
-      return t.from_numpy(weights).cuda()
+  primary_keypaths = [ "model_weights/" + layer_name, layer_name ]  # depending on whether weights or the model were saved to H5 format
+  for primary_keypath in primary_keypaths:
+    if primary_keypath not in hdf5_file:
+      continue
+    for keypath, node in hdf5_file[primary_keypath].items():
+      if keypath.startswith("conv") or keypath.startswith("dense"):
+        kernel_keypath = "/".join([primary_keypath, keypath, "kernel:0"])
+        weights = np.array(hdf5_file[kernel_keypath]).astype(np.float32)
+        return t.from_numpy(weights).cuda()
   return None
 
 def _load_keras_biases(hdf5_file, layer_name):
@@ -45,12 +48,15 @@ def _load_keras_biases(hdf5_file, layer_name):
   torch.Tensor
     Bias vector or None if layer not be found.
   """
-  primary_keypath = "model_weights/" + layer_name
-  for keypath, node in hdf5_file[primary_keypath].items():
-    if keypath.startswith("conv") or keypath.startswith("dense"):
-      bias_keypath = "/".join([primary_keypath, keypath, "bias:0"])
-      biases = np.array(hdf5_file[bias_keypath]).astype(np.float32)
-      return t.from_numpy(biases).cuda()
+  primary_keypaths = [ "model_weights/" + layer_name, layer_name ]  # depending on whether weights or the model were saved to H5 format
+  for primary_keypath in primary_keypaths:
+    if primary_keypath not in hdf5_file:
+      continue
+    for keypath, node in hdf5_file[primary_keypath].items():
+      if keypath.startswith("conv") or keypath.startswith("dense"):
+        bias_keypath = "/".join([primary_keypath, keypath, "bias:0"])
+        biases = np.array(hdf5_file[bias_keypath]).astype(np.float32)
+        return t.from_numpy(biases).cuda()
   return None
 
 def _load_keras_layer(hdf5_file, layer_name):
@@ -167,6 +173,83 @@ def _load_vgg16_from_bart_keras_model(filepath):
 
   return state
 
+def _load_vgg16_and_rpn_from_bart_keras_model(filepath):
+  missing_layers = []
+  state = {}
+  file = h5py.File(filepath, "r")
+
+  conv_layer_mapping = {
+    # VGG-16 feature extractor
+    "block1_conv1": "_stage1_feature_extractor._block1_conv1",
+    "block1_conv2": "_stage1_feature_extractor._block1_conv2", 
+    "block2_conv1": "_stage1_feature_extractor._block2_conv1", 
+    "block2_conv2": "_stage1_feature_extractor._block2_conv2", 
+    "block3_conv1": "_stage1_feature_extractor._block3_conv1",
+    "block3_conv2": "_stage1_feature_extractor._block3_conv2",
+    "block3_conv3": "_stage1_feature_extractor._block3_conv3",
+    "block4_conv1": "_stage1_feature_extractor._block4_conv1",
+    "block4_conv2": "_stage1_feature_extractor._block4_conv2",
+    "block4_conv3": "_stage1_feature_extractor._block4_conv3",
+    "block5_conv1": "_stage1_feature_extractor._block5_conv1",
+    "block5_conv2": "_stage1_feature_extractor._block5_conv2",
+    "block5_conv3": "_stage1_feature_extractor._block5_conv3",
+
+    # RPN
+    "rpn_conv1": "_stage2_region_proposal_network._rpn_conv1",
+    "rpn_class": "_stage2_region_proposal_network._rpn_class",
+    "rpn_boxes": "_stage2_region_proposal_network._rpn_boxes"
+  }
+
+  # Conv layers (VGG-16 and RPN)
+  for keras_layer_name, pytorch_layer_name in conv_layer_mapping.items():
+    weights = file[keras_layer_name + "/" + keras_layer_name + "/kernel:0"]
+    biases = file[keras_layer_name + "/" + keras_layer_name + "/bias:0"]
+    weights = t.from_numpy(np.array(weights, dtype = np.float32)).cuda()
+    biases = t.from_numpy(np.array(biases, dtype = np.float32)).cuda()
+    weights = weights.permute([ 3, 2, 0, 1 ])
+    state[pytorch_layer_name + ".weight"] = weights
+    state[pytorch_layer_name + ".bias"] = biases 
+
+  # Detector
+  weights = file["fc1/fc1/kernel:0"]
+  biases = file["fc1/fc1/bias:0"]
+  weights = t.from_numpy(np.array(weights, dtype = np.float32)).cuda()
+  biases = t.from_numpy(np.array(biases, dtype = np.float32)).cuda()
+  if weights is not None and biases is not None:
+    # The fc1 layer in Keras takes as input a flattened (7, 7, 512) map from
+    # the RoI pool layer. Here in PyTorch, it is (512, 7, 7). Keras stores
+    # weights as (25088, 4096), which is equivalent to (7, 7, 512, 4096), as
+    # per Keras channels-last convention. To convert to PyTorch, we must
+    # first transpose to (512, 7, 7, 4096), then flatten to (25088, 4096),
+    # and, lastly, transpose to (4096, 25088).
+    weights = weights.reshape((7, 7, 512, 4096))
+    weights = weights.permute([ 2, 0, 1, 3 ]) # (512, 7, 7, 4096)
+    weights = weights.reshape((-1, 4096))     # (25088, 4096)
+    weights = weights.permute([ 1, 0 ])       # (4096, 25088)
+    state["_stage3_detector_network._fc1.weight"] = weights
+    state["_stage3_detector_network._fc1.bias"] = biases
+  else:
+    missing_layers.append("fc1") 
+  weights = file["fc2/fc2/kernel:0"]
+  biases = file["fc2/fc2/bias:0"]
+  weights = t.from_numpy(np.array(weights, dtype = np.float32)).cuda()
+  biases = t.from_numpy(np.array(biases, dtype = np.float32)).cuda()
+  if weights is not None and biases is not None:
+    # Due to the adjustment for fc1, fc2 can be loaded with only a transpose
+    # of the two components (in_dimension, out_dimension) -> 
+    # (out_dimension, in_dimension).
+    state["_stage3_detector_network._fc2.weight"] = weights.permute([ 1, 0 ])
+    state["_stage3_detector_network._fc2.bias"] = biases
+  else:
+    missing_layers.append("fc2")
+
+  # Anything missing?
+  if len(missing_layers) > 0:    
+    print("Some layers were missing from '%s' and not loaded: %s" % (filepath, ", ".join(missing_layers)))
+
+  return state
+
+
 def _load_vgg16_from_caffe_model(filepath):
   state = {}
   caffe = t.load(filepath)
@@ -235,9 +318,11 @@ def load(model, filepath):
 
   # Keras?
   try:
-    state = _load_vgg16_from_bart_keras_model(filepath = filepath)
+    #state = _load_vgg16_from_bart_keras_model(filepath = filepath)
+    state = _load_vgg16_and_rpn_from_bart_keras_model(filepath = filepath)
     print("Loaded initial VGG-16 layer weights from Keras model '%s'" % filepath)
-  except:
+  except Exception as e:
+    print(e)
     pass
 
   # Caffe?

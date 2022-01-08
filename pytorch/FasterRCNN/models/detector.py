@@ -27,6 +27,12 @@ class DetectorNetwork(nn.Module):
     self._classifier.bias.data.zero_()
     self._regressor.weight.data.normal_(mean = 0.0, std = 0.001)
     self._regressor.bias.data.zero_()
+    
+    #TODO: remove this
+    self._classifier.weight.requires_grad = False
+    self._classifier.bias.requires_grad = False
+    self._regressor.weight.requires_grad = False
+    self._regressor.bias.requires_grad = False
 
   def forward(self, feature_map, proposals):
     """

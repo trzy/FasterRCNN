@@ -1,3 +1,4 @@
+import sys
 import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import Model
@@ -39,6 +40,11 @@ def _inference_model(num_classes, allow_edge_proposals, custom_roi_pool, detecto
     max_proposals_post_nms = 300,
     allow_edge_proposals = allow_edge_proposals 
   )
+  import sys
+  def do_log(x):
+    tf.print(x, output_stream = sys.stdout, summarize = -1)
+    return x
+  proposals_output = Lambda(do_log)(proposals_output)
  
   # Stage 3: Detector
   detector_class_output, detector_regression_output = detector.layers(
@@ -297,6 +303,18 @@ def _label_proposals(proposals, gt_box_class_idxs, gt_box_corners, num_classes, 
       return x
     proposals = Lambda(do_log6)(proposals)
     """
+    def do_log6(x):
+      tf.print("proposals=", x, output_stream = sys.stdout, summarize = -1)
+      return x
+    proposals = Lambda(do_log6)(proposals)
+    def do_log7(x):
+      tf.print("gt_classes=", x, output_stream = sys.stdout, summarize = -1)
+      return x
+    gt_classes = Lambda(do_log7)(gt_classes)
+    def do_log8(x):
+      tf.print("gt_regressions=", x, output_stream = sys.stdout, summarize = -1)
+      return x
+    gt_regressions = Lambda(do_log8)(gt_regressions)
     return proposals, gt_classes, gt_regressions
 
 def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, positive_fraction):
@@ -332,7 +350,9 @@ def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, posi
   # num_positive_samples. I am not sure what the original FasterRCNN
   # implementation does.
   num_samples = tf.minimum(max_proposals, tf.size(class_indices))
-  num_positive_samples = tf.minimum(tf.cast(tf.math.round(tf.cast(num_samples, dtype = float) * positive_fraction), dtype = num_samples.dtype), num_positive_proposals)
+
+  num_positive_samples = tf.minimum(tf.cast(tf.math.round(tf.cast(max_proposals, dtype = float) * positive_fraction), dtype = tf.int32), num_positive_proposals)
+#  num_positive_samples = tf.minimum(tf.cast(tf.math.round(tf.cast(num_samples, dtype = float) * positive_fraction), dtype = num_samples.dtype), num_positive_proposals)
   num_negative_samples = tf.minimum(num_samples - num_positive_samples, num_negative_proposals)
 
   # Do we have enough?

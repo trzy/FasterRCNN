@@ -165,11 +165,13 @@ class Dataset:
     return class_index_to_name
 
   def _get_filepaths(self):
+    """
     image_list_file = os.path.join(self._dir, "ImageSets", "Main", self.split + ".txt")
     with open(image_list_file) as fp:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(self._dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
     return image_paths
+    """
     # Debug: 60 car training images
     image_paths = [
       "2008_000028",
