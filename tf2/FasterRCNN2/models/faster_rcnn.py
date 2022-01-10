@@ -119,6 +119,11 @@ def _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector
   gt_classes = tf.expand_dims(gt_classes, axis = 0)           # (N,num_classes) -> (1,N,num_classes) (as expected by loss function)
   gt_regressions = tf.expand_dims(gt_regressions, axis = 0)   # (N,2,(num_classes-1)*4) -> (1,N,2,(num_classes-1)*4)
 
+  # Ensure proposals are treated as constants and do not propagate gradients
+  proposals = tf.stop_gradient(proposals)
+  gt_classes = tf.stop_gradient(gt_classes)
+  gt_regressions = tf.stop_gradient(gt_regressions)
+
   # Stage 3: Detector
   detector_class_output, detector_regression_output = detector.layers(
     image_shape = tf.shape(stage1_feature_extractor_model.input),

@@ -111,7 +111,7 @@ def regression_loss(y_predicted, y_true):
   # targets
   x = y_true_targets - y_predicted
   x_abs = tf.math.abs(x)
-  is_negative_branch = tf.cast(tf.less(x_abs, 1.0 / sigma_squared), dtype = tf.float32)
+  is_negative_branch = tf.stop_gradient(tf.cast(tf.less(x_abs, 1.0 / sigma_squared), dtype = tf.float32))
   R_negative_branch = 0.5 * x * x * sigma_squared
   R_positive_branch = x_abs - 0.5 / sigma_squared
   losses = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch

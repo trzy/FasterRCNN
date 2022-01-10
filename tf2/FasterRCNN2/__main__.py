@@ -1,6 +1,7 @@
 #
 # TODO
 # ----
+# - Remove redundant stop_gradient in detector and test again. Make a comment about the importance of stop_gradients and a note to investigate further, particularly in README.md
 # - Don't do a full evaluation on last epoch here or in PyTorch. It is misleading. Instead, perform a full evaluation at the end,
 #   after a partial evaluation of final epoch, on the final model (or, in case of save-best-to option, the best one)
 # - Remove image_shape_map and just pass image shape when needed
