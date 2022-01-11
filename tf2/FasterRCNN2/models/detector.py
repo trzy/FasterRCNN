@@ -36,17 +36,11 @@ def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool, de
     rois = tf.concat([ roi_corners[:,0:2], roi_dimensions ], axis = 1)  # (N,4), where each row is (y1, x2, height, width) in feature map units
     rois = tf.expand_dims(rois, axis = 0)                             # (1,N,4), batch size of 1, as expected by RoIPoolingLayer
 
-    # Do not backprop through RoIs (treat them as constant)
-    rois = tf.stop_gradient(rois)
-
     # Pool
     pool = RoIPoolingLayer(pool_size = 7, name = "roi_pool")([feature_map, rois])
   else:
     # Convert to normalized RoIs with each coordinate in [0,1]
     rois = proposals / [ image_shape[1], image_shape[2], image_shape[1], image_shape[2] ]
-
-    # Do not backprop through RoIs (treat them as constant)
-    rois = tf.stop_gradient(rois)
 
     # https://github.com/kevinjliang/tf-Faster-RCNN/blob/master/Lib/roi_pool.py
     # Crop and resize to 14x14 and then max pool
