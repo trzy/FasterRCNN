@@ -262,3 +262,19 @@ def load(model, filepath):
   except Exception as e:
     print(e)
     return
+
+class BestWeightsTracker:
+  def __init__(self, filepath):
+    self._filepath = filepath
+    self._best_state = None
+    self._best_mAP = 0
+
+  def on_epoch_end(self, model, epoch, mAP):
+    if mAP > self._best_mAP:
+      self._best_mAP = mAP
+      self._best_state = { "epoch": epoch, "model_state_dict": model.state_dict() }
+
+  def save_best_weights(self, model):
+    if self._best_state is not None:
+      t.save(self._best_state, self._filepath)
+      print("Saved best model weights (Mean Average Precision = %1.2f%%) to '%s'" % (self._best_mAP, self._filepath))

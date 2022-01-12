@@ -33,7 +33,7 @@ def render_anchors():
       gt_boxes = sample.gt_boxes
     )
 
-def evaluate(model, eval_data = None, num_samples = None, plot = False):
+def evaluate(model, eval_data = None, num_samples = None, plot = False, print_average_precisions = False):
   if eval_data is None:
     eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False)
   if num_samples is None:
@@ -53,6 +53,8 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False):
     i += 1
     if i >= num_samples:
       break
+  if print_average_precisions:
+    precision_recall_curve.print_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
   mean_average_precision = 100.0 * precision_recall_curve.compute_mean_average_precision() 
   print("Mean Average Precision = %1.2f%%" % mean_average_precision)
   if plot:
@@ -71,20 +73,21 @@ def create_optimizer(model):
 def train(model):
   print("Training Parameters")
   print("-------------------")
-  print("Initial weights : %s" % (options.load_from if options.load_from else "none"))
-  print("Dataset         : %s" % options.dataset_dir)
-  print("Training split  : %s" % options.train_split)
-  print("Evaluation split: %s" % options.eval_split)
-  print("Epochs          : %d" % options.epochs)
-  print("Learning rate   : %f" % options.learning_rate)
-  print("Momentum        : %f" % options.momentum)
-  print("Weight decay    : %f" % options.weight_decay)
-  print("Dropout         : %f" % options.dropout)
-  print("Augmentation    : %s" % ("disabled" if options.no_augment else "enabled"))
-  print("Edge proposals  : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
-  print("CSV log         : %s" % ("none" if not options.log_csv else options.log_csv))
-  print("Checkpoints     : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
-  print("Final model file: %s" % ("none" if not options.save_to else options.save_to))
+  print("Initial weights   : %s" % (options.load_from if options.load_from else "none"))
+  print("Dataset           : %s" % options.dataset_dir)
+  print("Training split    : %s" % options.train_split)
+  print("Evaluation split  : %s" % options.eval_split)
+  print("Epochs            : %d" % options.epochs)
+  print("Learning rate     : %f" % options.learning_rate)
+  print("Momentum          : %f" % options.momentum)
+  print("Weight decay      : %f" % options.weight_decay)
+  print("Dropout           : %f" % options.dropout)
+  print("Augmentation      : %s" % ("disabled" if options.no_augment else "enabled"))
+  print("Edge proposals    : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
+  print("CSV log           : %s" % ("none" if not options.log_csv else options.log_csv))
+  print("Checkpoints       : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
+  print("Final weights file: %s" % ("none" if not options.save_to else options.save_to))
+  print("Best weights file : %s" % ("none" if not options.save_best_to else options.save_best_to))
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   optimizer = create_optimizer(model = model)
@@ -92,6 +95,8 @@ def train(model):
     os.makedirs(options.checkpoint_dir)
   if options.log_csv:
     csv = utils.CSVLog(options.log_csv)
+  if options.save_best_to:
+    best_weights_tracker = state.BestWeightsTracker(filepath = options.save_best_to)
   for epoch in range(1, 1 + options.epochs):
     print("Epoch %d/%d" % (epoch, options.epochs))
     stats = TrainingStatistics()
@@ -113,8 +118,9 @@ def train(model):
     mean_average_precision = evaluate(
       model = model,
       eval_data = eval_data,
-      num_samples = None if last_epoch else options.periodic_eval_samples, # use full number of samples at last epoch
-      plot = options.plot if last_epoch else False
+      num_samples = options.periodic_eval_samples,
+      plot = False,
+      print_average_precisions = False
     )
     if options.checkpoint_dir:
       checkpoint_file = os.path.join(options.checkpoint_dir, "checkpoint-epoch-%d-mAP-%1.1f.pth" % (epoch, mean_average_precision))
@@ -131,9 +137,21 @@ def train(model):
       }
       log_items.update(stats.get_progbar_postfix())
       csv.log(log_items)
+    if options.save_best_to:
+      best_weights_tracker.on_epoch_end(model = model, epoch = epoch, mAP = mean_average_precision)
   if options.save_to:
     t.save({ "epoch": epoch, "model_state_dict": model.state_dict() }, options.save_to)
     print("Saved final model weights to '%s'" % options.save_to)
+  if options.save_best_to:
+    best_weights_tracker.save_best_weights(model = model)
+  print("Evaluating %s model on all samples in '%s'..." % (("best" if options.save_best_to else "final"), options.eval_split))  # evaluate final or best model on full dataset
+  evaluate(
+    model = model,
+    eval_data = eval_data,
+    num_samples = eval_data.num_samples,  # use all samples
+    plot = options.plot,
+    print_average_precisions = True
+  )
 
 def predict(model, image_data, image, show_image, output_path):
   image_data = t.from_numpy(image_data).unsqueeze(dim = 0).cuda()
@@ -171,6 +189,7 @@ if __name__ == "__main__":
   group.add_argument("--predict-all", metavar = "name", action = "store", type = str, help = "Run inference on all images in the specified dataset split and write to directory 'predictions_${split}'")
   parser.add_argument("--load-from", metavar = "file", action = "store", help = "Load initial model weights from file")
   parser.add_argument("--save-to", metavar = "file", action = "store", help = "Save final trained weights to file")
+  parser.add_argument("--save-best-to", metavar = "file", action = "store", help = "Save best weights (highest mean average precision) to file")
   parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "../../VOCdevkit/VOC2007", help = "VOC dataset directory")
   parser.add_argument("--train-split", metavar = "name", action = "store", default = "trainval", help = "Dataset split to use for training")
   parser.add_argument("--eval-split", metavar = "name", action = "store", default = "test", help = "Dataset split to use for evaluation")
@@ -206,7 +225,7 @@ if __name__ == "__main__":
   if options.train:
     train(model = model)
   elif options.eval:
-    evaluate(model = model, plot = options.plot)
+    evaluate(model = model, plot = options.plot, print_average_precisions = True)
   elif options.predict:
     predict_one(model = model, url = options.predict, show_image = True, output_path = None)
   elif options.predict_to_file:
