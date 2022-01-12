@@ -1,3 +1,23 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/tf2/FasterRCNN/models/anchors.py
+# Copyright 2021-2022 Bart Trzynadlowski
+# 
+# Anchor generation code for the TensorFlow implementation of FasterRCNN. This
+# differs from the PyTorch version only in the ordering of the dimensions of
+# the input image: Keras is (height, width, channels) and PyTorch is
+# (channels, height, width).
+#
+# Differing from other implementations of FasterRCNN, I generate a multi-
+# dimensional ground truth tensor for the RPN stage that contains a flag 
+# indicating whether the anchor should be included in training, whether it is
+# an object, and the box regression targets. It would be simpler and more
+# performant to simply return 2D tensors with this information (the model ends
+# up converting proposals into lists at a later stage anyway) but this is how
+# I first thought to implement it and did not encounter a pressing need to
+# change it.
+#
+
 import itertools
 from math import sqrt
 import numpy as np

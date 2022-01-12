@@ -1,5 +1,15 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/tf2/FasterRCNN/models/detector.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Tensorflow/Keras implementation of the final detector stage of FasterRCNN.
+# As input, takes a series of proposals (or RoIs) and produces classifications
+# and boxes. The boxes are parameterized as modifications to the original
+# incoming proposal boxes. That is, the proposal boxes are exactly analogous to
+# the anchors that the RPN stage uses.
+#
 
-import sys 
 import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import models
@@ -77,13 +87,6 @@ def class_loss(y_predicted, y_true, from_logits):
   scale_factor = 1.0
   N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon()  # number of proposals
   if from_logits:
-    #def do_log(x):
-    #  y_predicted = x[0]
-    #  y_true = x[1]
-    #  loss = K.mean(K.categorical_crossentropy(target = y_true, output = y_predicted, from_logits = True))
-    #  tf.print("loss=", loss, "y_predicted=", y_predicted, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-    #  return y_predicted
-    #y_predicted = Lambda(do_log)((y_predicted, y_true))
     return scale_factor * K.sum(K.categorical_crossentropy(target = y_true, output = y_predicted, from_logits = True)) / N
   else:
     return scale_factor * K.sum(K.categorical_crossentropy(y_true, y_predicted)) / N
@@ -110,11 +113,7 @@ def regression_loss(y_predicted, y_true):
   R_positive_branch = x_abs - 0.5 / sigma_squared
   losses = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
 
-  # TODO:
-  # Not clear which of these methods of normalization are ideal, or whether it
-  # even matters
-  #N = tf.reduce_sum(y_mask) / 4.0 + K.epsilon()                      # N = number of positive boxes
-  N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon() # N = number of proposals
-  #N = tf.reduce_sum(y_mask) + K.epsilon()                             # N = number of parameters (i.e., number of positive boxes * 4)
+  # Accumulate the relevant terms and normalize by the number of proposals
+  N = tf.cast(tf.shape(y_true)[1], dtype = tf.float32) + K.epsilon()  # N = number of proposals
   relevant_loss_terms = y_mask * losses
   return scale_factor * K.sum(relevant_loss_terms) / N

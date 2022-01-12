@@ -1,4 +1,15 @@
 #
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/tf2/FasterRCNN/__main__.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Main module for the TensorFlow/Keras implementation of FasterRCNN. Run this
+# from the root directory, e.g.:
+#
+# python -m python.tf2.FasterRCNN --help
+#
+
+
 # TODO
 # ----
 # - Remove redundant stop_gradient in detector and test again. Make a comment about the importance of stop_gradients and a note to investigate further, particularly in README.md
@@ -13,10 +24,12 @@
 #   as well as prediction code that returns scored boxes
 # - Freezing layers should be part of model construction
 # - stats.on_train_step: loss -> losses
+# - box regressions -> box deltas here and in PyTorch version?
 # - Verify mAP using external program
 # - Document why L2 = 0.5 * weight decay
 # - If we keep logits option, crop-and-resize option, etc. make sure these are printed out at start of training
 # - Move BestModelTracker to state.py, similar to PyTorch version
+# - Move Keras box regression -> box code, and IoU code, from faster_rcnn.py to math_utils as well.
 #
 import argparse
 import numpy as np

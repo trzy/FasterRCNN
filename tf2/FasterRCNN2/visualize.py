@@ -1,3 +1,11 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/tf2/FasterRCNN/statistics.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Routines for visualizing model results and debug information.
+#
+
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 

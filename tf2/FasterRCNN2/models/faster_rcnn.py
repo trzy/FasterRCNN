@@ -1,3 +1,36 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/tf2/FasterRCNN/models/faster_rcnn.py
+# Copyright 2021-2022 Bart Trzynadlowski
+# 
+# TensorFlow/Keras implementation of FasterRCNN training and inference models.
+# Here, all stages of FasterRCNN are instantiated, ground truth labels from
+# RPN proposal boxes (RoIs) for the detector stage are generated, and 
+# proposals are sampled.
+#
+
+#
+# Pro-Tip
+# -------
+#
+# To log the output of Keras layers using tf.print, use K.Lambda as below:
+#
+#   def do_log1(x):
+#     tf.print("best_ious=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+#     return x
+#   best_ious = Lambda(do_log1)(best_ious)
+#   
+#   def do_log(x):
+#     y_predicted = x[0]
+#     y_true = x[1]
+#     loss = K.mean(K.categorical_crossentropy(target = y_true, output = y_predicted, from_logits = True))
+#     tf.print("loss=", loss, "y_predicted=", y_predicted, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
+#     return y_predicted
+#   y_predicted = Lambda(do_log)((y_predicted, y_true))
+#
+# output_stream may also be a file stream like sys.stdout.
+#
+
 import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import Model
@@ -178,8 +211,21 @@ def _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector
   return model
 
 def _intersection_over_union(boxes1, boxes2):
-    """Computes IoU overlaps between two sets of boxes.
-    boxes1, boxes2: [N, (y1, x1, y2, x2)].
+    """
+    Computes IoUs between two sets of boxes, with each box laid out as
+    (y1, x1, y2, x2). This code was borrowed from Matterport's MaskRCNN repo.
+
+    Parameters
+    ----------
+    boxes1: tf.Tensor
+      Tensor of shape (N,4).
+    boxes2: tf.Tensor
+      Tensor of shape (M,4).
+
+    Returns
+    -------
+    tf.Tensor
+      Tensor of shape (N,M) containing IoU score between each pair of boxes.
     """
     # 1. Tile boxes2 and repeat boxes1. This allows us to compare
     # every boxes1 against every boxes2 without loops.
@@ -222,17 +268,6 @@ def _label_proposals(proposals, gt_box_class_idxs, gt_box_corners, num_classes, 
     box_idxs = tf.math.argmax(ious, axis = 1)       # (N,) of ground truth box index for each proposal
     gt_box_class_idxs = tf.gather(gt_box_class_idxs, indices = box_idxs)  # (N,) of class indices of highest-IoU box for each proposal
     gt_box_corners = tf.gather(gt_box_corners, indices = box_idxs)     # (N,4) of box corners of highest-IoU box for each proposal
-  
-    """
-    def do_log1(x):
-      tf.print("best_ious=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-      return x
-    best_ious = Lambda(do_log1)(best_ious)
-    def do_log2(x):
-      tf.print("best_ious=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-      return x
-    box_idxs = Lambda(do_log2)(box_idxs)
-    """
 
     # Remove all proposals whose best IoU is less than the minimum threshold
     # for a negative (background) sample. We also check for IoUs > 0 because
@@ -243,25 +278,8 @@ def _label_proposals(proposals, gt_box_class_idxs, gt_box_corners, num_classes, 
     gt_box_class_idxs = tf.gather_nd(gt_box_class_idxs, indices = idxs)
     gt_box_corners = tf.gather_nd(gt_box_corners, indices = idxs)
     
-    """
-    def do_log3(x):
-      tf.print("best_ious_filtered=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-      return x
-    best_ious = Lambda(do_log3)(best_ious)
-    def do_log4(x):
-      tf.print("gt_box_class_idxs=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-      return x
-    gt_box_class_idxs = Lambda(do_log4)(gt_box_class_idxs)
-    """
-
     # IoUs less than min_object_iou_threshold will be labeled as background
     retain_mask = tf.cast(best_ious >= min_object_iou_threshold, dtype = gt_box_class_idxs.dtype) # (N,), with 0 wherever best_iou < threshold, else 1
-    """
-    def do_log5(x):
-      tf.print("retain_mask=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-      return x
-    retain_mask = Lambda(do_log5)(retain_mask)
-    """
     gt_box_class_idxs = gt_box_class_idxs * retain_mask
 
     # One-hot encode class labels
@@ -296,12 +314,6 @@ def _label_proposals(proposals, gt_box_class_idxs, gt_box_corners, num_classes, 
     gt_regressions = tf.concat([ gt_regressions_mask, gt_regressions_values ], axis = 0)  # (2,N,4*(C-1))
     gt_regressions = tf.transpose(gt_regressions, perm = [ 1, 0, 2])        # (N,2,4*(C-1)) 
 
-    """
-    def do_log6(x):
-      tf.print("proposals=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-      return x
-    proposals = Lambda(do_log6)(proposals)
-    """
     return proposals, gt_classes, gt_regressions
 
 def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, positive_fraction):
@@ -315,17 +327,6 @@ def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, posi
   num_positive_proposals = tf.size(positive_indices)
   num_negative_proposals = tf.size(negative_indices)
 
-  """
-  def do_log1(x):
-    tf.print("num_positive_proposals=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-    return x
-  num_positive_proposals = Lambda(do_log1)(num_positive_proposals)
-  def do_log2(x):
-    tf.print("num_negative_proposals=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-    return x
-  num_negative_proposals = Lambda(do_log2)(num_negative_proposals)
-  """
-  
   # Select positive and negative samples, if there are enough. Note that the
   # number of positive samples can be either the positive fraction of the
   # *actual* number of proposals *or* the *desired* number (max_proposals).
@@ -340,24 +341,23 @@ def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, posi
   num_positive_samples = tf.minimum(tf.cast(tf.math.round(tf.cast(num_samples, dtype = float) * positive_fraction), dtype = num_samples.dtype), num_positive_proposals)
   num_negative_samples = tf.minimum(num_samples - num_positive_samples, num_negative_proposals)
 
-  # Do we have enough?
-  no_samples = tf.logical_or(tf.math.less_equal(num_positive_samples, 0), tf.math.less_equal(num_negative_samples, 0))
-
   # Sample randomly
   positive_sample_indices = tf.random.shuffle(positive_indices)[:num_positive_samples]
   negative_sample_indices = tf.random.shuffle(negative_indices)[:num_negative_samples]
   indices = tf.concat([ positive_sample_indices, negative_sample_indices ], axis = 0)
     
+  # My initial PyTorch version was careful to return empty tensors if there
+  # were no positive samples or no negative samples. Because TF2/Keras is awful
+  # and tf.cond doesn't work due to some incompatibility between tf.function
+  # and KerasTensor, we always return the proposals even if there are no 
+  # negative samples among them. Ths occurs very rarely. Positive samples are
+  # guaranteed to exist because _label_proposals inserts the ground truth boxes
+  # as fake proposals to boost learning.
   """
-  def do_log(x):
-    tf.print("indices=", x, output_stream = "file:///projects/FasterRCNN/tf2/out.txt", summarize = -1)
-    return x
-  indices = Lambda(do_log)(indices)
-  """
+  # Do we have enough?
+  no_samples = tf.logical_or(tf.math.less_equal(num_positive_samples, 0), tf.math.less_equal(num_negative_samples, 0))
 
   # Return (if we have any samples)
-  """
-  # Because TF2/Keras is idiotic, these functions don't work because of an incompatibility between tf.function and KerasTensor 
   proposals = tf.cond(
     no_samples,
     true_fn = lambda: tf.zeros(shape = (0, 4), dtype = proposals.dtype),  # empty proposals tensor if no samples
@@ -374,4 +374,5 @@ def _sample_proposals(proposals, gt_classes, gt_regressions, max_proposals, posi
     false_fn = lambda: tf.gather(gt_regressions, indices = indices)                                     # gather samples
   )
   """
+
   return tf.gather(proposals, indices = indices), tf.gather(gt_classes, indices = indices), tf.gather(gt_regressions, indices = indices)
