@@ -260,3 +260,25 @@ class PrecisionRecallCurveCalculator:
     for index, value in enumerate(average_precisions):
       plt.text(value, index, "%1.1f" % value)
     plt.show()
+
+  def print_average_precisions(self, class_index_to_name):
+    # Compute average precisions for each class
+    labels = [ class_index_to_name[class_index] for class_index in self._object_count_by_class_index ]
+    average_precisions = []
+    for class_index in self._object_count_by_class_index:
+      average_precision, _, _ = self._compute_average_precision(class_index = class_index)
+      average_precisions.append(average_precision)
+
+    # Sort by score (descending)
+    sorted_results = sorted(zip(labels, average_precisions), reverse = True, key = lambda pair: pair[1])
+    _, average_precisions = zip(*sorted_results) # unzip
+
+    # Maximum width of any class name (for pretty printing)
+    label_width = max([ len(label) for label in labels ])
+
+    # Pretty print
+    print("Average Precisions")
+    print("------------------")
+    for (label, average_precision) in sorted_results:
+      print("%s: %1.1f%%" % (label.ljust(label_width), average_precision * 100.0))
+    print("------------------")

@@ -4,6 +4,10 @@
 # - Remove redundant stop_gradient in detector and test again. Make a comment about the importance of stop_gradients and a note to investigate further, particularly in README.md
 # - Don't do a full evaluation on last epoch here or in PyTorch. It is misleading. Instead, perform a full evaluation at the end,
 #   after a partial evaluation of final epoch, on the final model (or, in case of save-best-to option, the best one)
+# - Perform test without logits
+# - Perform test with old pooling code
+# - Default should be -crop-resize-pool and the custom version should be invoked with --custom-roi-pool
+# - Add dropout
 # - Remove image_shape_map and just pass image shape when needed
 # - FasterRCNN model should be a class with methods to load weights, freeze layers, etc.,
 #   as well as prediction code that returns scored boxes
@@ -242,7 +246,7 @@ def _convert_training_sample_to_model_input(sample, mode):
     # Return all plus some unpacked elements for convenience
     return x, image_data, gt_rpn_minibatch_map
 
-def evaluate(model, eval_data = None, num_samples = None, plot = False):
+def evaluate(model, eval_data = None, num_samples = None, plot = False, print_average_precisions = False):
   if eval_data is None:
     eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False)
   if num_samples is None:
@@ -267,6 +271,8 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False):
     i += 1
     if i >= num_samples:
       break
+  if print_average_precisions:
+    precision_recall_curve.print_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
   mean_average_precision = 100.0 * precision_recall_curve.compute_mean_average_precision() 
   print("Mean Average Precision = %1.2f%%" % mean_average_precision)
   if plot:
@@ -318,7 +324,8 @@ def train(train_model, infer_model):
       model = infer_model,
       eval_data = eval_data,
       num_samples = options.periodic_eval_samples,
-      plot = False
+      plot = False,
+      print_average_precisions = False
     )
     if options.checkpoint_dir:
       checkpoint_file = os.path.join(options.checkpoint_dir, "checkpoint-epoch-%d-mAP-%1.1f.h5" % (epoch, mean_average_precision))
@@ -350,7 +357,8 @@ def train(train_model, infer_model):
     model = infer_model,
     eval_data = eval_data,
     num_samples = eval_data.num_samples,
-    plot = options.plot 
+    plot = options.plot,
+    print_average_precisions = True
   )
 
 def _predict(model, image_data, image, show_image, output_path):
@@ -488,7 +496,7 @@ if __name__ == "__main__":
   if options.train:
     train(train_model = train_model, infer_model = infer_model)
   elif options.eval:
-    evaluate(model = infer_model, plot = options.plot)
+    evaluate(model = infer_model, plot = options.plot, print_average_precisions = True)
   elif options.predict:
     predict_one(model = infer_model, url = options.predict, show_image = True, output_path = None)
   elif options.predict_to_file:
