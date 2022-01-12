@@ -6,6 +6,16 @@
 # PASCAL Visual Object Classes dataset loader. Datasets available at:
 # http://host.robots.ox.ac.uk/pascal/VOC/
 #
+# The dataset directory must contain the following sub-directories:
+#
+#   Annotations/
+#   ImageSets/
+#   JPEGImages/ 
+#
+# Typically, VOC datasets are stored in a VOCdevkit/ directory and identified
+# by year (e.g., VOC2007, VOC2012). So, e.g., the VOC2007 dataset directory
+# path would be: VOCdevkit/VOC2007
+#
 
 from dataclasses import dataclass
 import numpy as np

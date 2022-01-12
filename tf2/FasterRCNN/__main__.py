@@ -30,6 +30,7 @@
 # - If we keep logits option, crop-and-resize option, etc. make sure these are printed out at start of training
 # - Move BestModelTracker to state.py, similar to PyTorch version
 # - Move Keras box regression -> box code, and IoU code, from faster_rcnn.py to math_utils as well.
+# - In voc.py and here in command line args, and for PyTorch, change default path to dataset to ../VOCdevkit/VOC2007
 #
 import argparse
 import numpy as np
