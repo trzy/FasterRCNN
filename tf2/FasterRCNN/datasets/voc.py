@@ -1,3 +1,12 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/tf2/FasterRCNN/datasets/voc.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# PASCAL Visual Object Classes dataset loader. Datasets available at:
+# http://host.robots.ox.ac.uk/pascal/VOC/
+#
+
 from dataclasses import dataclass
 import numpy as np
 import os
@@ -10,7 +19,7 @@ from typing import Tuple
 from .training_sample import Box
 from .training_sample import TrainingSample
 from . import image
-from FasterRCNN2.models import anchors
+from FasterRCNN.models import anchors
 
 
 class Dataset:
@@ -170,7 +179,7 @@ class Dataset:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(self._dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
     return image_paths
-    # Debug: 60 car training images from VOC2012
+    # Debug: 60 car training images from VOC2012.
     image_paths = [
       "2008_000028",
       "2008_000074",
