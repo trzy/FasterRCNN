@@ -1,13 +1,12 @@
 #
-# FasterRCNN for Keras
-# Copyright 2021 Bart Trzynadlowski
-#
-# models/unroll_roi_pool.py
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/tf2/FasterRCNN/models/unroll_roi_pool.py
+# Copyright 2021-2022 Bart Trzynadlowski
 #
 # Script to generate unrolled pooling functions for use in RoIPoolingLayer. The
 # default, generic implementation capable of handling any pool dimensions uses
 # multiple nested functions applied with tf.map_fn(), which is extremely slow.
-# Unrolling along the pool width and height dramatically speeds things up.
+# Unrolling along the pool width and height speeds things up.
 #
 
 import argparse

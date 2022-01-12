@@ -1,3 +1,13 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/tf2/FasterRCNN/models/vgg16.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# TensorFlow/Keras implementation of the VGG-16 backbone for use as a feature
+# extractor in FasterRCNN. Only the convolutional layers are used.
+#
+
+import fnmatch
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras
@@ -53,44 +63,29 @@ def load_imagenet_weights(model):
         print("Loading VGG-16 ImageNet weights into layer: %s" % our_layer[0].name)
         our_layer[0].set_weights(weights)
 
-def compute_output_map_shape(input_image_shape):
-  """
-  Returns the 2D shape of the VGG-16 output map (height, width), which will be
-  1/16th of the input image for VGG-16.
-  """
-  return (input_image_shape[0] // 16, input_image_shape[1] // 16)
+def _matches_any_filter(string, filters):
+  for f in filters:
+    if len(fnmatch.filter([ string ], f)) > 0:
+      return True
+  return False
 
-def convert_box_coordinates_from_image_to_output_map_space(box, output_map_shape, roi_quantization):
+def freeze_layers(model, layers):
   """
-  Returns box coordinates converted from image space to VGG-16 output map space
-  (i.e., RPN input map) as integers.
-
-  Parameters:
-
-    box: Either a 4-element or (N,4)-shaped tensor of box coordinates in
-      (y1,x1,y2,x2) order.
-    output_map_shape: Shape of the output map we are converting to, used for
-      truncating the result. Two-element tuple (height,width).
-
-  Note that VGG-16's output map dimensions are determined by the 4 max pool
-  layers that successfully halve the input. Because there is no padding used,
-  input maps with dimensions that are not divisible by 16 will be truncated
-  at the far edges, hence why we clamp to the boundary here.
+  Sets specified layers in a model to non-trainable. Layers may be specified as
+  a string of comma-separated layer filers or as a list of layer filters using
+  fnmatch syntax. For example: "block*_conv*,dense?,predictions"
   """
-  map_limits = np.array([ output_map_shape[0], output_map_shape[1], output_map_shape[0], output_map_shape[1] ]) - 1
-  if roi_quantization == "floor":
-    return np.minimum(box // 16, map_limits).astype(np.int32)
-  else:
-    coords = np.floor((box - 8) / 16) + 1
-    return np.minimum(coords, map_limits).astype(np.int32)
-
-def convert_coordinate_from_output_map_to_image_space(y, x):
-  """
-  Returns (y, x) converted from the coordinate space of the VGG-16 output map
-  (the input to the RPN model) to the original input image space. Each element
-  of the VGG-16 output map represents an anchor center. This function is most
-  useful for converting the anchor center points to original image pixel units.
-  """
-  y_scale = 16
-  x_scale = 16
-  return (y + 0.5) * y_scale, (x + 0.5) * x_scale # add 0.5 to move into the center of the cell
+  frozen = []
+  filters = []
+  if type(layers) == str:
+    filters = [ frozen_layer.strip() for frozen_layer in layers.split(",") ]
+  elif type(layers) == list:
+    filters = layers
+  elif layers != None:
+    raise RuntimeError("freeze_layers: 'layers' must be a string or a list of strings")
+  for layer in model.layers:
+    if _matches_any_filter(string = layer.name, filters = filters):
+      layer.trainable = False
+      frozen.append(layer.name)
+  if len(frozen) > 0:
+    print("Froze layers: %s" % ", ".join(frozen))
