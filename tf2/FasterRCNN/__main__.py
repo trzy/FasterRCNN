@@ -19,12 +19,9 @@
 # - FasterRCNN model should be a class with methods to load weights, freeze layers, etc.,
 #   as well as prediction code that returns scored boxes
 # - Freezing layers should be part of model construction
-# - stats.on_train_step: loss -> losses
 # - box regressions -> box deltas here and in PyTorch version?
 # - Verify mAP using external program
 # - Document why L2 = 0.5 * weight decay
-# - If we keep logits option, crop-and-resize option, etc. make sure these are printed out at start of training
-# - Move BestModelTracker to state.py, similar to PyTorch version
 # - Move Keras box regression -> box code, and IoU code, from faster_rcnn.py to math_utils as well.
 # - In voc.py and here in command line args, and for PyTorch, change default path to dataset to ../VOCdevkit/VOC2007
 #
@@ -306,6 +303,7 @@ def train(train_model, infer_model):
   print("Weight decay              : %f" % options.weight_decay)
   print("Dropout                   : %f" % options.dropout)
   print("RoI pooling implementation: %s" % ("custom" if options.custom_roi_pool else "crop-and-resize w/ max pool"))
+  print("Detector output           : %s" % ("logits" if options.detector_logits else "probabilities"))
   print("Augmentation              : %s" % ("disabled" if options.no_augment else "enabled"))
   print("Edge proposals            : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
   print("CSV log                   : %s" % ("none" if not options.log_csv else options.log_csv))
@@ -327,7 +325,7 @@ def train(train_model, infer_model):
     for sample in progbar:
       x, image_data, gt_rpn_minibatch_map = _convert_training_sample_to_model_input(sample = sample, mode = "train")
       losses = train_model.train_on_batch(x = x, y = gt_rpn_minibatch_map, return_dict = True)
-      stats.on_training_step(loss = losses)
+      stats.on_training_step(losses = losses)
       progbar.set_postfix(stats.get_progbar_postfix())
     last_epoch = epoch == options.epochs
     _copy_weights(dest_model = infer_model, src_model = train_model)

@@ -26,20 +26,20 @@ class TrainingStatistics:
     self._detector_class_losses = []
     self._detector_regression_losses = []
 
-  def on_training_step(self, loss):
+  def on_training_step(self, losses):
     """
     Call once per training iteration to aggregate losses.
 
     Parameters
     ----------
-    loss : models.faster_rcnn.FasterRCNNModel.Loss
+    losses : models.faster_rcnn.FasterRCNNModel.Loss
       Dataclass containing losses broken down by RPN and detector, and further
       by classifier and regression loss. 
     """
-    self._rpn_class_losses.append(loss["rpn_class_loss"])
-    self._rpn_regression_losses.append(loss["rpn_regression_loss"])
-    self._detector_class_losses.append(loss["detector_class_loss"])
-    self._detector_regression_losses.append(loss["detector_regression_loss"])
+    self._rpn_class_losses.append(losses["rpn_class_loss"])
+    self._rpn_regression_losses.append(losses["rpn_regression_loss"])
+    self._detector_class_losses.append(losses["detector_class_loss"])
+    self._detector_regression_losses.append(losses["detector_regression_loss"])
     self.rpn_class_loss = np.mean(self._rpn_class_losses)
     self.rpn_regression_loss = np.mean(self._rpn_regression_losses)
     self.detector_class_loss = np.mean(self._detector_class_losses)
