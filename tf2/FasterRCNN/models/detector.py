@@ -24,7 +24,7 @@ from tensorflow.keras.initializers import glorot_normal
 from .roi_pooling_layer import RoIPoolingLayer
 
 
-def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool, detector_class_activations, l2):
+def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool, detector_class_activations, l2, dropout_probability):
   assert len(feature_map.shape) == 4
 
   regularizer = tf.keras.regularizers.l2(l2)
@@ -62,9 +62,16 @@ def layers(image_shape, feature_map, proposals, num_classes, custom_roi_pool, de
   # Fully-connected layers act as classifiers as in VGG-16 and use the same
   # layer names so that they can be pre-initialized with VGG-16 weights
   flattened = TimeDistributed(Flatten())(pool)
-  fc1 = TimeDistributed(name = "fc1", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(flattened)
-  fc2 = TimeDistributed(name = "fc2", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(fc1)
-  out = fc2
+  if dropout_probability != 0:
+    fc1 = TimeDistributed(name = "fc1", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(flattened)
+    do1 = TimeDistributed(Dropout(dropout_probability))(fc1)
+    fc2 = TimeDistributed(name = "fc2", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(do1)
+    do2 = TimeDistributed(Dropout(dropout_probability))(fc2)
+    out = do2
+  else:
+    fc1 = TimeDistributed(name = "fc1", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(flattened)
+    fc2 = TimeDistributed(name = "fc2", layer = Dense(units = 4096, activation = "relu", kernel_regularizer = regularizer))(fc1)
+    out = fc2
 
   # Output: classifier
   class_activation = "softmax" if detector_class_activations else None

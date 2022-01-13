@@ -13,12 +13,8 @@
 # TODO
 # ----
 # - Remove redundant stop_gradient in detector and test again. Make a comment about the importance of stop_gradients and a note to investigate further, particularly in README.md
-# - Don't do a full evaluation on last epoch here or in PyTorch. It is misleading. Instead, perform a full evaluation at the end,
-#   after a partial evaluation of final epoch, on the final model (or, in case of save-best-to option, the best one)
 # - Perform test without logits
 # - Perform test with old pooling code
-# - Default should be -crop-resize-pool and the custom version should be invoked with --custom-roi-pool
-# - Add dropout
 # - Remove image_shape_map and just pass image shape when needed
 # - FasterRCNN model should be a class with methods to load weights, freeze layers, etc.,
 #   as well as prediction code that returns scored boxes
@@ -296,25 +292,26 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False, print_av
 def train(train_model, infer_model):
   print("Training Parameters")
   print("-------------------")
-  print("Initial weights       : %s" % (options.load_from if options.load_from else "Keras VGG-16 ImageNet weights"))
-  print("Dataset               : %s" % options.dataset_dir)
-  print("Training split        : %s" % options.train_split)
-  print("Evaluation split      : %s" % options.eval_split)
-  print("Epochs                : %d" % options.epochs)
-  print("Optimizer             : %s" % options.optimizer)
-  print("Learning rate         : %f" % options.learning_rate)
-  print("Gradient norm clipping: %s" % ("disabled" if options.clipnorm <= 0 else ("%f" % options.clipnorm)))
-  print("SGD Momentum          : %f" % options.momentum)
-  print("Adam Beta-1           : %f" % options.beta1)
-  print("Adam Beta-2           : %f" % options.beta2)
-  print("Weight decay          : %f" % options.weight_decay)
-  #print("Dropout               : %f" % options.dropout)
-  print("Augmentation          : %s" % ("disabled" if options.no_augment else "enabled"))
-  print("Edge proposals        : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
-  print("CSV log               : %s" % ("none" if not options.log_csv else options.log_csv))
-  print("Checkpoints           : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
-  print("Final weights file    : %s" % ("none" if not options.save_to else options.save_to))
-  print("Best weights file     : %s" % ("none" if not options.save_best_to else options.save_best_to))
+  print("Initial weights           : %s" % (options.load_from if options.load_from else "Keras VGG-16 ImageNet weights"))
+  print("Dataset                   : %s" % options.dataset_dir)
+  print("Training split            : %s" % options.train_split)
+  print("Evaluation split          : %s" % options.eval_split)
+  print("Epochs                    : %d" % options.epochs)
+  print("Optimizer                 : %s" % options.optimizer)
+  print("Learning rate             : %f" % options.learning_rate)
+  print("Gradient norm clipping    : %s" % ("disabled" if options.clipnorm <= 0 else ("%f" % options.clipnorm)))
+  print("SGD Momentum              : %f" % options.momentum)
+  print("Adam Beta-1               : %f" % options.beta1)
+  print("Adam Beta-2               : %f" % options.beta2)
+  print("Weight decay              : %f" % options.weight_decay)
+  print("Dropout                   : %f" % options.dropout)
+  print("RoI pooling implementation: %s" % ("custom" if options.custom_roi_pool else "crop-and-resize w/ max pool"))
+  print("Augmentation              : %s" % ("disabled" if options.no_augment else "enabled"))
+  print("Edge proposals            : %s" % ("excluded" if options.exclude_edge_proposals else "included"))
+  print("CSV log                   : %s" % ("none" if not options.log_csv else options.log_csv))
+  print("Checkpoints               : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
+  print("Final weights file        : %s" % ("none" if not options.save_to else options.save_to))
+  print("Best weights file         : %s" % ("none" if not options.save_best_to else options.save_best_to))
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):
@@ -354,7 +351,7 @@ def train(train_model, infer_model):
         "beta1": options.beta1,
         "beta2": options.beta2,
         "weight_decay": options.weight_decay,
-#        "dropout": options.dropout,
+        "dropout": options.dropout,
         "mAP": mean_average_precision
       }
       log_items.update(stats.get_progbar_postfix())
@@ -453,8 +450,8 @@ if __name__ == "__main__":
   parser.add_argument("--beta1", metavar = "value", type = float, action = "store", default = 0.9, help = "Adam beta1 parameter (decay rate for 1st moment estimates)")
   parser.add_argument("--beta2", metavar = "value", type = float, action = "store", default = 0.999, help = "Adam beta2 parameter (decay rate for 2nd moment estimates)")
   parser.add_argument("--weight-decay", metavar = "value", type = float, action = "store", default = 0.0, help = "Weight decay")
-  #parser.add_argument("--dropout", metavar = "probability", type = float, action = "store", default = 0.0, help = "Dropout probability after each of the two fully-connected detector layers")
-  parser.add_argument("--crop-resize-pool", action = "store_true", help = "Use TensorFlow crop-and-resize with max-pool to implement RoI pooling instead of custom layer")
+  parser.add_argument("--dropout", metavar = "probability", type = float, action = "store", default = 0.0, help = "Dropout probability after each of the two fully-connected detector layers")
+  parser.add_argument("--custom-roi-pool", action = "store_true", help = "Use custom RoI pool implementation instead of TensorFlow crop-and-resize with max-pool (much slower)")
   parser.add_argument("--detector-logits", action = "store_true", help = "Do not apply softmax to detector class output and compute loss from logits directly")
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
@@ -482,16 +479,17 @@ if __name__ == "__main__":
     mode = "infer",
     num_classes = voc.Dataset.num_classes,
     allow_edge_proposals = not options.exclude_edge_proposals,
-    custom_roi_pool = not options.crop_resize_pool,
+    custom_roi_pool = options.custom_roi_pool,
     detector_class_activations = not options.detector_logits
   )
   train_model = faster_rcnn.faster_rcnn_model(
     mode = "train",
     num_classes = voc.Dataset.num_classes,
     allow_edge_proposals = not options.exclude_edge_proposals,
-    custom_roi_pool = not options.crop_resize_pool,
+    custom_roi_pool = options.custom_roi_pool,
     detector_class_activations = not options.detector_logits,
-    l2 = 0.5 * options.weight_decay
+    l2 = 0.5 * options.weight_decay,
+    dropout_probability = options.dropout
   )
   infer_model.compile()
   train_model.compile(optimizer = create_optimizer(), loss = [ None ] * len(train_model.outputs))  # losses were baked in at model construction

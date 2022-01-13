@@ -42,10 +42,10 @@ from . import rpn
 from . import detector
 
 
-def faster_rcnn_model(mode, num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = 0):
+def faster_rcnn_model(mode, num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = 0, dropout_probability = 0):
   assert mode == "train" or mode == "infer"
   if mode == "train":
-    return _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = l2)
+    return _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = l2, dropout_probability = dropout_probability)
   else:
     return _inference_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations)
 
@@ -81,7 +81,8 @@ def _inference_model(num_classes, allow_edge_proposals, custom_roi_pool, detecto
     num_classes = num_classes,
     custom_roi_pool = custom_roi_pool,
     detector_class_activations = detector_class_activations,
-    l2 = 0
+    l2 = 0,
+    dropout_probability = 0
   )
 
   # Build model
@@ -105,7 +106,7 @@ def _inference_model(num_classes, allow_edge_proposals, custom_roi_pool, detecto
 
   return model
 
-def _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = 0):
+def _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector_class_activations, l2 = 0, dropout_probability = 0):
   image_shape_map = Input(shape = (3,), name = "image_shape_map")                         # holds shape of image: height, width, channels
   num_anchors = 9
   anchor_map = Input(shape = (None, None, num_anchors * 4), name = "anchor_map")          # (height, width, k*4)
@@ -165,7 +166,8 @@ def _training_model(num_classes, allow_edge_proposals, custom_roi_pool, detector
     num_classes = num_classes,
     custom_roi_pool = custom_roi_pool,
     detector_class_activations = detector_class_activations,
-    l2 = l2
+    l2 = l2,
+    dropout_probability = dropout_probability
   )
 
   # Losses
