@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/models/detector.py
+# tf2/FasterRCNN/models/detector.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # Tensorflow/Keras implementation of the final detector stage of FasterRCNN.

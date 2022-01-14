@@ -1,12 +1,11 @@
-#TODO: boxes and box regressions- >box_deltas? Same for detector.py
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/models/rpn.py
+# tf2/FasterRCNN/models/rpn.py
 # Copyright 2021-2022 Bart Trzynadlowski
 # 
 # TensorFlow/Keras implementation of the RPN (region proposal network) stage of
 # FasterRCNN. Given a feature map (i.e., the output of the VGG-16 convolutional
-# layers), generates objectness scores for each anchor box and boxes in the
+# layers), generates objectness scores for each anchor box, and boxes in the
 # form of modifications to anchor center points and dimensions.
 #
 # The RPN class and box regression losses are defined here.

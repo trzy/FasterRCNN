@@ -1,3 +1,11 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# pytorch/FasterRCNN/statistics.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Classes for computing training-related statistics.
+#
+
 from collections import defaultdict
 import numpy as np
 

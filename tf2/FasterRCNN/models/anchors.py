@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/models/anchors.py
+# tf2/FasterRCNN/models/anchors.py
 # Copyright 2021-2022 Bart Trzynadlowski
 # 
 # Anchor generation code for the TensorFlow implementation of FasterRCNN. This

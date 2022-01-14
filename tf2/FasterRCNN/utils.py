@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/utils.py
+# tf2/FasterRCNN/utils.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # Miscellaneous utilities.

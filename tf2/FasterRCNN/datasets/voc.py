@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/datasets/voc.py
+# tf2/FasterRCNN/datasets/voc.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # PASCAL Visual Object Classes dataset loader. Datasets available at:

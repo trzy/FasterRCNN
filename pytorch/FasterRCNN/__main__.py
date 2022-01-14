@@ -1,7 +1,21 @@
 #
-# TODO:
-# - Support multiple batches by padding right side with zeros to a common image width
-# - Once a new Keras implementation exists, add support for loading complete state from h5
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# pytorch/FasterRCNN/__main__.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Main module for the PyTorch implementation of FasterRCNN. Run this from the
+# root directory, e.g.:
+#
+# python -m pytorch.FasterRCNN --help
+#
+
+#
+# TODO
+# ----
+# - Support multiple batches by padding right side with zeros to a common image
+#   width
+# - Support for loading Keras checkpoints (particularly if using custom RoI
+#   pooling, which should be almost the same as PyTorch's RoI pool layer)
 #
 import argparse
 import os

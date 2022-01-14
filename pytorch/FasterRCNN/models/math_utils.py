@@ -1,3 +1,11 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# pytorch/FasterRCNN/models/math_utils.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Math helper functions.
+#
+
 import numpy as np
 
 

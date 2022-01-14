@@ -1,3 +1,11 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# python/pytorch/FasterRCNN/state.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Model state file management code. Loading and saving of weights.
+#
+
 import h5py
 import numpy as np
 import torch as t

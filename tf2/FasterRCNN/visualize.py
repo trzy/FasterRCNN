@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/statistics.py
+# tf2/FasterRCNN/visualize.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # Routines for visualizing model results and debug information.

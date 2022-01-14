@@ -1,3 +1,15 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# pytorch/FasterRCNN/models/detector.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# PyTorch implementation of the final detector stage of FasterRCNN. As input,
+# takes a series of proposals (or RoIs) and produces classifications and boxes.
+# The boxes are parameterized as modifications to the original incoming
+# proposal boxes. That is, the proposal boxes are exactly analogous to the
+# anchors that the RPN stage uses.
+#
+
 import torch as t
 from torch import nn
 from torch.nn import functional as F

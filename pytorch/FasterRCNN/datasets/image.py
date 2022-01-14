@@ -1,3 +1,11 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# pytorch/FasterRCNN/datasets/image.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Image loading and pre-processing.
+#
+
 import imageio
 from PIL import Image
 import numpy as np

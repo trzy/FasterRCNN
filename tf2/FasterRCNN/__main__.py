@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/__main__.py
+# tf2/FasterRCNN/__main__.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # Main module for the TensorFlow/Keras implementation of FasterRCNN. Run this
@@ -11,7 +11,7 @@
 
 # TODO
 # ----
-# - Test disallowing edge proposals
+# - boxes and box regressions- >box_deltas? rpn.py and detector.py, as well as here in __main__.py
 # - Make a comment in README.md about the importance of tf.stop_gradient (particularly in the loss functions) and
 #   investigate this at some point.
 # - box regressions -> box deltas here and in PyTorch version?

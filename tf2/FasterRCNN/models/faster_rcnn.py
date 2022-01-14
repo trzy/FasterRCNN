@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/models/faster_rcnn.py
+# tf2/FasterRCNN/models/faster_rcnn.py
 # Copyright 2021-2022 Bart Trzynadlowski
 # 
 # TensorFlow/Keras implementation of FasterRCNN training and inference models.

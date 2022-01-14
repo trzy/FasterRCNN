@@ -1,3 +1,16 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# pytorch/FasterRCNN/models/rpn.py
+# Copyright 2021-2022 Bart Trzynadlowski
+# 
+# PyTorch implementation of the RPN (region proposal network) stage of
+# FasterRCNN. Given a feature map (i.e., the output of the VGG-16 convolutional
+# layers), generates objectness scores for each anchor box, and boxes in the
+# form of modifications to anchor center points and dimensions.
+#
+# The RPN class and box regression losses are defined here.
+#
+
 import numpy as np
 import torch as t
 from torch import nn

@@ -1,3 +1,11 @@
+#
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# pytorch/FasterRCNN/utils.py
+# Copyright 2021-2022 Bart Trzynadlowski
+#
+# Miscellaneous utilities.
+#
+
 import torch as t
 
 
@@ -6,7 +14,6 @@ def no_grad(func):
     with t.no_grad():
       return func(*args, **kwargs)
   return wrapper_nograd
-
 
 class CSVLog:
   """

@@ -1,7 +1,12 @@
 #
-# TODO:
-# -----
-# - IoU threshold for prediction. Is it 0.3 as here or 0.5? Check the paper.
+# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# pytorch/FasterRCNN/models/faster_rcnn.py
+# Copyright 2021-2022 Bart Trzynadlowski
+# 
+# PyTorch implementation of FasterRCNN training and inference models. Here, all
+# stages of FasterRCNN are instantiated, RPN mini-batches are sampled, ground
+# truth labels from RPN proposal boxes (RoIs) for the detector stage are
+# generated, and  proposals are sampled.
 #
 
 from dataclasses import dataclass
@@ -181,7 +186,7 @@ class FasterRCNNModel(nn.Module):
       idxs = nms(
         boxes = t.from_numpy(boxes).cuda(),
         scores = t.from_numpy(scores).cuda(),
-        iou_threshold = 0.3
+        iou_threshold = 0.5 #TODO: confirm with paper and Caffe implementation that this is the correct threshold for prediction
       ).cpu().numpy()
       boxes = boxes[idxs]
       scores = np.expand_dims(scores[idxs], axis = 0) # (N,) -> (N,1)

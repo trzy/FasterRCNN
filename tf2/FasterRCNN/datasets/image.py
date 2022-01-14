@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/datasets/image.py
+# tf2/FasterRCNN/datasets/image.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # Image loading and pre-processing.
