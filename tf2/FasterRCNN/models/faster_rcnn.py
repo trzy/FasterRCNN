@@ -35,7 +35,6 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import Model
-from tensorflow.keras import Input
 from tensorflow.keras.layers import Lambda
 
 from . import vgg16

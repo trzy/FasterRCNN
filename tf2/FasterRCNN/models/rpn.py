@@ -15,12 +15,10 @@ import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import models
 from tensorflow.keras.layers import Conv2D
-from tensorflow.keras.layers import Flatten
-from tensorflow.keras.layers import Dense
 from tensorflow.keras import backend as K
-from tensorflow.keras.initializers import glorot_normal
 
 from . import math_utils
+
 
 class RegionProposalNetwork(tf.keras.Model):
   def __init__(self, max_proposals_pre_nms_train, max_proposals_post_nms_train, max_proposals_pre_nms_infer, max_proposals_post_nms_infer, l2 = 0, allow_edge_proposals = False):

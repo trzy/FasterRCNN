@@ -7,21 +7,12 @@
 # extractor in FasterRCNN. Only the convolutional layers are used.
 #
 
-import fnmatch
-import numpy as np
 import tensorflow as tf
 import tensorflow.keras
 from tensorflow.keras import models
-from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import MaxPooling2D
-from tensorflow.keras.layers import GlobalAveragePooling2D
-from tensorflow.keras.layers import Flatten
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.layers import Activation
-from tensorflow.keras.layers import Dropout
 from tensorflow.keras.initializers import glorot_normal
-from tensorflow.keras.optimizers import SGD
 
 
 class FeatureExtractor(tf.keras.Model):
