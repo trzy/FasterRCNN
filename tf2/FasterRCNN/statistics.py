@@ -137,12 +137,12 @@ class PrecisionRecallCurveCalculator:
 
     Parameters
     ----------
-    scored_boxes_by_class_index : dict
+    scored_boxes_by_class_index : Dict[int, Tuple[float, float, float, float, float]]
       Final detected boxes as lists of tuples, (y_min, x_min, y_max, x_max,
       score), by class index. The score is the softmax output and is
       interpreted as a confidence metric when sorting results for the mAP
       calculation.
-    gt_boxes : list
+    gt_boxes : List[datasets.training_sample.Box]
       A list of datasets.training_sample.Box objects describing all ground
       truth boxes in the image.
     """

@@ -7,6 +7,7 @@
 #
 
 import numpy as np
+import tensorflow as tf
 
 
 def intersection_over_union(boxes1, boxes2):
@@ -34,6 +35,49 @@ def intersection_over_union(boxes1, boxes2):
   union_areas = areas1[:,None] + areas2 - intersection_areas                                      # (N,1) + (M,) - (N,M) = (N,M), union areas of both boxes
   epsilon = 1e-7
   return intersection_areas / (union_areas + epsilon)
+
+def tf_intersection_over_union(boxes1, boxes2):
+  """
+  Equivalent of intersection_over_union() but operates on tf.Tensors and
+  produces a TensorFlow graph suitable for use in a model. This code borrowed
+  from Matterport's MaskRCNN implementation:
+  https://github.com/matterport/Mask_RCNN
+
+  Parameters
+  ----------
+  boxes1: tf.Tensor
+    Box corners, shaped (N,4), with each box as (y1, x1, y2, x2).
+  boxes2: tf.Tensor
+    Box corners, shaped (M,4).
+
+  Returns
+  -------
+  tf.Tensor
+    Tensor of shape (N, M) containing IoU score between each pair of boxes.
+  """
+  # 1. Tile boxes2 and repeat boxes1. This allows us to compare
+  # every boxes1 against every boxes2 without loops.
+  # TF doesn't have an equivalent to np.repeat() so simulate it
+  # using tf.tile() and tf.reshape.
+  b1 = tf.reshape(tf.tile(tf.expand_dims(boxes1, 1),
+                          [1, 1, tf.shape(boxes2)[0]]), [-1, 4])
+  b2 = tf.tile(boxes2, [tf.shape(boxes1)[0], 1])
+  # 2. Compute intersections
+  b1_y1, b1_x1, b1_y2, b1_x2 = tf.split(b1, 4, axis=1)
+  b2_y1, b2_x1, b2_y2, b2_x2 = tf.split(b2, 4, axis=1)
+  y1 = tf.maximum(b1_y1, b2_y1)
+  x1 = tf.maximum(b1_x1, b2_x1)
+  y2 = tf.minimum(b1_y2, b2_y2)
+  x2 = tf.minimum(b1_x2, b2_x2)
+  intersection = tf.maximum(x2 - x1, 0) * tf.maximum(y2 - y1, 0)
+  # 3. Compute unions
+  b1_area = (b1_y2 - b1_y1) * (b1_x2 - b1_x1)
+  b2_area = (b2_y2 - b2_y1) * (b2_x2 - b2_x1)
+  union = b1_area + b2_area - intersection
+  # 4. Compute IoU and reshape to [boxes1, boxes2]
+  iou = intersection / union
+  overlaps = tf.reshape(iou, [tf.shape(boxes1)[0], tf.shape(boxes2)[0]])
+  return overlaps
 
 def convert_regressions_to_boxes(regressions, anchors, regression_means, regression_stds):
   """
@@ -67,4 +111,36 @@ def convert_regressions_to_boxes(regressions, anchors, regression_means, regress
   boxes = np.empty(regressions.shape)
   boxes[:,0:2] = center - 0.5 * size                            # y1, x1
   boxes[:,2:4] = center + 0.5 * size                            # y2, x2
+  return boxes
+
+def tf_convert_regressions_to_boxes(regressions, anchors, regression_means, regression_stds):
+  """
+  Equivalent of convert_regressions_to_boxes() but operates on tf.Tensors and
+  produces a TensorFlow graph suitable for use in a model.
+
+  Parameters
+  ----------
+  regressions : tf.Tensor
+    Regression parameters with shape (N, 4). Each row is (ty, tx, th, tw).
+  anchors : tf.Tensor
+    Corresponding anchors that the regressed parameters are based upon,
+    shaped (N, 4) with each row being (center_y, center_x, height, width).
+  regression_means : np.ndarray
+    Mean ajustment to regressions, (4,), to be added after standard deviation
+    scaling and before conversion to actual box coordinates.
+  regression_stds : np.ndarray
+    Standard deviation adjustment to regressions, (4,). Regression parameters
+    are first multiplied by these values.
+
+  Returns
+  -------
+  tf.Tensor
+    Box coordinates, (N, 4), with each row being (y1, x1, y2, x2).
+  """
+  regressions = regressions * regression_stds + regression_means
+  center = anchors[:,2:4] * regressions[:,0:2] + anchors[:,0:2] # center_x = anchor_width * tx + anchor_center_x, center_y = anchor_height * ty + anchor_center_y
+  size = anchors[:,2:4] * tf.math.exp(regressions[:,2:4])       # width = anchor_width * exp(tw), height = anchor_height * exp(th)
+  boxes_top_left = center - 0.5 * size                          # y1, x1
+  boxes_bottom_right = center + 0.5 * size                      # y2, x2
+  boxes = tf.concat([ boxes_top_left, boxes_bottom_right ], axis = 1) # [ (N,2), (N,2) ] -> (N,4)
   return boxes

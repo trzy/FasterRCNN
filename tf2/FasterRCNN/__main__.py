@@ -6,25 +6,28 @@
 # Main module for the TensorFlow/Keras implementation of FasterRCNN. Run this
 # from the root directory, e.g.:
 #
-# python -m python.tf2.FasterRCNN --help
+# python -m tf2.FasterRCNN --help
 #
-
 
 # TODO
 # ----
-# - Remove redundant stop_gradient in detector and test again. Make a comment about the importance of stop_gradients and a note to investigate further, particularly in README.md
-# - Perform test without logits
-# - Perform test with old pooling code
-# - Remove image_shape_map and just pass image shape when needed
-# - FasterRCNN model should be a class with methods to load weights, freeze layers, etc.,
-#   as well as prediction code that returns scored boxes
-# - Freezing layers should be part of model construction
+# - Test disallowing edge proposals
+# - Make a comment in README.md about the importance of tf.stop_gradient (particularly in the loss functions) and
+#   investigate this at some point.
 # - box regressions -> box deltas here and in PyTorch version?
 # - Verify mAP using external program
 # - Document why L2 = 0.5 * weight decay
-# - Move Keras box regression -> box code, and IoU code, from faster_rcnn.py to math_utils as well.
 # - In voc.py and here in command line args, and for PyTorch, change default path to dataset to ../VOCdevkit/VOC2007
 #
+
+#
+# TODO
+# ----
+# - Investigate the removal of tf.stop_gradient() from regression loss
+#   functions and how to debug its adverse effect on training. How would we
+#   have known to use this if we had not noticed it in a different code base?
+#
+
 import argparse
 import numpy as np
 import os
@@ -75,14 +78,6 @@ def render_anchors():
       gt_rpn_map = sample.gt_rpn_map,
       gt_boxes = sample.gt_boxes
     )
-
-#TODO: make this part of the Model class
-def _copy_weights(dest_model, src_model):
-  dest_layers = { layer.name: layer for layer in dest_model.layers }
-  src_layers = { layer.name: layer for layer in src_model.layers }
-  for name, src_layer in src_layers.items():
-    if name in dest_layers:
-      dest_layers[name].set_weights(src_layer.get_weights())
 
 def _sample_rpn_minibatch(rpn_map, object_indices, background_indices, rpn_minibatch_size):
   """
@@ -138,67 +133,6 @@ def _sample_rpn_minibatch(rpn_map, object_indices, background_indices, rpn_minib
 
   return rpn_minibatch_map
 
-def _predictions_to_scored_boxes(image_data, classes, regressions, proposals, score_threshold):
-  # Eliminate batch dimension
-  image_data = np.squeeze(image_data, axis = 0)
-  classes = np.squeeze(classes, axis = 0)
-  regressions = np.squeeze(regressions, axis = 0)
-
-  # Convert logits to probability distribution if using logits mode
-  if options.detector_logits:
-    classes = tf.nn.softmax(classes, axis = 1).numpy()
-  
-  # Convert proposal boxes -> center point and size
-  proposal_anchors = np.empty(proposals.shape)
-  proposal_anchors[:,0] = 0.5 * (proposals[:,0] + proposals[:,2]) # center_y
-  proposal_anchors[:,1] = 0.5 * (proposals[:,1] + proposals[:,3]) # center_x
-  proposal_anchors[:,2:4] = proposals[:,2:4] - proposals[:,0:2]   # height, width
-
-  # Separate out results per class: class_idx -> (y1, x1, y2, x2, score)
-  boxes_and_scores_by_class_idx = {}
-  for class_idx in range(1, classes.shape[1]):  # skip class 0 (background)
-    # Get the regression parameters (ty, tx, th, tw) corresponding to this
-    # class, for all proposals
-    regression_idx = (class_idx - 1) * 4
-    regression_params = regressions[:, (regression_idx + 0) : (regression_idx + 4)] # (N, 4)
-    proposal_boxes_this_class = math_utils.convert_regressions_to_boxes(
-      regressions = regression_params,
-      anchors = proposal_anchors,
-      regression_means = [0.0, 0.0, 0.0, 0.0],
-      regression_stds = [0.1, 0.1, 0.2, 0.2]
-    )
-
-    # Clip to image boundaries
-    proposal_boxes_this_class[:,0::2] = np.clip(proposal_boxes_this_class[:,0::2], 0, image_data.shape[0] - 1)  # clip y1 and y2 to [0,height)
-    proposal_boxes_this_class[:,1::2] = np.clip(proposal_boxes_this_class[:,1::2], 0, image_data.shape[1] - 1)  # clip x1 and x2 to [0,width)
-
-    # Get the scores for this class. The class scores are returned in
-    # normalized categorical form. Each row corresponds to a class.
-    scores_this_class = classes[:,class_idx]
-
-    # Keep only those scoring high enough
-    sufficiently_scoring_idxs = np.where(scores_this_class > score_threshold)[0]
-    proposal_boxes_this_class = proposal_boxes_this_class[sufficiently_scoring_idxs]
-    scores_this_class = scores_this_class[sufficiently_scoring_idxs]
-    boxes_and_scores_by_class_idx[class_idx] = (proposal_boxes_this_class, scores_this_class)
-
-  # Perform NMS per class
-  scored_boxes_by_class_idx = {}
-  for class_idx, (boxes, scores) in boxes_and_scores_by_class_idx.items():
-    idxs = tf.image.non_max_suppression(
-      boxes = boxes,
-      scores = scores,
-      max_output_size = proposals.shape[0],
-      iou_threshold = 0.3
-    )
-    idxs = idxs.numpy()
-    boxes = boxes[idxs]
-    scores = np.expand_dims(scores[idxs], axis = 0) # (N,) -> (N,1)
-    scored_boxes = np.hstack([ boxes, scores.T ])   # (N,5), with each row: (y1, x1, y2, x2, score)
-    scored_boxes_by_class_idx[class_idx] = scored_boxes
-
-  return scored_boxes_by_class_idx
-
 def _convert_training_sample_to_model_input(sample, mode):
     """
     Converts a training sample obtained from the dataset into an input vector
@@ -215,9 +149,9 @@ def _convert_training_sample_to_model_input(sample, mode):
     Returns
     -------
     List[np.ndarray], np.ndarray, np.ndarray
-      Input vector for model (see relevant model definition for details), image
-      data, and ground truth RPN minibatch map.. All maps are converted to a
-      batch size of 1 as expected by Keras model.
+      Input vector for model (see model definition for details), image data,
+      and ground truth RPN minibatch map. All maps are converted to a batch
+      size of 1 as expected by Keras model.
     """
 
     # Ground truth boxes to NumPy arrays
@@ -246,9 +180,9 @@ def _convert_training_sample_to_model_input(sample, mode):
 
     # Input vector to model
     if mode == "train":
-      x = [ image_data, image_shape_map, anchor_map, anchor_valid_map, gt_rpn_minibatch_map, gt_box_class_idxs, gt_box_corners ]
+      x = [ image_data, anchor_map, anchor_valid_map, gt_rpn_minibatch_map, gt_box_class_idxs, gt_box_corners ]
     else: # "infer"
-      x = [ image_data, image_shape_map, anchor_map, anchor_valid_map ]
+      x = [ image_data, anchor_map, anchor_valid_map ]
 
     # Return all plus some unpacked elements for convenience
     return x, image_data, gt_rpn_minibatch_map
@@ -263,14 +197,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False, print_av
   print("Evaluating '%s'..." % eval_data.split)
   for sample in tqdm(iterable = iter(eval_data), total = num_samples):
     x, image_data, _ = _convert_training_sample_to_model_input(sample = sample, mode = "infer")
-    _, _, detector_classes, detector_regressions, proposals = model.predict_on_batch(x = x)
-    scored_boxes_by_class_index = _predictions_to_scored_boxes(
-      image_data = image_data,
-      classes = detector_classes,
-      regressions = detector_regressions,
-      proposals = proposals,
-      score_threshold = 0.05
-    )
+    scored_boxes_by_class_index = model.predict_on_batch(x = x)
     precision_recall_curve.add_image_results(
       scored_boxes_by_class_index = scored_boxes_by_class_index,
       gt_boxes = sample.gt_boxes
@@ -286,7 +213,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False, print_av
     precision_recall_curve.plot_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
   return mean_average_precision
 
-def train(train_model, infer_model):
+def train(model):
   print("Training Parameters")
   print("-------------------")
   print("Initial weights           : %s" % (options.load_from if options.load_from else "Keras VGG-16 ImageNet weights"))
@@ -324,13 +251,12 @@ def train(train_model, infer_model):
     progbar = tqdm(iterable = iter(training_data), total = training_data.num_samples, postfix = stats.get_progbar_postfix())
     for sample in progbar:
       x, image_data, gt_rpn_minibatch_map = _convert_training_sample_to_model_input(sample = sample, mode = "train")
-      losses = train_model.train_on_batch(x = x, y = gt_rpn_minibatch_map, return_dict = True)
+      losses = model.train_on_batch(x = x, y = gt_rpn_minibatch_map, return_dict = True)
       stats.on_training_step(losses = losses)
       progbar.set_postfix(stats.get_progbar_postfix())
     last_epoch = epoch == options.epochs
-    _copy_weights(dest_model = infer_model, src_model = train_model)
     mean_average_precision = evaluate(
-      model = infer_model,
+      model = model,
       eval_data = eval_data,
       num_samples = options.periodic_eval_samples,
       plot = False,
@@ -338,7 +264,7 @@ def train(train_model, infer_model):
     )
     if options.checkpoint_dir:
       checkpoint_file = os.path.join(options.checkpoint_dir, "checkpoint-epoch-%d-mAP-%1.1f.h5" % (epoch, mean_average_precision))
-      train_model.save_weights(filepath = checkpoint_file, overwrite = True, save_format = "h5")
+      model.save_weights(filepath = checkpoint_file, overwrite = True, save_format = "h5")
       print("Saved model checkpoint to '%s'" % checkpoint_file)
     if options.log_csv:
       log_items = {
@@ -355,15 +281,15 @@ def train(train_model, infer_model):
       log_items.update(stats.get_progbar_postfix())
       csv.log(log_items)
     if options.save_best_to:
-      best_weights_tracker.on_epoch_end(model = train_model, mAP = mean_average_precision)
+      best_weights_tracker.on_epoch_end(model = model, mAP = mean_average_precision)
   if options.save_to:
-    train_model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
+    model.save_weights(filepath = options.save_to, overwrite = True, save_format = "h5")
     print("Saved final model weights to '%s'" % options.save_to)
   if options.save_best_to:
-    best_weights_tracker.restore_and_save_best_weights(model = train_model)
+    best_weights_tracker.restore_and_save_best_weights(model = model)
   print("Evaluating %s model on all samples in '%s'..." % (("best" if options.save_best_to else "final"), options.eval_split))  # evaluate final or best model on full dataset
   evaluate(
-    model = infer_model,
+    model = model,
     eval_data = eval_data,
     num_samples = eval_data.num_samples,
     plot = options.plot,
@@ -473,45 +399,42 @@ if __name__ == "__main__":
     tf.debugging.experimental.enable_dump_debug_info(options.debug_dir, tensor_debug_mode = "FULL_HEALTH", circular_buffer_size = -1)
 
   # Construct model and load initial weights
-  infer_model = faster_rcnn.faster_rcnn_model(
-    mode = "infer",
+  model = faster_rcnn.FasterRCNNModel(
     num_classes = voc.Dataset.num_classes,
     allow_edge_proposals = not options.exclude_edge_proposals,
     custom_roi_pool = options.custom_roi_pool,
-    detector_class_activations = not options.detector_logits
-  )
-  train_model = faster_rcnn.faster_rcnn_model(
-    mode = "train",
-    num_classes = voc.Dataset.num_classes,
-    allow_edge_proposals = not options.exclude_edge_proposals,
-    custom_roi_pool = options.custom_roi_pool,
-    detector_class_activations = not options.detector_logits,
+    activate_class_outputs = not options.detector_logits,
     l2 = 0.5 * options.weight_decay,
     dropout_probability = options.dropout
   )
-  infer_model.compile()
-  train_model.compile(optimizer = create_optimizer(), loss = [ None ] * len(train_model.outputs))  # losses were baked in at model construction
+  model.build(
+    input_shape = [
+      (1, None, None, 3),     # input_image: (1, height_pixels, width_pixels, 3)
+      (1, None, None, 9 * 4), # anchor_map: (1, height, width, num_anchors * 4)
+      (1, None, None, 9),     # anchor_valid_map: (1, height, width, num_anchors)
+      (1, None, None, 9, 6),  # gt_rpn_map: (1, height, width, num_anchors, 6)
+      (1, None),              # gt_box_class_idxs_map: (1, num_gt_boxes)
+      (1, None, 4)            # gt_box_corners_map: (1, num_gt_boxes, 4)
+    ]
+  )
+  model.compile(optimizer = create_optimizer()) # losses not needed here because they were baked in at model construction
   if options.load_from:
-    infer_model.load_weights(filepath = options.load_from, by_name = True)
-    train_model.load_weights(filepath = options.load_from, by_name = True)
+    model.load_weights(filepath = options.load_from, by_name = True)
     print("Loaded initial weights from '%s'" % options.load_from)
   else:
-    vgg16.load_imagenet_weights(infer_model)
-    vgg16.load_imagenet_weights(train_model)
+    model.load_imagenet_weights()
     print("Initialized VGG-16 layers to Keras ImageNet weights")
-  vgg16.freeze_layers(infer_model, "block1_*,block2_*")
-  vgg16.freeze_layers(train_model, "block1_*,block2_*") #TODO: this should be part of model construction
 
   # Perform mutually exclusive procedures
   if options.train:
-    train(train_model = train_model, infer_model = infer_model)
+    train(model = model)
   elif options.eval:
-    evaluate(model = infer_model, plot = options.plot, print_average_precisions = True)
+    evaluate(model = model, plot = options.plot, print_average_precisions = True)
   elif options.predict:
-    predict_one(model = infer_model, url = options.predict, show_image = True, output_path = None)
+    predict_one(model = model, url = options.predict, show_image = True, output_path = None)
   elif options.predict_to_file:
-    predict_one(model = infer_model, url = options.predict_to_file, show_image = False, output_path = "predictions.png")
+    predict_one(model = model, url = options.predict_to_file, show_image = False, output_path = "predictions.png")
   elif options.predict_all:
-    predict_all(model = infer_model, split = options.predict_all)
+    predict_all(model = model, split = options.predict_all)
   else:
     print("Nothing to do. Did you mean to use --train or --predict?")
