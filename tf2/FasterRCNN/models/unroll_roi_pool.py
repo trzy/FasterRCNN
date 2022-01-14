@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/models/unroll_roi_pool.py
+# tf2/FasterRCNN/models/unroll_roi_pool.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # Script to generate unrolled pooling functions for use in RoIPoolingLayer. The
@@ -10,6 +10,7 @@
 #
 
 import argparse
+
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser("unroll_roi_pool")

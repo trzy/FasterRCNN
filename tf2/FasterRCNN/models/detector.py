@@ -22,6 +22,7 @@ from tensorflow.keras import backend as K
 
 from .roi_pooling_layer import RoIPoolingLayer
 
+
 class DetectorNetwork(tf.keras.Model):
   def __init__(self, num_classes, custom_roi_pool, activate_class_outputs, l2, dropout_probability):
     super().__init__()

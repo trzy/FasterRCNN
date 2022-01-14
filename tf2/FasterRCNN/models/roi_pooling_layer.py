@@ -1,6 +1,6 @@
 #
 # FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
-# python/tf2/FasterRCNN/models/roi_pooling_layer.py
+# tf2/FasterRCNN/models/roi_pooling_layer.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # Custom implementation of RoI pooling for TensorFlow/Keras. TensorFlow lacks
