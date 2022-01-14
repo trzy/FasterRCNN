@@ -18,6 +18,7 @@
 # - Verify mAP using external program
 # - Document why L2 = 0.5 * weight decay
 # - In voc.py and here in command line args, and for PyTorch, change default path to dataset to ../VOCdevkit/VOC2007
+# - Exhaustive test of all options to make sure they are still working
 #
 
 #
@@ -44,24 +45,9 @@ from .models import faster_rcnn
 from .models import vgg16
 from .models import math_utils
 from .models import anchors
+from . import utils
 from . import visualize
 
-class BestWeightsTracker:
-  def __init__(self, filepath):
-    self._filepath = filepath
-    self._best_weights = None
-    self._best_mAP = 0
-
-  def on_epoch_end(self, model, mAP):
-    if mAP > self._best_mAP:
-      self._best_mAP = mAP
-      self._best_weights = model.get_weights()
-
-  def restore_and_save_best_weights(self, model):
-    if self._best_weights is not None:
-      model.set_weights(self._best_weights)
-      model.save_weights(filepath = self._filepath, overwrite = True, save_format = "h5")
-      print("Saved best model weights (Mean Average Precision = %1.2f%%) to '%s'" % (self._best_mAP, self._filepath))
 
 def render_anchors():
   training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = False, shuffle = False)
@@ -244,7 +230,7 @@ def train(model):
   if options.log_csv:
     csv = utils.CSVLog(options.log_csv)
   if options.save_best_to:
-    best_weights_tracker = BestWeightsTracker(filepath = options.save_best_to)
+    best_weights_tracker = utils.BestWeightsTracker(filepath = options.save_best_to)
   for epoch in range(1, 1 + options.epochs):
     print("Epoch %d/%d" % (epoch, options.epochs))
     stats = TrainingStatistics()
@@ -302,15 +288,8 @@ def _predict(model, image_data, image, show_image, output_path):
   anchor_valid_map = np.expand_dims(anchor_valid_map, axis = 0)                                     # ""
   image_data = np.expand_dims(image_data, axis = 0)                                                 # convert to batch size of 1: (1,height,width,3)
   image_shape_map = np.array([ [ image_data.shape[1], image_data.shape[2], image_data.shape[3] ] ]) # (1,3), with (height,width,channels)
-  x = [ image_data, image_shape_map, anchor_map, anchor_valid_map ]
-  _, _, detector_classes, detector_regressions, proposals = model.predict_on_batch(x = x)
-  scored_boxes_by_class_index = _predictions_to_scored_boxes(
-    image_data = image_data,
-    classes = detector_classes,
-    regressions = detector_regressions,
-    proposals = proposals,
-    score_threshold = 0.7
-  )
+  x = [ image_data, anchor_map, anchor_valid_map ]
+  scored_boxes_by_class_index = model.predict_on_batch(x = x)
   visualize.show_detections(
     output_path = output_path,
     show_image = show_image,
