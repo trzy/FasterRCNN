@@ -8,7 +8,7 @@
 # layers), generates objectness scores for each anchor box, and boxes in the
 # form of modifications to anchor center points and dimensions.
 #
-# The RPN class and box regression losses are defined here.
+# The RPN class and box delta regression losses are defined here.
 #
 
 import tensorflow as tf
@@ -41,7 +41,7 @@ class RegionProposalNetwork(tf.keras.Model):
     # Classification layer: predicts whether there is an object at the anchor or not. We use a sigmoid function, where > 0.5 is indicates a positive result.
     self._rpn_class = Conv2D(name = "rpn_class", kernel_size = (1,1), strides = 1, filters = anchors_per_location, padding = "same", activation = "sigmoid", kernel_initializer = initial_weights)
 
-    # Box regression
+    # Box delta regression
     self._rpn_boxes = Conv2D(name = "rpn_boxes", kernel_size = (1,1), strides = 1, filters = 4 * anchors_per_location, padding = "same", activation = None, kernel_initializer = initial_weights)
 
   def __call__(self, inputs, training):
@@ -63,23 +63,23 @@ class RegionProposalNetwork(tf.keras.Model):
     # Pass through network
     y = self._rpn_conv1(feature_map)
     scores = self._rpn_class(y)
-    boxes = self._rpn_boxes(y)
+    box_delta_regressions = self._rpn_boxes(y)
 
     # Extract valid
-    anchors, objectness_scores, box_regressions = self._extract_valid(
+    anchors, objectness_scores, box_deltas = self._extract_valid(
       anchor_map = anchor_map,
       anchor_valid_map = anchor_valid_map,
       objectness_score_map = scores,
-      box_regression_map = boxes,
+      box_delta_map = box_delta_regressions,
       allow_edge_proposals = self._allow_edge_proposals
     )
 
     # Convert regressions to box corners
-    proposals = math_utils.tf_convert_regressions_to_boxes(
-      regressions = box_regressions,
+    proposals = math_utils.tf_convert_deltas_to_boxes(
+      box_deltas = box_deltas,
       anchors = anchors,
-      regression_means = [ 0.0, 0.0, 0.0, 0.0 ],
-      regression_stds = [ 1.0, 1.0, 1.0, 1.0 ]
+      box_delta_means = [ 0.0, 0.0, 0.0, 0.0 ],
+      box_delta_stds = [ 1.0, 1.0, 1.0, 1.0 ]
     )
     
     # Keep only the top-N scores. Note that we do not care whether the
@@ -115,9 +115,9 @@ class RegionProposalNetwork(tf.keras.Model):
     )
     proposals = tf.gather(proposals, indices = idxs)
 
-    return [ scores, boxes, proposals ]     
+    return [ scores, box_delta_regressions, proposals ] 
 
-  def _extract_valid(self, anchor_map, anchor_valid_map, objectness_score_map, box_regression_map, allow_edge_proposals):
+  def _extract_valid(self, anchor_map, anchor_valid_map, objectness_score_map, box_delta_map, allow_edge_proposals):
     # anchor_valid_map shape is (batch,height,width,num_anchors)
     height = tf.shape(anchor_valid_map)[1]
     width = tf.shape(anchor_valid_map)[2]
@@ -126,14 +126,14 @@ class RegionProposalNetwork(tf.keras.Model):
     anchors = tf.reshape(anchor_map, shape = (height * width * num_anchors, 4))             # [N,4], all anchors 
     anchors_valid = tf.reshape(anchor_valid_map, shape = (height * width * num_anchors, 1)) # [N,1], whether anchors are valid (i.e., do not cross image boundaries)
     scores = tf.reshape(objectness_score_map, shape = (height * width * num_anchors, 1))    # [N,1], predicted objectness scores
-    regressions = tf.reshape(box_regression_map, shape = (height * width * num_anchors, 4)) # [N,4], predicted regression targets
+    box_deltas = tf.reshape(box_delta_map, shape = (height * width * num_anchors, 4))       # [N,4], predicted box delta regression targets
     
     anchors_valid = tf.squeeze(anchors_valid)                                               # [N,]
     scores = tf.squeeze(scores)                                                             # [N,]
   
     if allow_edge_proposals:
       # Use all proposals
-      return anchors, scores, regressions
+      return anchors, scores, box_deltas
     else:
       # Filter out those proposals generated at invalid anchors. Invalid
       # anchors are really just those that cross image boundaries and, counter-
@@ -145,7 +145,7 @@ class RegionProposalNetwork(tf.keras.Model):
       # stage. It is therefore not recommended to exclude edge proposals but
       # the option exists here for educational purposes.
       idxs = tf.where(anchors_valid > 0)
-      return tf.gather_nd(anchors, indices = idxs), tf.gather_nd(scores, indices = idxs), tf.gather_nd(regressions, indices = idxs)
+      return tf.gather_nd(anchors, indices = idxs), tf.gather_nd(scores, indices = idxs), tf.gather_nd(box_deltas, indices = idxs)
 
   @staticmethod
   def class_loss(y_predicted, gt_rpn_map):
@@ -189,13 +189,13 @@ class RegionProposalNetwork(tf.keras.Model):
   @staticmethod
   def regression_loss(y_predicted, gt_rpn_map):
     """
-    Computes RPN regression loss.
+    Computes RPN box delta regression loss.
   
     Parameters
     ----------
     y_predicted : tf.Tensor
       A tensor of shape (batch_size, height, width, num_anchors * 4) containing
-      RoI box regressions for each anchor, stored as: ty, tx, th, tw.
+      RoI box delta regressions for each anchor, stored as: ty, tx, th, tw.
     gt_rpn_map : tf.Tensor
       Ground truth tensor of shape (batch_size, height, width, num_anchors, 6).
   

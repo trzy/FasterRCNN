@@ -56,9 +56,10 @@ class DetectorNetwork(tf.keras.Model):
     class_activation = "softmax" if activate_class_outputs else None
     self._classifier = TimeDistributed(name = "classifier_class", layer = Dense(units = num_classes, activation = class_activation, kernel_initializer = class_initializer))
 
-    # Output: box regressions. Unique regression weights for each possible class
-    # excluding background class, hence the use of (num_classes-1). Class index 1
-    # regressions are therefore at indices: 0*4:0*4+1.
+    # Output: box delta regressions. Unique regression weights for each
+    # possible class excluding background class, hence the use of
+    # (num_classes-1). Class index 1 regressions are therefore at
+    # indices: 0*4:0*4+1.
     self._regressor = TimeDistributed(name = "classifier_boxes", layer = Dense(units = 4 * (num_classes - 1), activation = "linear", kernel_initializer = regressor_initializer))
 
   def call(self, inputs, training):
@@ -112,9 +113,9 @@ class DetectorNetwork(tf.keras.Model):
       out = fc2 
     class_activation = "softmax" if self._activate_class_outputs else None
     classes = self._classifier(out)
-    boxes = self._regressor(out)
+    box_deltas = self._regressor(out)
 
-    return [ classes, boxes ]
+    return [ classes, box_deltas ]
 
   @staticmethod
   def class_loss(y_predicted, y_true, from_logits):
@@ -147,16 +148,16 @@ class DetectorNetwork(tf.keras.Model):
   @staticmethod
   def regression_loss(y_predicted, y_true):
     """
-    Computes detector network regression loss.
+    Computes detector network box delta regression loss.
 
     Parameters
     ----------
     y_predicted : tf.Tensor
-      Predicted box regressions in parameterized form (ty, tx, th, tw). Shaped
-      (1, N, 4 * (num_classes - 1)). Class 0 (background) obviously has no box
-      associated with it.
+      Predicted box delta regressions in parameterized form (ty, tx, th, tw).
+      Shaped (1, N, 4 * (num_classes - 1)). Class 0 (background) obviously has
+      no box associated with it.
     y_true : tf.Tensor
-      Ground truth box regression targets, shaped
+      Ground truth box delta regression targets, shaped
       (1, N, 2, 4 * (num_classes - 1)). Elements [:,:,0,:] are masks indicating
       which of the regression targets [:,:,1,:] to use for the given proposal.
       That is, [0,n,0,:] is an array of 1 or 0 indicating which of [0,n,1,:]

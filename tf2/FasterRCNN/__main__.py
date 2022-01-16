@@ -11,14 +11,14 @@
 
 # TODO
 # ----
-# - boxes and box regressions- >box_deltas? rpn.py and detector.py, as well as here in __main__.py
+# - Speed up PyTorch by converting _label_proposals to use torch rather than NumPy (and use PyTorch equivalent
+#   of stop_gradient where needed). Make sure to perform timing to ensure we don't inadvertently slow things down.
 # - Make a comment in README.md about the importance of tf.stop_gradient (particularly in the loss functions) and
 #   investigate this at some point.
-# - box regressions -> box deltas here and in PyTorch version?
 # - Verify mAP using external program
 # - Document why L2 = 0.5 * weight decay
 # - In voc.py and here in command line args, and for PyTorch, change default path to dataset to ../VOCdevkit/VOC2007
-# - Exhaustive test of all options to make sure they are still working
+# - Exhaustive test of all options to make sure they are still working (tf2 and pytorch versions)
 #
 
 #
