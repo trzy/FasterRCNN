@@ -9,6 +9,8 @@ venv
 *.h5
 *.png
 *.sh
+*.pth
+*.csv
 
 *.swp
 
