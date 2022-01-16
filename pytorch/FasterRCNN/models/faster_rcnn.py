@@ -16,7 +16,7 @@ import torch as t
 from torch import nn
 from torchvision.ops import nms
 
-from FasterRCNN import utils
+from pytorch.FasterRCNN import utils
 from . import anchors
 from . import math_utils
 from . import vgg16

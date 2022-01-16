@@ -16,8 +16,6 @@ from torch.nn import functional as F
 from torchvision.ops import RoIPool
 from torchvision.models import vgg16
 
-from FasterRCNN import utils
-
 
 class DetectorNetwork(nn.Module):
   def __init__(self, num_classes, dropout_probability):

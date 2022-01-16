@@ -12,8 +12,6 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.models import vgg16
 
-from FasterRCNN import utils
-
 
 class FeatureExtractor(nn.Module):
   def __init__(self):
