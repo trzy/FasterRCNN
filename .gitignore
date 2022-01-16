@@ -11,3 +11,5 @@ venv
 *.sh
 
 *.swp
+
+VOCdevkit/
