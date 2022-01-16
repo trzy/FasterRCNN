@@ -42,9 +42,9 @@ class DetectorNetwork(nn.Module):
 
   def forward(self, feature_map, proposals):
     """
-    Predict final class and box regressions for region-of-interest proposals.
-    The proposals serve as "anchors" for the box regressions, which refine the
-    proposals into final boxes.
+    Predict final class and box delta regressions for region-of-interest
+    proposals. The proposals serve as "anchors" for the box deltas, which
+    refine the proposals into final boxes.
 
     Parameters
     ----------
@@ -59,10 +59,10 @@ class DetectorNetwork(nn.Module):
     -------
     torch.Tensor, torch.Tensor
       Predicted classes, (N, num_classes), encoded as a one-hot vector, and
-      predicted regressions, (N, 4*(num_classes-1)), where the regressions are
-      expressed as (ty, tx, th, tw) and are relative to each corresponding
+      predicted box delta regressions, (N, 4*(num_classes-1)), where the deltas
+      are expressed as (ty, tx, th, tw) and are relative to each corresponding
       proposal box. Because there is no box for the background class 0, it is
-      excluded entirely and only (num_classes-1) sets of regression targets are
+      excluded entirely and only (num_classes-1) sets of box delta targets are
       computed.
     """
     # Batch size of one for now, so no need to associate proposals with batches
@@ -85,9 +85,9 @@ class DetectorNetwork(nn.Module):
     y2 = self._dropout2(y2o)
     classes_raw = self._classifier(y2)
     classes = F.softmax(classes_raw, dim = 1)
-    regressions = self._regressor(y2)
+    box_deltas = self._regressor(y2)
 
-    return classes, regressions
+    return classes, box_deltas
 
 
 def class_loss(predicted_classes, y_true):
@@ -113,21 +113,21 @@ def class_loss(predicted_classes, y_true):
   cross_entropy = t.sum(cross_entropy_per_row) / N
   return scale_factor * cross_entropy
 
-def regression_loss(predicted_regressions, y_true):
+def regression_loss(predicted_box_deltas, y_true):
   """
   Computes detector regression loss.
 
   Parameters
   ----------
-  predicted_regressions : torch.Tensor
-    RoI predicted regressions, (N, 4*(num_classes-1)). The background class is
-    excluded and only the non-background classes are included. Each regression
-    is stored in parameterized form as (ty, tx, th, tw).
+  predicted_box_deltas : torch.Tensor
+    RoI predicted box delta regressions, (N, 4*(num_classes-1)). The background
+    class is excluded and only the non-background classes are included. Each
+    set of box deltas is stored in parameterized form as (ty, tx, th, tw).
   y_true : torch.Tensor
-    RoI regression ground truth labels, (N, 2, 4*(num_classes-1)). These are
-    stored as mask values (1 or 0) in (:,0,:) and regression parameters in
-    (:,1,:). Note that it is important to mask off the predicted and ground
-    truth regression values because they may be set to invalid values.
+    RoI box delta regression ground truth labels, (N, 2, 4*(num_classes-1)).
+    These are stored as mask values (1 or 0) in (:,0,:) and regression
+    parameters in (:,1,:). Note that it is important to mask off the predicted
+    and ground truth values because they may be set to invalid values.
 
   Returns
   -------
@@ -149,7 +149,7 @@ def regression_loss(predicted_regressions, y_true):
 
   # Compute element-wise loss using robust L1 function for all 4 regression
   # targets
-  x = y_true_targets - predicted_regressions
+  x = y_true_targets - predicted_box_deltas
   x_abs = t.abs(x)
   is_negative_branch = (x < (1.0 / sigma_squared)).float()
   R_negative_branch = 0.5 * x * x * sigma_squared

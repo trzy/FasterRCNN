@@ -116,7 +116,7 @@ def train(model):
     stats = TrainingStatistics()
     progbar = tqdm(iterable = iter(training_data), total = training_data.num_samples, postfix = stats.get_progbar_postfix())
     for sample in progbar:
-      loss, rpn_score_map, rpn_regressions_map, classes, regressions, gt_classes, gt_regressions = model.train_step(
+      loss, rpn_score_map, rpn_box_deltas_map, detector_classes, detector_box_deltas, gt_classes, gt_box_deltas = model.train_step(
           optimizer = optimizer,
           image_data = t.from_numpy(sample.image_data).unsqueeze(dim = 0).cuda(),
           anchor_map = sample.anchor_map,

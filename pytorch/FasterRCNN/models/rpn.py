@@ -71,8 +71,8 @@ class RegionProposalNetwork(nn.Module):
     -------
     torch.Tensor, torch.Tensor, np.ndarray
       - Objectness scores (batch_size, height, width, num_anchors)
-      - Box regressions (batch_size, height, width, num_anchors * 4), in
-        parameterized form (that is, (ty, tx, th, tw) for each anchor)
+      - Box regressions (batch_size, height, width, num_anchors * 4), as box
+        deltas (that is, (ty, tx, th, tw) for each anchor)
       - Proposals (N, 4) -- all corresponding proposal box corners stored as
         (y1, x1, y2, x2).
     """
@@ -80,24 +80,29 @@ class RegionProposalNetwork(nn.Module):
     # Pass through the network
     y = F.relu(self._rpn_conv1(feature_map))
     objectness_score_map = t.sigmoid(self._rpn_class(y))
-    box_regression_map = self._rpn_boxes(y)
+    box_deltas_map = self._rpn_boxes(y)
 
     # Transpose shapes to be more convenient:
     #   objectness_score_map -> (batch_size, height, width, num_anchors)
-    #   box_regression_map   -> (batch_size, height, width, num_anchors * 4)
+    #   box_deltas_map       -> (batch_size, height, width, num_anchors * 4)
     objectness_score_map = objectness_score_map.permute(0, 2, 3, 1).contiguous()
-    box_regression_map = box_regression_map.permute(0, 2, 3, 1).contiguous()
+    box_deltas_map = box_deltas_map.permute(0, 2, 3, 1).contiguous()
 
     # Returning to CPU land by extracting proposals as lists (NumPy arrays)
-    anchors, objectness_scores, box_regressions = self._extract_valid(
+    anchors, objectness_scores, box_deltas = self._extract_valid(
       anchor_map = anchor_map,
       anchor_valid_map = anchor_valid_map,
       objectness_score_map = objectness_score_map,
-      box_regression_map = box_regression_map
+      box_deltas_map = box_deltas_map
     )
 
     # Convert regressions to box corners
-    proposals = math_utils.convert_regressions_to_boxes(regressions = box_regressions, anchors = anchors, regression_means = [ 0, 0, 0, 0 ], regression_stds = [ 1, 1, 1, 1 ]).astype(np.float32)
+    proposals = math_utils.convert_deltas_to_boxes(
+      box_deltas = box_deltas,
+      anchors = anchors,
+      box_delta_means = [ 0, 0, 0, 0 ],
+      box_delta_stds = [ 1, 1, 1, 1 ]
+    ).astype(np.float32)
 
     # Keep only the top-N scores. Note that we do not care whether the
     # proposals were labeled as objects (score > 0.5) and peform a simple
@@ -131,24 +136,24 @@ class RegionProposalNetwork(nn.Module):
 
     # Return network outputs as PyTorch tensors and extracted object proposals
     # as NumPy arrays
-    return objectness_score_map, box_regression_map, proposals
+    return objectness_score_map, box_deltas_map, proposals
 
-  def _extract_valid(self, anchor_map, anchor_valid_map, objectness_score_map, box_regression_map):
+  def _extract_valid(self, anchor_map, anchor_valid_map, objectness_score_map, box_deltas_map):
     assert objectness_score_map.shape[0] == 1 # only batch size of 1 supported for now
 
     height, width, num_anchors = anchor_valid_map.shape
     anchors = anchor_map.reshape((height * width * num_anchors, 4))             # [N,4] all anchors
     anchors_valid = anchor_valid_map.reshape((height * width * num_anchors))    # [N,] whether anchors are valid (i.e., do not cross image boundaries)
     scores = objectness_score_map.reshape((height * width * num_anchors))       # [N,] prediced objectness scores
-    regressions = box_regression_map.reshape((height * width * num_anchors, 4)) # [N,4] predicted regression targets
+    box_deltas = box_deltas_map.reshape((height * width * num_anchors, 4))      # [N,4] predicted box delta regression targets
 
     if self._allow_edge_proposals:
       # Use all proposals
-      return anchors, scores.cpu().detach().numpy(), regressions.cpu().detach().numpy()
+      return anchors, scores.cpu().detach().numpy(), box_deltas.cpu().detach().numpy()
     else:
       # Filter out those proposals generated at invalid anchors
       idxs = anchors_valid > 0
-      return anchors[idxs], scores[idxs].cpu().numpy(), regressions[idxs].cpu().numpy()
+      return anchors[idxs], scores[idxs].cpu().numpy(), box_deltas[idxs].cpu().numpy()
 
 
 def class_loss(predicted_scores, y_true):
@@ -191,15 +196,15 @@ def class_loss(predicted_scores, y_true):
   # Sum the total loss and normalize by the number of anchors used
   return t.sum(relevant_loss_terms) / N_cls
 
-def regression_loss(predicted_regressions, y_true):
+def regression_loss(predicted_box_deltas, y_true):
   """
-  Computes RPN regression loss.
+  Computes RPN box delta regression loss.
 
   Parameters
   ----------
-  predicted_regressions : torch.Tensor
+  predicted_box_deltas : torch.Tensor
     A tensor of shape (batch_size, height, width, num_anchors * 4) containing
-    RoI box regressions for each anchor, stored as: ty, tx, th, tw.
+    RoI box delta regressions for each anchor, stored as: ty, tx, th, tw.
   y_true : torch.Tensor
     Ground truth tensor of shape (batch_size, height, width, num_anchors, 6).
 
@@ -214,7 +219,7 @@ def regression_loss(predicted_regressions, y_true):
   sigma = 3.0         # see: https://github.com/rbgirshick/py-faster-rcnn/issues/89
   sigma_squared = sigma * sigma
 
-  y_predicted_regression = predicted_regressions
+  y_predicted_regression = predicted_box_deltas
   y_true_regression = y_true[:,:,:,:,2:6].reshape(y_predicted_regression.shape)
 
   # Include only anchors that are used in the mini-batch and which correspond

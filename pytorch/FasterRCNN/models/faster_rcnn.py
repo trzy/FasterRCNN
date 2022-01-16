@@ -40,8 +40,8 @@ class FasterRCNNModel(nn.Module):
     self._num_classes = num_classes
     self._rpn_minibatch_size = rpn_minibatch_size
     self._proposal_batch_size = proposal_batch_size
-    self._detector_regression_means = (0, 0, 0, 0)
-    self._detector_regression_stds = (0.1, 0.1, 0.2, 0.2)
+    self._detector_box_delta_means = (0, 0, 0, 0)
+    self._detector_box_delta_stds = (0.1, 0.1, 0.2, 0.2)
 
     # Network stages
     self._stage1_feature_extractor = vgg16.FeatureExtractor()
@@ -74,8 +74,7 @@ class FasterRCNNModel(nn.Module):
     np.ndarray, torch.Tensor, torch.Tensor
       - Proposals (N, 4) from region proposal network
       - Classes (M, num_classes) from detector network
-      - Box regression parameters (M, (num_classes - 1) * 4) from detector
-        network
+      - Box delta regressions (M, (num_classes - 1) * 4) from detector network
     """
     assert image_data.shape[0] == 1, "Batch size must be 1"
     image_shape = image_data.shape[1:]  # (batch_index, channels, height, width) -> (channels, height, width)
@@ -87,7 +86,7 @@ class FasterRCNNModel(nn.Module):
 
     # Run each stage
     feature_map = self._stage1_feature_extractor(image_data = image_data)
-    objectness_score_map, box_regression_map, proposals = self._stage2_region_proposal_network(
+    objectness_score_map, box_deltas_map, proposals = self._stage2_region_proposal_network(
       feature_map = feature_map,
       image_shape = image_shape,
       anchor_map = anchor_map,
@@ -95,12 +94,12 @@ class FasterRCNNModel(nn.Module):
       max_proposals_pre_nms = 6000, # test time values
       max_proposals_post_nms = 300
     )
-    classes, regressions = self._stage3_detector_network(
+    classes, box_deltas = self._stage3_detector_network(
       feature_map = feature_map,
       proposals = proposals
     )
 
-    return proposals, classes, regressions
+    return proposals, classes, box_deltas
 
   @utils.no_grad
   def predict(self, image_data, score_threshold, anchor_map = None, anchor_valid_map = None):
@@ -138,13 +137,13 @@ class FasterRCNNModel(nn.Module):
     assert image_data.shape[0] == 1, "Batch size must be 1"
 
     # Forward inference
-    proposals, classes, regressions = self(
+    proposals, classes, box_deltas = self(
       image_data = image_data,
       anchor_map = anchor_map,
       anchor_valid_map = anchor_valid_map
     )
     classes = classes.cpu().numpy()
-    regressions = regressions.cpu().numpy()
+    box_deltas = box_deltas.cpu().numpy()
  
     # Convert proposal boxes -> center point and size
     proposal_anchors = np.empty(proposals.shape)
@@ -155,15 +154,15 @@ class FasterRCNNModel(nn.Module):
     # Separate out results per class: class_idx -> (y1, x1, y2, x2, score)
     boxes_and_scores_by_class_idx = {}
     for class_idx in range(1, classes.shape[1]):  # skip class 0 (background)
-      # Get the regression parameters (ty, tx, th, tw) corresponding to this
-      # class, for all proposals
-      regression_idx = (class_idx - 1) * 4
-      regression_params = regressions[:, (regression_idx + 0) : (regression_idx + 4)] # (N, 4)
-      proposal_boxes_this_class = math_utils.convert_regressions_to_boxes(
-        regressions = regression_params,
+      # Get the box deltas (ty, tx, th, tw) corresponding to this class, for
+      # all proposals
+      box_delta_idx = (class_idx - 1) * 4
+      box_delta_params = box_deltas[:, (box_delta_idx + 0) : (box_delta_idx + 4)] # (N, 4)
+      proposal_boxes_this_class = math_utils.convert_deltas_to_boxes(
+        box_deltas = box_delta_params,
         anchors = proposal_anchors,
-        regression_means = self._detector_regression_means,
-        regression_stds = self._detector_regression_stds
+        box_delta_means = self._detector_box_delta_means,
+        box_delta_stds = self._detector_box_delta_stds
       )
 
       # Clip to image boundaries
@@ -249,17 +248,17 @@ class FasterRCNNModel(nn.Module):
       1. Loss (a dataclass with class and regression losses for both the RPN
          and detector states).
       2. RPN objectness score map: (batch_size, height, width, num_anchors).
-      3. RPN regressions map: (batch_size, height, width, num_anchors * 4),
-         where the regressions are stored in the final dimension in
+      3. RPN box deltas map: (batch_size, height, width, num_anchors * 4),
+         where the box deltas are stored in the final dimension in
          parameterized form ((ty, tx, th, tw) for each anchor).
       4. Detected classes: (num_proposals, num_classes).
-      5. Detected regressions: (num_proposals, 4*(num_classes-1)), stored in
+      5. Detected box deltas: (num_proposals, 4*(num_classes-1)), stored in
          parameterized form relative to the proposal boxes (which are not
          returned). Note that class index 0 is the first non-background class.
       6. Ground truth classes: (num_proposals, num_classes), for the final
          detection stage.
-      7. Ground truth regressions: (num_proposals, 4*(num_classes-1)), for the
-         final detection stage.
+      7. Ground truth box deltas: (num_proposals, 2, 4*(num_classes-1)), for
+         the final detection stage.
     """
     self.train()
 
@@ -278,7 +277,7 @@ class FasterRCNNModel(nn.Module):
     feature_map = self._stage1_feature_extractor(image_data = image_data)
 
     # Stage 2: Generate object proposals using RPN 
-    rpn_score_map, rpn_regressions_map, proposals = self._stage2_region_proposal_network(
+    rpn_score_map, rpn_box_deltas_map, proposals = self._stage2_region_proposal_network(
       feature_map = feature_map,
       image_shape = image_shape,  # each image in batch has identical shape: (num_channels, height, width)
       anchor_map = anchor_map,
@@ -295,31 +294,31 @@ class FasterRCNNModel(nn.Module):
     )
 
     # Assign labels to proposals and take random sample (for detector training)
-    proposals, gt_classes, gt_regressions = self._label_proposals(
+    proposals, gt_classes, gt_box_deltas = self._label_proposals(
       proposals = proposals,
       gt_boxes = gt_boxes[0], # for now, batch size of 1
       min_background_iou_threshold = 0.0,
       min_object_iou_threshold = 0.5
     )
-    proposals, gt_classes, gt_regressions = self._sample_proposals(
+    proposals, gt_classes, gt_box_deltas = self._sample_proposals(
       proposals = proposals,
       gt_classes = gt_classes,
-      gt_regressions = gt_regressions,
+      gt_box_deltas = gt_box_deltas,
       max_proposals = self._proposal_batch_size,
       positive_fraction = 0.25
     )
 
     # Stage 3: Detector
-    classes, regressions = self._stage3_detector_network(
+    detector_classes, detector_box_deltas = self._stage3_detector_network(
       feature_map = feature_map,
       proposals = proposals 
     )
 
     # Compute losses
     rpn_class_loss = rpn.class_loss(predicted_scores = rpn_score_map, y_true = gt_rpn_minibatch_map)
-    rpn_regression_loss = rpn.regression_loss(predicted_regressions = rpn_regressions_map, y_true = gt_rpn_minibatch_map)
-    detector_class_loss = detector.class_loss(predicted_classes = classes, y_true = t.from_numpy(gt_classes).to("cuda"))
-    detector_regression_loss = detector.regression_loss(predicted_regressions = regressions, y_true = t.from_numpy(gt_regressions).to("cuda"))
+    rpn_regression_loss = rpn.regression_loss(predicted_box_deltas = rpn_box_deltas_map, y_true = gt_rpn_minibatch_map)
+    detector_class_loss = detector.class_loss(predicted_classes = detector_classes, y_true = t.from_numpy(gt_classes).to("cuda"))
+    detector_regression_loss = detector.regression_loss(predicted_box_deltas = detector_box_deltas, y_true = t.from_numpy(gt_box_deltas).to("cuda"))
     loss = FasterRCNNModel.Loss(
       rpn_class = rpn_class_loss,
       rpn_regression = rpn_regression_loss,
@@ -335,7 +334,7 @@ class FasterRCNNModel(nn.Module):
     optimizer.step()
 
     # Return losses and data useful for computing statistics
-    return loss, rpn_score_map, rpn_regressions_map, classes, regressions, gt_classes, gt_regressions
+    return loss, rpn_score_map, rpn_box_deltas_map, detector_classes, detector_box_deltas, gt_classes, gt_box_deltas
   
   def _sample_rpn_minibatch(self, rpn_map, object_indices, background_indices):
     """
@@ -419,15 +418,15 @@ class FasterRCNNModel(nn.Module):
       Proposals, (N, 4), labeled as either objects or background (depending on
       IoU thresholds, some proposals can end up as neither and are excluded
       here); one-hot encoded class labels, (N, num_classes), for each proposal;
-      and regression targets, (N, 2, (num_classes - 1) * 4), for each proposal.
-      Regression target values are present at locations [:,1,:] and consist of
-      (ty, tx, th, tw) for the class that the box corresponds to. The entries
-      for all other classes and the background classes should be ignored. A
-      mask is written to locations [:,0,:]. For each proposal assigned a non-
-      background class, there will be 4 consecutive elements marked with 1
-      indicating the corresponding regression target values are to be used.
-      There are no regression targets for background proposals and the mask is
-      entirely 0 for those proposals.
+      and box delta regression targets, (N, 2, (num_classes - 1) * 4), for each
+      proposal. Box delta target values are present at locations [:,1,:] and
+      consist of (ty, tx, th, tw) for the class that the box corresponds to.
+      The entries for all other classes and the background classes should be
+      ignored. A mask is written to locations [:,0,:]. For each proposal
+      assigned a non-background class, there will be 4 consecutive elements
+      marked with 1 indicating the corresponding box delta target values are to
+      be used. There are no box delta regression targets for background
+      proposals and the mask is entirely 0 for those proposals.
     """
     assert min_background_iou_threshold < min_object_iou_threshold, "Object threshold must be greater than background threshold"
 
@@ -478,27 +477,27 @@ class FasterRCNNModel(nn.Module):
     gt_box_centers = 0.5 * (gt_box_corners[:,0:2] + gt_box_corners[:,2:4])  # center_y, center_x
     gt_box_sides = gt_box_corners[:,2:4] - gt_box_corners[:,0:2]            # height, width
 
-    # Compute regression targets (ty, tx, th, tw) for each proposal based on
-    # the best box selected
-    regression_targets = np.empty((num_proposals, 4))                       # (N,4)
-    regression_targets[:,0:2] = (gt_box_centers - proposal_centers) / proposal_sides  # ty = (gt_center_y - proposal_center_y) / proposal_height, tx = (gt_center_x - proposal_center_x) / proposal_width
-    regression_targets[:,2:4] = np.log(gt_box_sides / proposal_sides)                 # th = log(gt_height / proposal_height), tw = (gt_width / proposal_width)
-    regression_targets[:,:] -= self._detector_regression_means              # mean adjustment
-    regression_targets[:,:] /= self._detector_regression_stds               # standard deviation scaling
+    # Compute box delta regression targets (ty, tx, th, tw) for each proposal
+    # based on the best box selected
+    box_delta_targets = np.empty((num_proposals, 4))                        # (N,4)
+    box_delta_targets[:,0:2] = (gt_box_centers - proposal_centers) / proposal_sides # ty = (gt_center_y - proposal_center_y) / proposal_height, tx = (gt_center_x - proposal_center_x) / proposal_width
+    box_delta_targets[:,2:4] = np.log(gt_box_sides / proposal_sides)                # th = log(gt_height / proposal_height), tw = (gt_width / proposal_width)
+    box_delta_targets[:,:] -= self._detector_box_delta_means                # mean adjustment
+    box_delta_targets[:,:] /= self._detector_box_delta_stds                 # standard deviation scaling
 
     # Convert regression targets into a map of shape (N,2,4*(C-1)) where C is
     # the number of classes and [:,0,:] specifies a mask for the corresponding
     # target components at [:,1,:]. Targets are ordered (ty, tx, th, tw).
     # Background class 0 is not present at all.
-    gt_regressions = np.zeros((num_proposals, 2, 4 * (self._num_classes - 1))).astype(np.float32)
-    gt_regressions[:,0,:] = np.repeat(gt_classes, repeats = 4, axis = 1)[:,4:]        # create masks using interleaved repetition, remembering to ignore class 0
-    gt_regressions[:,1,:] = np.tile(regression_targets, reps = self._num_classes - 1) # populate regression targets with straightforward repetition (only those columns corresponding to class are masked on)
+    gt_box_deltas = np.zeros((num_proposals, 2, 4 * (self._num_classes - 1))).astype(np.float32)
+    gt_box_deltas[:,0,:] = np.repeat(gt_classes, repeats = 4, axis = 1)[:,4:]         # create masks using interleaved repetition, remembering to ignore class 0
+    gt_box_deltas[:,1,:] = np.tile(box_delta_targets, reps = self._num_classes - 1)   # populate regression targets with straightforward repetition (only those columns corresponding to class are masked on)
 
-    return proposals, gt_classes, gt_regressions
+    return proposals, gt_classes, gt_box_deltas
 
-  def _sample_proposals(self, proposals, gt_classes, gt_regressions, max_proposals, positive_fraction):
+  def _sample_proposals(self, proposals, gt_classes, gt_box_deltas, max_proposals, positive_fraction):
     if max_proposals <= 0:
-      return proposals, gt_classes, gt_regressions
+      return proposals, gt_classes, gt_box_deltas
   
     # Get positive and negative (background) proposals
     class_indices = np.argmax(gt_classes, axis = 1)  # (N,num_classes) -> (N,), where each element is the class index (highest score from its row)
@@ -523,7 +522,7 @@ class FasterRCNNModel(nn.Module):
   
     # Do we have enough?
     if num_positive_samples <= 0 or num_negative_samples <= 0:
-      return proposals[[]], gt_classes[[]], gt_regressions[[]]  # return 0-length tensors
+      return proposals[[]], gt_classes[[]], gt_box_deltas[[]] # return 0-length tensors
   
     # Sample randomly
     positive_sample_indices = np.random.choice(positive_indices, size = num_positive_samples, replace = False)
@@ -531,4 +530,4 @@ class FasterRCNNModel(nn.Module):
     indices = np.concatenate([ positive_sample_indices, negative_sample_indices ])
   
     # Return
-    return proposals[indices], gt_classes[indices], gt_regressions[indices]
+    return proposals[indices], gt_classes[indices], gt_box_deltas[indices]

@@ -8,7 +8,7 @@
 # Differing from other implementations of FasterRCNN, I generate a multi-
 # dimensional ground truth tensor for the RPN stage that contains a flag 
 # indicating whether the anchor should be included in training, whether it is
-# an object, and the box regression targets. It would be simpler and more
+# an object, and the box delta regression targets. It would be simpler and more
 # performant to simply return 2D tensors with this information (the model ends
 # up converting proposals into lists at a later stage anyway) but this is how
 # I first thought to implement it and did not encounter a pressing need to
@@ -230,7 +230,7 @@ def generate_rpn_map(anchor_map, anchor_valid_map, gt_boxes, object_iou_threshol
   # We assign the highest IoU ground truth box to each anchor. If no box met
   # the IoU threshold, the highest IoU box may happen to be a box for which
   # the anchor had the highest IoU. If not, then the objectness score will be
-  # negative and the regression won't ever be used.
+  # negative and the box regression won't ever be used.
   gt_box_assignments[:] = best_box_idx_per_anchor
 
   # Anchors that are to be ignored will be marked invalid. Generate a mask to
@@ -240,16 +240,16 @@ def generate_rpn_map(anchor_map, anchor_valid_map, gt_boxes, object_iou_threshol
   enable_mask = (objectness_score >= 0).astype(np.float32)
   objectness_score[objectness_score < 0] = 0
   
-  # Compute regression targets for each anchor
-  regression_targets = np.empty((n, 4))
-  regression_targets[:,0:2] = (gt_box_centers[gt_box_assignments] - anchor_map[:,0:2]) / anchor_map[:,2:4]  # ty = (box_center_y - anchor_center_y) / anchor_height, tx = (box_center_x - anchor_center_x) / anchor_width
-  regression_targets[:,2:4] = np.log(gt_box_sides[gt_box_assignments] / anchor_map[:,2:4])                  # th = log(box_height / anchor_height), tw = log(box_width / anchor_width)
+  # Compute box delta regression targets for each anchor
+  box_delta_targets = np.empty((n, 4))
+  box_delta_targets[:,0:2] = (gt_box_centers[gt_box_assignments] - anchor_map[:,0:2]) / anchor_map[:,2:4] # ty = (box_center_y - anchor_center_y) / anchor_height, tx = (box_center_x - anchor_center_x) / anchor_width
+  box_delta_targets[:,2:4] = np.log(gt_box_sides[gt_box_assignments] / anchor_map[:,2:4])                 # th = log(box_height / anchor_height), tw = log(box_width / anchor_width)
 
   # Assemble RPN ground truth map
   rpn_map = np.zeros((height, width, num_anchors, 6))
   rpn_map[:,:,:,0] = anchor_valid_map * enable_mask.reshape((height,width,num_anchors))  # trainable anchors (object or background; excludes boundary-crossing invalid and neutral anchors)
   rpn_map[:,:,:,1] = objectness_score.reshape((height,width,num_anchors))
-  rpn_map[:,:,:,2:6] = regression_targets.reshape((height,width,num_anchors,4))
+  rpn_map[:,:,:,2:6] = box_delta_targets.reshape((height,width,num_anchors,4))
   
   # Return map along with positive and negative anchors
   rpn_map_coords = np.transpose(np.mgrid[0:height,0:width,0:num_anchors], (1,2,3,0))                  # shape (height,width,k,3): every index (y,x,k,:) returns its own coordinate (y,x,k)

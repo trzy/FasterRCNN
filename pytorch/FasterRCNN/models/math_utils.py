@@ -35,36 +35,36 @@ def intersection_over_union(boxes1, boxes2):
   epsilon = 1e-7
   return intersection_areas / (union_areas + epsilon)
 
-def convert_regressions_to_boxes(regressions, anchors, regression_means, regression_stds):
+def convert_deltas_to_boxes(box_deltas, anchors, box_delta_means, box_delta_stds):
   """
-  Converts regressions, which are in parameterized form (ty, tx, th, tw) as
+  Converts box deltas, which are in parameterized form (ty, tx, th, tw) as
   described by the FastRCNN and FasterRCNN papers, to boxes (y1, x1, y2, x2).
-  The anchors are the base boxes (e.g., RPN anchors or proposals) that the
-  regressions describe a modification to.
+  The anchors are the base boxes (e.g., RPN anchors or proposals) that the box
+  deltas describe a modification to.
 
   Parameters
   ----------
-  regressions : np.ndarray
-    Regression parameters with shape (N, 4). Each row is (ty, tx, th, tw).
+  box_deltas : np.ndarray
+    Box deltas with shape (N, 4). Each row is (ty, tx, th, tw).
   anchors : np.ndarray
-    Corresponding anchors that the regressed parameters are based upon,
-    shaped (N, 4) with each row being (center_y, center_x, height, width).
-  regression_means : np.ndarray
-    Mean ajustment to regressions, (4,), to be added after standard deviation
+    Corresponding anchors that the box deltas are based upon, shaped (N, 4)
+    with each row being (center_y, center_x, height, width).
+  box_delta_means : np.ndarray
+    Mean ajustment to box deltas, (4,), to be added after standard deviation
     scaling and before conversion to actual box coordinates.
-  regression_stds : np.ndarray
-    Standard deviation adjustment to regressions, (4,). Regression parameters
-    are first multiplied by these values.
+  box_delta_stds : np.ndarray
+    Standard deviation adjustment to box deltas, (4,). Box deltas are first
+    multiplied by these values.
 
   Returns
   -------
   np.ndarray
     Box coordinates, (N, 4), with each row being (y1, x1, y2, x2).
   """
-  regressions = regressions * regression_stds + regression_means
-  center = anchors[:,2:4] * regressions[:,0:2] + anchors[:,0:2] # center_x = anchor_width * tx + anchor_center_x, center_y = anchor_height * ty + anchor_center_y
-  size = anchors[:,2:4] * np.exp(regressions[:,2:4])            # width = anchor_width * exp(tw), height = anchor_height * exp(th)
-  boxes = np.empty(regressions.shape)
+  box_deltas = box_deltas * box_delta_stds + box_delta_means
+  center = anchors[:,2:4] * box_deltas[:,0:2] + anchors[:,0:2] # center_x = anchor_width * tx + anchor_center_x, center_y = anchor_height * ty + anchor_center_y
+  size = anchors[:,2:4] * np.exp(box_deltas[:,2:4])            # width = anchor_width * exp(tw), height = anchor_height * exp(th)
+  boxes = np.empty(box_deltas.shape)
   boxes[:,0:2] = center - 0.5 * size                            # y1, x1
   boxes[:,2:4] = center + 0.5 * size                            # y2, x2
   return boxes
