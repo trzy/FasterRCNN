@@ -204,7 +204,7 @@ if __name__ == "__main__":
   parser.add_argument("--load-from", metavar = "file", action = "store", help = "Load initial model weights from file")
   parser.add_argument("--save-to", metavar = "file", action = "store", help = "Save final trained weights to file")
   parser.add_argument("--save-best-to", metavar = "file", action = "store", help = "Save best weights (highest mean average precision) to file")
-  parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "../../VOCdevkit/VOC2007", help = "VOC dataset directory")
+  parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "VOCdevkit/VOC2007", help = "VOC dataset directory")
   parser.add_argument("--train-split", metavar = "name", action = "store", default = "trainval", help = "Dataset split to use for training")
   parser.add_argument("--eval-split", metavar = "name", action = "store", default = "test", help = "Dataset split to use for evaluation")
   parser.add_argument("--no-cache", action = "store_true", help = "Disable image caching during training (reduces memory usage)")
