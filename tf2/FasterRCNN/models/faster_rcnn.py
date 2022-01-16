@@ -116,7 +116,7 @@ class FasterRCNNModel(tf.keras.Model):
       gt_box_deltas = tf.stop_gradient(gt_box_deltas)
 
     # Stage 3: Detector
-    detector_classes, detector_boxes = self._stage3_detector_network(
+    detector_classes, detector_box_deltas = self._stage3_detector_network(
       inputs = [
         input_image,
         feature_map,
@@ -130,7 +130,7 @@ class FasterRCNNModel(tf.keras.Model):
       rpn_class_loss = self._stage2_region_proposal_network.class_loss(y_predicted = rpn_scores, gt_rpn_map = gt_rpn_map)
       rpn_regression_loss = self._stage2_region_proposal_network.regression_loss(y_predicted = rpn_box_deltas, gt_rpn_map = gt_rpn_map)
       detector_class_loss = self._stage3_detector_network.class_loss(y_predicted = detector_classes, y_true = gt_classes, from_logits = not self._activate_class_outputs)
-      detector_regression_loss = self._stage3_detector_network.regression_loss(y_predicted = detector_boxes, y_true = gt_box_deltas)
+      detector_regression_loss = self._stage3_detector_network.regression_loss(y_predicted = detector_box_deltas, y_true = gt_box_deltas)
       self.add_loss(rpn_class_loss)
       self.add_loss(rpn_regression_loss)
       self.add_loss(detector_class_loss)
@@ -151,7 +151,7 @@ class FasterRCNNModel(tf.keras.Model):
       rpn_scores,
       rpn_box_deltas,
       detector_classes,
-      detector_boxes,
+      detector_box_deltas,
       proposals,
       rpn_class_loss,
       rpn_regression_loss,
