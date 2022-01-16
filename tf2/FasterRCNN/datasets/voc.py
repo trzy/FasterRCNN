@@ -62,7 +62,7 @@ class Dataset:
     20: "tvmonitor"
   }
 
-  def __init__(self, split, dir = "../../VOCdevkit/VOC2012", feature_pixels = 16, augment = True, shuffle = True, allow_difficult = False, cache = True):
+  def __init__(self, split, dir = "VOCdevkit/VOC2007", feature_pixels = 16, augment = True, shuffle = True, allow_difficult = False, cache = True):
     """
     Parameters
     ----------
