@@ -29,7 +29,7 @@ from typing import Tuple
 from .training_sample import Box
 from .training_sample import TrainingSample
 from . import image
-from FasterRCNN.models import anchors
+from tf2.FasterRCNN.models import anchors
 
 
 class Dataset:
