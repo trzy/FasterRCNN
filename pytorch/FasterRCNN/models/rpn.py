@@ -69,7 +69,7 @@ class RegionProposalNetwork(nn.Module):
 
     Returns
     -------
-    torch.Tensor, torch.Tensor, np.ndarray
+    torch.Tensor, torch.Tensor, torch.Tensor
       - Objectness scores (batch_size, height, width, num_anchors)
       - Box regressions (batch_size, height, width, num_anchors * 4), as box
         deltas (that is, (ty, tx, th, tw) for each anchor)
@@ -97,41 +97,41 @@ class RegionProposalNetwork(nn.Module):
     )
 
     # Convert regressions to box corners
-    proposals = math_utils.convert_deltas_to_boxes(
+    proposals = math_utils.t_convert_deltas_to_boxes(
       box_deltas = box_deltas,
-      anchors = anchors,
-      box_delta_means = [ 0, 0, 0, 0 ],
-      box_delta_stds = [ 1, 1, 1, 1 ]
-    ).astype(np.float32)
+      anchors = t.from_numpy(anchors).cuda(),
+      box_delta_means = t.tensor([ 0, 0, 0, 0 ], dtype = t.float32).cuda(),
+      box_delta_stds = t.tensor([ 1, 1, 1, 1 ], dtype = t.float32).cuda()
+    ).float()
 
     # Keep only the top-N scores. Note that we do not care whether the
     # proposals were labeled as objects (score > 0.5) and peform a simple
     # ranking among all of them. Restricting them has a strong adverse impact
     # on training performance.
-    sorted_indices = np.argsort(objectness_scores)                  # sort in ascending order of objectness score
-    sorted_indices = sorted_indices[::-1]                           # descending order of score
+    sorted_indices = t.argsort(objectness_scores)                   # sort in ascending order of objectness score
+    sorted_indices = sorted_indices.flip(dims = (0,))               # descending order of score
     proposals = proposals[sorted_indices][0:max_proposals_pre_nms]  # grab the top-N best proposals
     objectness_scores = objectness_scores[sorted_indices][0:max_proposals_pre_nms]  # corresponding scores
 
     # Clip to image boundaries
-    proposals[:,0:2] = np.maximum(proposals[:,0:2], 0)
-    proposals[:,2] = np.minimum(proposals[:,2], image_shape[1])
-    proposals[:,3] = np.minimum(proposals[:,3], image_shape[2])
+    proposals[:,0:2] = t.maximum(proposals[:,0:2], t.tensor([ 0 ], dtype = t.float32).cuda())
+    proposals[:,2] = t.minimum(proposals[:,2], t.tensor([ image_shape[1] ], dtype = t.float32).cuda())
+    proposals[:,3] = t.minimum(proposals[:,3], t.tensor([ image_shape[2] ], dtype = t.float32).cuda())
 
     # Remove anything less than 16 pixels on a side
     height = proposals[:,2] - proposals[:,0]
     width = proposals[:,3] - proposals[:,1]
-    idxs = np.where((height >= 16) & (width >= 16))[0]
+    idxs = t.where((height >= 16) & (width >= 16))[0]
     proposals = proposals[idxs]
     objectness_scores = objectness_scores[idxs]
 
     # Perform NMS
     idxs = nms(
-      boxes = t.from_numpy(proposals).cuda(),
-      scores = t.from_numpy(objectness_scores).cuda(),
+      boxes = proposals, 
+      scores = objectness_scores,
       iou_threshold = 0.7
     )
-    idxs = idxs[0:max_proposals_post_nms].cpu().numpy()
+    idxs = idxs[0:max_proposals_post_nms]
     proposals = proposals[idxs]
 
     # Return network outputs as PyTorch tensors and extracted object proposals
@@ -149,11 +149,13 @@ class RegionProposalNetwork(nn.Module):
 
     if self._allow_edge_proposals:
       # Use all proposals
-      return anchors, scores.cpu().detach().numpy(), box_deltas.cpu().detach().numpy()
+      return anchors, scores, box_deltas
+#      return anchors, scores.cpu().detach().numpy(), box_deltas.cpu().detach().numpy()
     else:
       # Filter out those proposals generated at invalid anchors
       idxs = anchors_valid > 0
-      return anchors[idxs], scores[idxs].cpu().numpy(), box_deltas[idxs].cpu().numpy()
+      return anchors[idxs], scores[idxs], box_deltas[idxs]
+#      return anchors[idxs], scores[idxs].cpu().numpy(), box_deltas[idxs].cpu().numpy()
 
 
 def class_loss(predicted_scores, y_true):
@@ -213,7 +215,6 @@ def regression_loss(predicted_box_deltas, y_true):
   torch.Tensor
     Scalar loss.
   """
-
   epsilon = 1e-7
   scale_factor = 1.0  # hyper-parameter that controls magnitude of regression loss and is chosen to make regression term comparable to class term
   sigma = 3.0         # see: https://github.com/rbgirshick/py-faster-rcnn/issues/89

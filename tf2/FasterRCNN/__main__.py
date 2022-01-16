@@ -11,8 +11,6 @@
 
 # TODO
 # ----
-# - Speed up PyTorch by converting _label_proposals to use torch rather than NumPy (and use PyTorch equivalent
-#   of stop_gradient where needed). Make sure to perform timing to ensure we don't inadvertently slow things down.
 # - Make a comment in README.md about the importance of tf.stop_gradient (particularly in the loss functions) and
 #   investigate this at some point.
 # - Verify mAP using external program

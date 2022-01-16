@@ -40,8 +40,10 @@ class FasterRCNNModel(nn.Module):
     self._num_classes = num_classes
     self._rpn_minibatch_size = rpn_minibatch_size
     self._proposal_batch_size = proposal_batch_size
-    self._detector_box_delta_means = (0, 0, 0, 0)
-    self._detector_box_delta_stds = (0.1, 0.1, 0.2, 0.2)
+    self._detector_box_delta_means = [ 0, 0, 0, 0 ]
+    self._detector_box_delta_stds = [ 0.1, 0.1, 0.2, 0.2 ]
+    self._detector_box_delta_means_tensor = t.tensor(self._detector_box_delta_means, dtype = t.float32).cuda()
+    self._detector_box_delta_stds_tensor = t.tensor(self._detector_box_delta_stds, dtype = t.float32).cuda()
 
     # Network stages
     self._stage1_feature_extractor = vgg16.FeatureExtractor()
@@ -142,6 +144,7 @@ class FasterRCNNModel(nn.Module):
       anchor_map = anchor_map,
       anchor_valid_map = anchor_valid_map
     )
+    proposals = proposals.cpu().numpy() 
     classes = classes.cpu().numpy()
     box_deltas = box_deltas.cpu().numpy()
  
@@ -308,6 +311,13 @@ class FasterRCNNModel(nn.Module):
       positive_fraction = 0.25
     )
 
+    # Make sure RoI proposals and ground truths are detached from computational
+    # graph so that gradients are not propagated through them. They are treated
+    # as constant inputs into the detector stage.
+    proposals = proposals.detach()
+    gt_classes = gt_classes.detach()
+    gt_box_deltas = gt_box_deltas.detach()
+
     # Stage 3: Detector
     detector_classes, detector_box_deltas = self._stage3_detector_network(
       feature_map = feature_map,
@@ -317,8 +327,8 @@ class FasterRCNNModel(nn.Module):
     # Compute losses
     rpn_class_loss = rpn.class_loss(predicted_scores = rpn_score_map, y_true = gt_rpn_minibatch_map)
     rpn_regression_loss = rpn.regression_loss(predicted_box_deltas = rpn_box_deltas_map, y_true = gt_rpn_minibatch_map)
-    detector_class_loss = detector.class_loss(predicted_classes = detector_classes, y_true = t.from_numpy(gt_classes).to("cuda"))
-    detector_regression_loss = detector.regression_loss(predicted_box_deltas = detector_box_deltas, y_true = t.from_numpy(gt_box_deltas).to("cuda"))
+    detector_class_loss = detector.class_loss(predicted_classes = detector_classes, y_true = gt_classes)
+    detector_regression_loss = detector.regression_loss(predicted_box_deltas = detector_box_deltas, y_true = gt_box_deltas)
     loss = FasterRCNNModel.Loss(
       rpn_class = rpn_class_loss,
       rpn_regression = rpn_regression_loss,
@@ -398,7 +408,7 @@ class FasterRCNNModel(nn.Module):
 
     Parameters
     ----------
-    proposals : np.ndarray
+    proposals : torch.Tensor
       Proposal corners, shaped (N, 4).
     gt_boxes : List[datasets.training_sample.Box]
       Ground truth object boxes.
@@ -414,7 +424,7 @@ class FasterRCNNModel(nn.Module):
 
     Returns
     -------
-    np.ndarray, np.ndarray, np.ndarray
+    torch.Tensor, torch.Tensor, torch.Tensor
       Proposals, (N, 4), labeled as either objects or background (depending on
       IoU thresholds, some proposals can end up as neither and are excluded
       here); one-hot encoded class labels, (N, num_classes), for each proposal;
@@ -431,30 +441,30 @@ class FasterRCNNModel(nn.Module):
     assert min_background_iou_threshold < min_object_iou_threshold, "Object threshold must be greater than background threshold"
 
     # Convert ground truth box corners to (M,4) tensor and class indices to (M,)
-    gt_box_corners = np.array([ box.corners for box in gt_boxes ]).astype(np.float32)
-    gt_box_class_idxs = np.array([ box.class_index for box in gt_boxes ]).astype(np.int32)
+    gt_box_corners = t.tensor([ box.corners for box in gt_boxes ], dtype = t.float32).cuda()
+    gt_box_class_idxs = t.tensor([ box.class_index for box in gt_boxes ], dtype = t.long).cuda()
 
     # Let's be crafty and create some fake proposals that match the ground
     # truth boxes exactly. This isn't strictly necessary and the model should
     # work without it but it will help training and will ensure that there are
     # always some positive examples to train on. 
-    proposals = np.vstack([ proposals, gt_box_corners ])
+    proposals = t.vstack([ proposals, gt_box_corners ])
 
     # Compute IoU between each proposal (N,4) and each ground truth box (M,4)
     # -> (N, M)
-    ious = math_utils.intersection_over_union(boxes1 = proposals, boxes2 = gt_box_corners)
+    ious = math_utils.t_intersection_over_union(boxes1 = proposals, boxes2 = gt_box_corners)
 
     # Find the best IoU for each proposal, the class of the ground truth box
     # associated with it, and the box corners
-    best_ious = np.max(ious, axis = 1)              # (N,) of maximum IoUs for each of the N proposals
-    box_idxs = np.argmax(ious, axis = 1)            # (N,) of ground truth box index for each proposal
+    best_ious = t.max(ious, dim = 1).values         # (N,) of maximum IoUs for each of the N proposals
+    box_idxs = t.argmax(ious, dim = 1)              # (N,) of ground truth box index for each proposal
     gt_box_class_idxs = gt_box_class_idxs[box_idxs] # (N,) of class indices of highest-IoU box for each proposal
     gt_box_corners = gt_box_corners[box_idxs]       # (N,4) of box corners of highest-IoU box for each proposal
  
     # Remove all proposals whose best IoU is less than the minimum threshold
     # for a negative (background) sample. We also check for IoUs > 0 because
     # due to earlier clipping, we may get invalid 0-area proposals.
-    idxs = np.where((best_ious >= min_background_iou_threshold))[0]  # keep proposals w/ sufficiently high IoU
+    idxs = t.where((best_ious >= min_background_iou_threshold))[0]  # keep proposals w/ sufficiently high IoU
     proposals = proposals[idxs]
     best_ious = best_ious[idxs]
     gt_box_class_idxs = gt_box_class_idxs[idxs]
@@ -465,8 +475,8 @@ class FasterRCNNModel(nn.Module):
     
     # One-hot encode class labels
     num_proposals = proposals.shape[0]
-    gt_classes = np.zeros((num_proposals, self._num_classes)).astype(np.float32)  # (N,num_classes)
-    gt_classes[ np.arange(num_proposals), gt_box_class_idxs ] = 1.0
+    gt_classes = t.zeros((num_proposals, self._num_classes), dtype = t.float32).cuda()  # (N,num_classes)
+    gt_classes[ t.arange(num_proposals), gt_box_class_idxs ] = 1.0
 
     # Convert proposals and ground truth boxes into "anchor" format (center
     # points and side lengths). For the detector stage, the proposals serve as
@@ -479,19 +489,19 @@ class FasterRCNNModel(nn.Module):
 
     # Compute box delta regression targets (ty, tx, th, tw) for each proposal
     # based on the best box selected
-    box_delta_targets = np.empty((num_proposals, 4))                        # (N,4)
+    box_delta_targets = t.empty((num_proposals, 4), dtype = t.float32).cuda()       # (N,4)
     box_delta_targets[:,0:2] = (gt_box_centers - proposal_centers) / proposal_sides # ty = (gt_center_y - proposal_center_y) / proposal_height, tx = (gt_center_x - proposal_center_x) / proposal_width
-    box_delta_targets[:,2:4] = np.log(gt_box_sides / proposal_sides)                # th = log(gt_height / proposal_height), tw = (gt_width / proposal_width)
-    box_delta_targets[:,:] -= self._detector_box_delta_means                # mean adjustment
-    box_delta_targets[:,:] /= self._detector_box_delta_stds                 # standard deviation scaling
+    box_delta_targets[:,2:4] = t.log(gt_box_sides / proposal_sides)                 # th = log(gt_height / proposal_height), tw = (gt_width / proposal_width)
+    box_delta_targets[:,:] -= self._detector_box_delta_means_tensor                 # mean adjustment
+    box_delta_targets[:,:] /= self._detector_box_delta_stds_tensor                  # standard deviation scaling
 
     # Convert regression targets into a map of shape (N,2,4*(C-1)) where C is
     # the number of classes and [:,0,:] specifies a mask for the corresponding
     # target components at [:,1,:]. Targets are ordered (ty, tx, th, tw).
     # Background class 0 is not present at all.
-    gt_box_deltas = np.zeros((num_proposals, 2, 4 * (self._num_classes - 1))).astype(np.float32)
-    gt_box_deltas[:,0,:] = np.repeat(gt_classes, repeats = 4, axis = 1)[:,4:]         # create masks using interleaved repetition, remembering to ignore class 0
-    gt_box_deltas[:,1,:] = np.tile(box_delta_targets, reps = self._num_classes - 1)   # populate regression targets with straightforward repetition (only those columns corresponding to class are masked on)
+    gt_box_deltas = t.zeros((num_proposals, 2, 4 * (self._num_classes - 1)), dtype = t.float32).cuda()
+    gt_box_deltas[:,0,:] = t.repeat_interleave(gt_classes, repeats = 4, dim = 1)[:,4:]  # create masks using interleaved repetition, remembering to ignore class 0
+    gt_box_deltas[:,1,:] = t.tile(box_delta_targets, dims = (1, self._num_classes - 1)) # populate regression targets with straightforward repetition (only those columns corresponding to class are masked on)
 
     return proposals, gt_classes, gt_box_deltas
 
@@ -500,9 +510,9 @@ class FasterRCNNModel(nn.Module):
       return proposals, gt_classes, gt_box_deltas
   
     # Get positive and negative (background) proposals
-    class_indices = np.argmax(gt_classes, axis = 1)  # (N,num_classes) -> (N,), where each element is the class index (highest score from its row)
-    positive_indices = np.argwhere(class_indices > 0)[:,0]
-    negative_indices = np.argwhere(class_indices <= 0)[:,0]
+    class_indices = t.argmax(gt_classes, axis = 1)  # (N,num_classes) -> (N,), where each element is the class index (highest score from its row)
+    positive_indices = t.where(class_indices > 0)[0]
+    negative_indices = t.where(class_indices <= 0)[0]
     num_positive_proposals = len(positive_indices)
     num_negative_proposals = len(negative_indices)
     
@@ -525,9 +535,9 @@ class FasterRCNNModel(nn.Module):
       return proposals[[]], gt_classes[[]], gt_box_deltas[[]] # return 0-length tensors
   
     # Sample randomly
-    positive_sample_indices = np.random.choice(positive_indices, size = num_positive_samples, replace = False)
-    negative_sample_indices = np.random.choice(negative_indices, size = num_negative_samples, replace = False)
-    indices = np.concatenate([ positive_sample_indices, negative_sample_indices ])
+    positive_sample_indices = positive_indices[ t.randperm(len(positive_indices))[0:num_positive_samples] ]
+    negative_sample_indices = negative_indices[ t.randperm(len(negative_indices))[0:num_negative_samples] ]
+    indices = t.cat([ positive_sample_indices, negative_sample_indices ])
   
     # Return
     return proposals[indices], gt_classes[indices], gt_box_deltas[indices]

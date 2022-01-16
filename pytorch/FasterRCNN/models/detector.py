@@ -68,7 +68,6 @@ class DetectorNetwork(nn.Module):
     batch_idxs = t.zeros((proposals.shape[0], 1)).cuda()
 
     # (N, 5) tensor of (batch_idx, x1, y1, x2, y2)
-    proposals = t.from_numpy(proposals).cuda()
     indexed_proposals = t.cat([ batch_idxs, proposals ], dim = 1)
     indexed_proposals = indexed_proposals[:, [ 0, 2, 1, 4, 3 ]] # each row, (batch_idx, y1, x1, y2, x2) -> (batch_idx, x1, y1, x2, y2)
 
