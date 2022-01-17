@@ -79,7 +79,7 @@ My final results using the VOC2007 dataset's 5011 `trainval` images match the pa
 
 ## Environment Setup
 
-Python 3.7 (for `dataclass` support) or higher is required and I personally use 3.8.5. Dependencies for the PyTorch and TensorFlow versions of the model are located in `pytorch/requirements.txt` and `tf2/requirements.txt`, respectively. It is recommended that separate virtual environments for both be created.
+Python 3.7 (for `dataclass` support) or higher is required and I personally use 3.8.5. Dependencies for the PyTorch and TensorFlow versions of the model are located in `pytorch/requirements.txt` and `tf2/requirements.txt`, respectively. Separate virtual environments for both are required.
 
 Instructions here are given for Linux systems.
 
