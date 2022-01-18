@@ -188,7 +188,7 @@ class FasterRCNNModel(nn.Module):
       idxs = nms(
         boxes = t.from_numpy(boxes).cuda(),
         scores = t.from_numpy(scores).cuda(),
-        iou_threshold = 0.5 #TODO: confirm with paper and Caffe implementation that this is the correct threshold for prediction
+        iou_threshold = 0.3 #TODO: unsure about this. Paper seems to imply 0.5 but https://github.com/rbgirshick/py-faster-rcnn/blob/master/lib/fast_rcnn/config.py has 0.3 for test NMS 
       ).cpu().numpy()
       boxes = boxes[idxs]
       scores = np.expand_dims(scores[idxs], axis = 0) # (N,) -> (N,1)
