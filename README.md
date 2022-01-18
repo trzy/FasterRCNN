@@ -1,29 +1,4 @@
-**TODO: upload gary.jpg to trzy.org/files/fasterrcnn**
 **TODO: report training time on my machine**
-
-Overview
-
-  - FasterRCNN from scratch in PyTorch and TF2/Keras, mention Python 3.8/3.9 (dataclasses)
-  - Learning exercise, reproducing paper from scratch
-  - Go over the basic usage as well as a discussion of problems encountered
-
-  - Example results
-
-Environment Set Up
-
-  - Create a PyTorch venv
-  - Install dependencies, maybe resorting to web site
-  - Create a TF2 venv
-  - Install dependencies
-
-  - Obtain dataset
-  - Obtain pre-trained models if desired
-
-Run
-
-  - PyTorch training and inference
-  - Keras training and inference
-  - Brief discussion of Keras options
 
 Problems encountered and solutions
 
@@ -33,19 +8,14 @@ Problems encountered and solutions
   - State saving PyTorch
   - Instability in Keras due to gradient propagation
 
-Suggestions for improvement
-
-  - Batch size > 1
-  - COCO or other datasets
-  - Replacement of RPN anchor map with a simple list of anchors like most implementations
-  - Custom RoI pooling
-
 # Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 *Copyright 2021-2022 Bart Trzynadlowski*
 
 ## Overview
 
-| ![Detection results: bird and bottle](docs/images/gary.png) | ![Detection results: car and people](docs/images/scud.png) |
+<p align="center">
+  <img src="docs/images/gary.png" height="250" /> <img src="docs/images/scud.png" height="250" />
+</p>
 
 This is a fresh implementation of the Faster R-CNN object detection model in both PyTorch and TensorFlow 2 with Keras, using Python 3.7 or higher. Although several years old now, Faster R-CNN remains a foundational work in the field and still influences modern object detectors. 
 
@@ -178,7 +148,7 @@ Replicating the paper results requires training with stochastic gradient descent
 
 ```
 python -m pytorch.FasterRCNN --train --learning-rate=1e-3 --epochs=10 --load-from=vgg16_caffe.pth --save-best-to=results_1.pth
-python -m pytorch.FasterRCNN --train --learning-rate=1e-4 --epochs=4 --load-from=results_1.pth --save-best-to=results_2.pth
+python -m pytorch.FasterRCNN --train --learning-rate=1e-4 --epochs=4 --load-from=results_1.pth --save-best-to=results_final.pth
 ```
 
 This assumes that the dataset is present at `VOCdevkit/VOC2007/`. The mean average precision is computed from a subset of evaluation samples after each epoch and the best weights are saved at the end of training. The final model weights, regardless of accuracy, can also be saved using `--save-to` and checkpoints can be saved after each epoch to a directory using `--checkpoint-dir`.
