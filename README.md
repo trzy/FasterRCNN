@@ -45,6 +45,8 @@ Suggestions for improvement
 
 ## Overview
 
+| ![Detection results: bird and bottle](docs/images/gary.png) | ![Detection results: car and people](docs/images/scud.png) |
+
 This is a fresh implementation of the Faster R-CNN object detection model in both PyTorch and TensorFlow 2 with Keras, using Python 3.7 or higher. Although several years old now, Faster R-CNN remains a foundational work in the field and still influences modern object detectors. 
 
 I set out to replicate [the original paper](docs/publications/faster_rcnn.pdf) from scratch using Keras but quickly ran into difficulties and spent considerable time overcoming them. For the benfit of those undertaking a similar self-learning exercise -- whether involving this or other machine learning models -- my struggles, learnings, and observations are [documented here](#development-learnings).
@@ -74,8 +76,6 @@ My final results using the VOC2007 dataset's 5011 `trainval` images match the pa
 | chair      | 50.5% |
 | pottedplant| 41.1% |
 |**Mean**   | **71.0%** |
-
-**TODO: EXAMPLE IMAGES HERE **
 
 ## Background Material
 
@@ -109,7 +109,7 @@ pip install -r pytorch/requirements.txt
 Next, go to the [PyTorch web site](https://pytorch.org/) and use their installation picker to select a pip package compatible with your version of CUDA. In my case, CUDA 11.3, as shown.
 
 
-![PyTorch package configuration](docs/images/PyTorch_Configuration.png)
+![PyTorch package configuration](docs/images/pytorch_config.png)
 
 Run the command shown, e.g.:
 
