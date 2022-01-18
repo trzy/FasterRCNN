@@ -1,4 +1,3 @@
-**TODO: replace FasterRCNN -> Faster R-CNN**
 **TODO: report training time on my machine**
 
 Overview
@@ -136,7 +135,11 @@ Getting CUDA working is more involved and beyond the scope of this document. I u
 
 ## Dataset
 
-**TODO: write me**
+This implementation of Faster R-CNN accepts [PASCAL Visual Object Classes](http://host.robots.ox.ac.uk/pascal/VOC/) datasets. The datasets are organized by year and VOC2007 is the default for
+training and benchmarking. Images are split into `train`, `val`, and `test` splits, representing the training, validation, and test datasets. There is also a `trainval` split, which is the union of
+`train` and `val`. This is what Faster R-CNN is trained on and `test` is used for validation. This is configurable on the command line. 
+
+A script is included to automatically fetch and extract VOC2007 in the default location: `download_dataset.sh`. If your dataset is in a different location, use `--dataset-dir` to point the program to it.
 
 ## Pre-Trained Models and Initial Weights
 
