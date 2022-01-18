@@ -1,5 +1,5 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # tf2/FasterRCNN/models/unroll_roi_pool.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #

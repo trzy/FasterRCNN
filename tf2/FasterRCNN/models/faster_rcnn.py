@@ -1,12 +1,12 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # tf2/FasterRCNN/models/faster_rcnn.py
 # Copyright 2021-2022 Bart Trzynadlowski
 # 
-# TensorFlow/Keras implementation of FasterRCNN training and inference models.
-# Here, all stages of FasterRCNN are instantiated, ground truth labels from
-# RPN proposal boxes (RoIs) for the detector stage are generated, and 
-# proposals are sampled.
+# TensorFlow/Keras implementation of Faster R-CNN training and inference
+# models. Here, all stages of Faster R-CNN are instantiated, ground truth
+# labels from RPN proposal boxes (RoIs) for the detector stage are generated,
+# and proposals are sampled.
 #
 
 #
@@ -399,7 +399,7 @@ class FasterRCNNModel(tf.keras.Model):
     # the number of proposals is below the desired number. Here, we use the
     # former method but others, such as Yun Chen, use the latter. To implement
     # it, replace num_samples with max_proposals in the line that computes
-    # num_positive_samples. I am not sure what the original FasterRCNN
+    # num_positive_samples. I am not sure what the original Faster R-CNN
     # implementation does.
     num_samples = tf.minimum(max_proposals, tf.size(class_indices))
     num_positive_samples = tf.minimum(tf.cast(tf.math.round(tf.cast(num_samples, dtype = float) * positive_fraction), dtype = num_samples.dtype), num_positive_proposals)

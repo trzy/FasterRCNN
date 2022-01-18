@@ -1,14 +1,14 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # tf2/FasterRCNN/models/anchors.py
 # Copyright 2021-2022 Bart Trzynadlowski
 # 
-# Anchor generation code for the TensorFlow implementation of FasterRCNN. This
-# differs from the PyTorch version only in the ordering of the dimensions of
-# the input image: Keras is (height, width, channels) and PyTorch is
+# Anchor generation code for the TensorFlow implementation of Faster R-CNN.
+# This differs from the PyTorch version only in the ordering of the dimensions
+# of the input image: Keras is (height, width, channels) and PyTorch is
 # (channels, height, width).
 #
-# Differing from other implementations of FasterRCNN, I generate a multi-
+# Differing from other implementations of Faster R-CNN, I generate a multi-
 # dimensional ground truth tensor for the RPN stage that contains a flag 
 # indicating whether the anchor should be included in training, whether it is
 # an object, and the box delta regression targets. It would be simpler and more
@@ -52,11 +52,11 @@ def generate_anchor_maps(image_shape, feature_pixels):
   ----------
   image_shape : Tuple[int, int, int]
     Shape of the input image, (height, width, channels), at the scale it will
-    be passed into the FasterRCNN model.
+    be passed into the Faster R-CNN model.
   feature_pixels : int
     Distance in pixels between anchors. This is the size, in input image space,
     of each cell of the feature map output by the feature extractor stage of
-    the FasterRCNN network.
+    the Faster R-CNN network.
 
   Returns
   -------

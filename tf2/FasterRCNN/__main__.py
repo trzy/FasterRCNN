@@ -1,9 +1,9 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # tf2/FasterRCNN/__main__.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
-# Main module for the TensorFlow/Keras implementation of FasterRCNN. Run this
+# Main module for the TensorFlow/Keras implementation of Faster R-CNN. Run this
 # from the root directory, e.g.:
 #
 # python -m tf2.FasterRCNN --help
@@ -11,10 +11,10 @@
 
 # TODO
 # ----
+# - Argparse program name -> Faster R-CNN?
 # - Make a comment in README.md about the importance of tf.stop_gradient (particularly in the loss functions) and
 #   investigate this at some point.
 # - Verify mAP using external program
-# - Document why L2 = 0.5 * weight decay
 # - Exhaustive test of all options to make sure they are still working (tf2 and pytorch versions)
 #
 

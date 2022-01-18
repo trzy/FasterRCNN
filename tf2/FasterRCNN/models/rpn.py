@@ -1,14 +1,14 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # tf2/FasterRCNN/models/rpn.py
 # Copyright 2021-2022 Bart Trzynadlowski
 # 
 # TensorFlow/Keras implementation of the RPN (region proposal network) stage of
-# FasterRCNN. Given a feature map (i.e., the output of the VGG-16 convolutional
-# layers), generates objectness scores for each anchor box, and boxes in the
-# form of modifications to anchor center points and dimensions.
+# Faster R-CNN. Given a feature map (i.e., the output of the VGG-16
+# convolutional layers), generates objectness scores for each anchor box, and
+# boxes in the form of modifications to anchor center points and dimensions.
 #
-# Unlike the original FasterRCNN implementation (and many subsequent re-
+# Unlike the original Faster R-CNN implementation (and many subsequent re-
 # implementations), which used two outputs per anchor (object and background)
 # and a softmax activation, this implementation uses only a single output and
 # sigmoid activation, which is simpler but equivalent. A value of < 0.5 is
@@ -143,7 +143,7 @@ class RegionProposalNetwork(tf.keras.Model):
     else:
       # Filter out those proposals generated at invalid anchors. Invalid
       # anchors are really just those that cross image boundaries and, counter-
-      # intuitively, given that the FasterRCNN paper (Section 3.3) says that
+      # intuitively, given that the Faster R-CNN paper (Section 3.3) says that
       # these anchors are ignored during loss calculation, they should in fact
       # be included when generating proposals. Good performance requires
       # evaluating lots of proposals, so even if cross-boundary anchors do not

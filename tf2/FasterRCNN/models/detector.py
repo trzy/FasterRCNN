@@ -1,9 +1,9 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # tf2/FasterRCNN/models/detector.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
-# Tensorflow/Keras implementation of the final detector stage of FasterRCNN.
+# Tensorflow/Keras implementation of the final detector stage of Faster R-CNN.
 # As input, takes a series of proposals (or RoIs) and produces classifications
 # and boxes. The boxes are parameterized as modifications to the original
 # incoming proposal boxes. That is, the proposal boxes are exactly analogous to
@@ -41,7 +41,7 @@ class DetectorNetwork(tf.keras.Model):
     self._roi_pool = RoIPoolingLayer(pool_size = 7, name = "custom_roi_pool") if custom_roi_pool else None
 
     # Fully-connected layers with optional dropout. Initial weights will be
-    # loaded from pre-trained VGG-16 ImageNet model by parent FasterRCNN
+    # loaded from pre-trained VGG-16 ImageNet model by parent Faster R-CNN
     # module. These layers act as classifiers as in VGG-16 and use the same
     # names as Keras' built-in implementation of VGG-16. TimeDistributed() is
     # used to iterate over the proposal dimension and apply the layer to each
@@ -85,7 +85,7 @@ class DetectorNetwork(tf.keras.Model):
     else:
       # Crop the proposals, resize to 14x14 (with bilinear interpolation) and
       # max pool down to 7x7. This works just as well and is used in several
-      # TensorFlow implementations of FasterRCNN, such as:
+      # TensorFlow implementations of Faster R-CNN, such as:
       # https://github.com/kevinjliang/tf-Faster-RCNN/blob/master/Lib/roi_pool.py
 
       # Convert to normalized RoIs with each coordinate in [0,1]

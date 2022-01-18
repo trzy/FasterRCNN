@@ -1,5 +1,5 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # tf2/FasterRCNN/models/math_utils.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
@@ -82,9 +82,9 @@ def tf_intersection_over_union(boxes1, boxes2):
 def convert_deltas_to_boxes(box_deltas, anchors, box_delta_means, box_delta_stds):
   """
   Converts box deltas, which are in parameterized form (ty, tx, th, tw) as
-  described by the FastRCNN and FasterRCNN papers, to boxes (y1, x1, y2, x2).
-  The anchors are the base boxes (e.g., RPN anchors or proposals) that the
-  deltas describe a modification to.
+  described by the Fast R-CNN and Faster R-CNN papers, to boxes
+  (y1, x1, y2, x2). The anchors are the base boxes (e.g., RPN anchors or
+  proposals) that the deltas describe a modification to.
 
   Parameters
   ----------
