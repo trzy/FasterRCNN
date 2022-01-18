@@ -1,5 +1,5 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # python/pytorch/FasterRCNN/state.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
@@ -234,7 +234,7 @@ def load(model, filepath):
   Parameters
   ----------
   model : torch.nn.Module
-    The complete FasterRCNN model to load weights and biases into.
+    The complete Faster R-CNN model to load weights and biases into.
   filepath : str
     File to load.
   """

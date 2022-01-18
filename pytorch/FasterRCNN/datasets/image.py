@@ -1,5 +1,5 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/datasets/image.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
@@ -32,7 +32,7 @@ def load_image(url, min_dimension_pixels = None, horizontal_flip = False):
   Loads and preprocesses an image for use with VGG-16, which consists of
   converting RGB to BGR and subtracting ImageNet dataset means from each
   component. The image can be resized so that the minimum dimension is a
-  defined size, as recommended by FasterRCNN. 
+  defined size, as recommended by Faster R-CNN. 
 
   Parameters
   ----------

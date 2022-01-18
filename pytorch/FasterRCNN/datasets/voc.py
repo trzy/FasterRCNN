@@ -1,5 +1,5 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/datasets/voc.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
@@ -71,7 +71,7 @@ class Dataset:
     dir : str
       Root directory of dataset.
     feature_pixels : int
-      Size of each cell in the FasterRCNN feature map (i.e., VGG-16 feature
+      Size of each cell in the Faster R-CNN feature map (i.e., VGG-16 feature
       extractor output) in image pixels. This is the separation distance
       between anchors.
     augment : bool

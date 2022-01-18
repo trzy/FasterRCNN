@@ -1,9 +1,9 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/models/detector.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
-# PyTorch implementation of the final detector stage of FasterRCNN. As input,
+# PyTorch implementation of the final detector stage of Faster R-CNN. As input,
 # takes a series of proposals (or RoIs) and produces classifications and boxes.
 # The boxes are parameterized as modifications to the original incoming
 # proposal boxes. That is, the proposal boxes are exactly analogous to the

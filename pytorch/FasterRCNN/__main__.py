@@ -1,9 +1,9 @@
 #
-# FasterRCNN in PyTorch and TensorFlow 2 w/ Keras
+# Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/__main__.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
-# Main module for the PyTorch implementation of FasterRCNN. Run this from the
+# Main module for the PyTorch implementation of Faster R-CNN. Run this from the
 # root directory, e.g.:
 #
 # python -m pytorch.FasterRCNN --help
