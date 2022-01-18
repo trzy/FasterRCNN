@@ -10,6 +10,14 @@
 #
 
 #
+# Weight Decay
+# ------------
+# Keras does not provide a weight decay option but rather an L2 penalty. Weight
+# decay can be converted to L2 by dividing by 2. This is because the L2 penalty
+# is added to the loss and then differentiated with respect to the weights
+# (introducing a factor of 2 that must be canceled out). See:
+# https://bbabenko.github.io/weight-decay/
+#
 # Pro-Tip
 # -------
 #
