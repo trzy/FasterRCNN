@@ -441,7 +441,8 @@ class FasterRCNNModel(nn.Module):
     assert min_background_iou_threshold < min_object_iou_threshold, "Object threshold must be greater than background threshold"
 
     # Convert ground truth box corners to (M,4) tensor and class indices to (M,)
-    gt_box_corners = t.tensor([ box.corners for box in gt_boxes ], dtype = t.float32).cuda()
+    gt_box_corners = np.array([ box.corners for box in gt_boxes ], dtype = np.float32)
+    gt_box_corners = t.from_numpy(gt_box_corners).cuda()
     gt_box_class_idxs = t.tensor([ box.class_index for box in gt_boxes ], dtype = t.long).cuda()
 
     # Let's be crafty and create some fake proposals that match the ground
