@@ -8,6 +8,12 @@
 # layers), generates objectness scores for each anchor box, and boxes in the
 # form of modifications to anchor center points and dimensions.
 #
+# Unlike the original FasterRCNN implementation (and many subsequent re-
+# implementations), which used two outputs per anchor (object and background)
+# and a softmax activation, this implementation uses only a single output and
+# sigmoid activation, which is simpler but equivalent. A value of < 0.5 is
+# background and >= 0.5 is an object.
+#
 # The RPN class and box delta regression losses are defined here.
 #
 

@@ -8,6 +8,12 @@
 # layers), generates objectness scores for each anchor box, and boxes in the
 # form of modifications to anchor center points and dimensions.
 #
+# Unlike the original FasterRCNN implementation (and many subsequent re-
+# implementations), which used two outputs per anchor (object and background)
+# and a softmax activation, this implementation uses only a single output and
+# sigmoid activation, which is simpler but equivalent. A value of < 0.5 is
+# background and >= 0.5 is an object.
+#
 # The RPN class and box regression losses are defined here.
 #
 
@@ -150,12 +156,10 @@ class RegionProposalNetwork(nn.Module):
     if self._allow_edge_proposals:
       # Use all proposals
       return anchors, scores, box_deltas
-#      return anchors, scores.cpu().detach().numpy(), box_deltas.cpu().detach().numpy()
     else:
       # Filter out those proposals generated at invalid anchors
       idxs = anchors_valid > 0
       return anchors[idxs], scores[idxs], box_deltas[idxs]
-#      return anchors[idxs], scores[idxs].cpu().numpy(), box_deltas[idxs].cpu().numpy()
 
 
 def class_loss(predicted_scores, y_true):
