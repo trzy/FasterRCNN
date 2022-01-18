@@ -1,3 +1,4 @@
+**TODO: upload gary.jpg to trzy.org/files/fasterrcnn**
 **TODO: report training time on my machine**
 
 Overview
@@ -199,7 +200,7 @@ There are three ways to run predictions on images:
 Examples of each:
 
 ```
-python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict=http://trzy.org/Files/FasterRCNN/Gary.jpg
+python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict=http://trzy.org/files/fasterrcnn/gary.jpg
 python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict-to-file=image.png
 python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict-all=test
 ```
