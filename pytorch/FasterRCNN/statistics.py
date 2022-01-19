@@ -36,10 +36,10 @@ class TrainingStatistics:
       Dataclass containing losses broken down by RPN and detector, and further
       by classifier and regression loss. 
     """
-    self._rpn_class_losses.append(loss.rpn_class.detach().cpu().numpy())
-    self._rpn_regression_losses.append(loss.rpn_regression.detach().cpu().numpy())
-    self._detector_class_losses.append(loss.detector_class.detach().cpu().numpy())
-    self._detector_regression_losses.append(loss.detector_regression.detach().cpu().numpy())
+    self._rpn_class_losses.append(loss.rpn_class)
+    self._rpn_regression_losses.append(loss.rpn_regression)
+    self._detector_class_losses.append(loss.detector_class)
+    self._detector_regression_losses.append(loss.detector_regression)
     self.rpn_class_loss = np.mean(self._rpn_class_losses)
     self.rpn_regression_loss = np.mean(self._rpn_regression_losses)
     self.detector_class_loss = np.mean(self._detector_class_losses)

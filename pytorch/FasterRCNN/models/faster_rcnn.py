@@ -27,11 +27,11 @@ from . import detector
 class FasterRCNNModel(nn.Module):
   @dataclass
   class Loss:
-    rpn_class:            t.Tensor
-    rpn_regression:       t.Tensor
-    detector_class:       t.Tensor
-    detector_regression:  t.Tensor
-    total:                t.Tensor
+    rpn_class:            float
+    rpn_regression:       float
+    detector_class:       float
+    detector_regression:  float
+    total:                float
 
   def __init__(self, num_classes, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True, dropout_probability = 0):
     super().__init__()
@@ -245,23 +245,9 @@ class FasterRCNNModel(nn.Module):
 
     Returns
     -------
-    Loss, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, np.ndarray,
-    np.ndarray
-   
-      1. Loss (a dataclass with class and regression losses for both the RPN
-         and detector states).
-      2. RPN objectness score map: (batch_size, height, width, num_anchors).
-      3. RPN box deltas map: (batch_size, height, width, num_anchors * 4),
-         where the box deltas are stored in the final dimension in
-         parameterized form ((ty, tx, th, tw) for each anchor).
-      4. Detected classes: (num_proposals, num_classes).
-      5. Detected box deltas: (num_proposals, 4*(num_classes-1)), stored in
-         parameterized form relative to the proposal boxes (which are not
-         returned). Note that class index 0 is the first non-background class.
-      6. Ground truth classes: (num_proposals, num_classes), for the final
-         detection stage.
-      7. Ground truth box deltas: (num_proposals, 2, 4*(num_classes-1)), for
-         the final detection stage.
+    Loss 
+      Loss (a dataclass with class and regression losses for both the RPN and
+      detector states).
     """
     self.train()
 
@@ -329,22 +315,31 @@ class FasterRCNNModel(nn.Module):
     rpn_regression_loss = rpn.regression_loss(predicted_box_deltas = rpn_box_deltas_map, y_true = gt_rpn_minibatch_map)
     detector_class_loss = detector.class_loss(predicted_classes = detector_classes, y_true = gt_classes)
     detector_regression_loss = detector.regression_loss(predicted_box_deltas = detector_box_deltas, y_true = gt_box_deltas)
+    total_loss = rpn_class_loss + rpn_regression_loss + detector_class_loss + detector_regression_loss
     loss = FasterRCNNModel.Loss(
-      rpn_class = rpn_class_loss,
-      rpn_regression = rpn_regression_loss,
-      detector_class = detector_class_loss,
-      detector_regression = detector_regression_loss,
-      total = rpn_class_loss + rpn_regression_loss + detector_class_loss + detector_regression_loss
+      rpn_class = rpn_class_loss.detach().cpu().item(),
+      rpn_regression = rpn_regression_loss.detach().cpu().item(),
+      detector_class = detector_class_loss.detach().cpu().item(),
+      detector_regression = detector_regression_loss.detach().cpu().item(),
+      total = total_loss.detach().cpu().item()
     )
 
     # Backprop
-    loss.total.backward()
+    total_loss.backward()
 
     # Optimizer step
     optimizer.step()
 
+    # Hint to free memory
+    del rpn_score_map
+    del rpn_box_deltas_map
+    del detector_classes
+    del detector_box_deltas
+    del gt_classes
+    del gt_box_deltas
+
     # Return losses and data useful for computing statistics
-    return loss, rpn_score_map, rpn_box_deltas_map, detector_classes, detector_box_deltas, gt_classes, gt_box_deltas
+    return loss
   
   def _sample_rpn_minibatch(self, rpn_map, object_indices, background_indices):
     """

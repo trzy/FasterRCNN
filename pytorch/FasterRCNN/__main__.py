@@ -116,16 +116,16 @@ def train(model):
     stats = TrainingStatistics()
     progbar = tqdm(iterable = iter(training_data), total = training_data.num_samples, postfix = stats.get_progbar_postfix())
     for sample in progbar:
-      loss, rpn_score_map, rpn_box_deltas_map, detector_classes, detector_box_deltas, gt_classes, gt_box_deltas = model.train_step(
-          optimizer = optimizer,
-          image_data = t.from_numpy(sample.image_data).unsqueeze(dim = 0).cuda(),
-          anchor_map = sample.anchor_map,
-          anchor_valid_map = sample.anchor_valid_map,
-          gt_rpn_map = t.from_numpy(sample.gt_rpn_map).unsqueeze(dim = 0).cuda(),
-          gt_rpn_object_indices = [ sample.gt_rpn_object_indices ],
-          gt_rpn_background_indices = [ sample.gt_rpn_background_indices ],
-          gt_boxes = [ sample.gt_boxes ]
-        )
+      loss = model.train_step(  # don't retain any tensors we don't need (helps memory usage)
+        optimizer = optimizer,
+        image_data = t.from_numpy(sample.image_data).unsqueeze(dim = 0).cuda(),
+        anchor_map = sample.anchor_map,
+        anchor_valid_map = sample.anchor_valid_map,
+        gt_rpn_map = t.from_numpy(sample.gt_rpn_map).unsqueeze(dim = 0).cuda(),
+        gt_rpn_object_indices = [ sample.gt_rpn_object_indices ],
+        gt_rpn_background_indices = [ sample.gt_rpn_background_indices ],
+        gt_boxes = [ sample.gt_boxes ]
+      )
       stats.on_training_step(loss = loss)
       progbar.set_postfix(stats.get_progbar_postfix())
     last_epoch = epoch == options.epochs
