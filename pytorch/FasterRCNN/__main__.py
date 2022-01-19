@@ -112,7 +112,7 @@ def train(model):
   print("Checkpoints       : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
   print("Final weights file: %s" % ("none" if not options.save_to else options.save_to))
   print("Best weights file : %s" % ("none" if not options.save_best_to else options.save_best_to))
-  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.no_cache)
+  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.cache_images)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   optimizer = create_optimizer(model = model)
   if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):
@@ -217,7 +217,7 @@ if __name__ == "__main__":
   parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "VOCdevkit/VOC2007", help = "VOC dataset directory")
   parser.add_argument("--train-split", metavar = "name", action = "store", default = "trainval", help = "Dataset split to use for training")
   parser.add_argument("--eval-split", metavar = "name", action = "store", default = "test", help = "Dataset split to use for evaluation")
-  parser.add_argument("--no-cache", action = "store_true", help = "Disable image caching during training (reduces memory usage)")
+  parser.add_argument("--cache-images", action = "store_true", help = "Cache images during training (requires ample CPU memory)")
   parser.add_argument("--periodic-eval-samples", metavar = "count", action = "store", default = 1000, help = "Number of samples to use during evaluation after each epoch")
   parser.add_argument("--checkpoint-dir", metavar = "dir", action = "store", help = "Save checkpoints after each epoch to the given directory")
   parser.add_argument("--plot", action = "store_true", help = "Plots the average precision of each class after evaluation (use with --train or --eval)")

@@ -1,4 +1,3 @@
-**TODO: default should be to *not* cache images and then mention that in docs**
 **TODO: report training time on my machine**
 
 Problems encountered and solutions
@@ -8,6 +7,7 @@ Problems encountered and solutions
   - Anchor quality
   - State saving PyTorch
   - Instability in Keras due to gradient propagation
+  - PyTorch memory leak
 
 # Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 *Copyright 2021-2022 Bart Trzynadlowski*
@@ -154,6 +154,8 @@ python -m pytorch.FasterRCNN --train --learning-rate=1e-4 --epochs=4 --load-from
 
 This assumes that the dataset is present at `VOCdevkit/VOC2007/`. The mean average precision is computed from a subset of evaluation samples after each epoch and the best weights are saved at the end of training. The final model weights, regardless of accuracy, can also be saved using `--save-to` and checkpoints can be saved after each epoch to a directory using `--checkpoint-dir`.
 
+**NOTE:** The data loader is simple but slow. If you have the CPU memory to spare (80-100 GB), `--cache-images` retains all images in memory after they are first read from disk, improving performance.
+ 
 The TensorFlow version has additional options. Namely, a choice of optimizer (SGD or Adam), two RoI pooling implementations, and the option for the detector stage to output logits rather than probabilities. TensorFlow lacks an exact RoI pooling operation so by default we use an approximation involving `tf.image.crop_and_resize`. A custom RoI pooling layer was implemented as a learning exercise but is too slow for practical use. When loading saved weights, make sure to set options consistently.
 
 For a complete list of options use `--help`.
@@ -179,6 +181,7 @@ python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict-all=test
 
 ## Suggestions for Future Improvement
 
+- Better data loaders that can prefetch samples automatically. Both PyTorch and TensorFlow provide functionality that ought to be able to do this.
 - Support for [COCO](https://cocodataset.org) and other datasets.
 - Support for batch sizes larger than one. This could be accomplished by resizing all images to the width of the largest image in the dataset, padding the additional space with black pixels, and ensuring that the ground truth RPN map ignores the padded space by marking anchors within it invalid. A substantial amount of code assumes a batch size of one and would need to be modified.
 - Replacement of the ground truth RPN map -- which stores anchor validity, object/background label, and box delta regression targets in a single tensor -- with simpler lists of anchors and labels. This would greatly simplify the loss functions, among other code, and potentially improve performance.
