@@ -84,7 +84,17 @@ def create_optimizer(model):
       params += [{ "params": [value], "weight_decay": options.weight_decay }]
   return t.optim.SGD(params, lr = options.learning_rate, momentum = options.momentum)
 
+def enable_cuda_memory_profiler(model):
+  from pytorch.FasterRCNN import profile
+  import sys
+  import threading
+  memory_profiler = profile.CUDAMemoryProfiler([ model ], filename = "cuda_memory.txt")
+  sys.settrace(memory_profiler)
+  threading.settrace(memory_profiler)
+
 def train(model):
+  if options.profile_cuda_memory:
+    enable_cuda_memory_profiler(model = model)
   print("Training Parameters")
   print("-------------------")
   print("Initial weights   : %s" % (options.load_from if options.load_from else "none"))
@@ -220,6 +230,7 @@ if __name__ == "__main__":
   parser.add_argument("--no-augment", action = "store_true", help = "Disable image augmentation (random horizontal flips) during training")
   parser.add_argument("--exclude-edge-proposals", action = "store_true", help = "Exclude proposals generated at anchors spanning image edges from being passed to detector stage")
   parser.add_argument("--dump-anchors", metavar = "dir", action = "store", help = "Render out all object anchors and ground truth boxes from the training set to a directory")
+  parser.add_argument("--profile-cuda-memory", action = "store_true", help = "Profile CUDA memory usage and write output to 'cuda_memory.txt'")
   options = parser.parse_args()
 
   # Perform optional procedures

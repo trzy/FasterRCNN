@@ -102,13 +102,24 @@ class RegionProposalNetwork(nn.Module):
       box_deltas_map = box_deltas_map
     )
 
+    # Detach from graph to avoid backprop. According to my understanding, this
+    # should be redundant here because we later take care to detach the
+    # proposals (in FasterRCNNModel). However, there is a memory leak involving
+    # t_convert_deltas_to_boxes() if this is not done here. Ultimately, the
+    # numerical results are not affected. Proposals returned from this function
+    # are supposed to be constant and are fed into the detector stage. See any
+    # commit prior to 209141c for an earlier version of the code here that
+    # performed all operations on CPU using NumPy, which was slightly slower
+    # but equivalent.
+    box_deltas = box_deltas.detach()
+
     # Convert regressions to box corners
     proposals = math_utils.t_convert_deltas_to_boxes(
       box_deltas = box_deltas,
       anchors = t.from_numpy(anchors).cuda(),
-      box_delta_means = t.tensor([ 0, 0, 0, 0 ], dtype = t.float32).cuda(),
-      box_delta_stds = t.tensor([ 1, 1, 1, 1 ], dtype = t.float32).cuda()
-    ).float()
+      box_delta_means = t.tensor([0, 0, 0, 0], dtype = t.float32, device = "cuda"),
+      box_delta_stds = t.tensor([1, 1, 1, 1], dtype = t.float32, device = "cuda")
+    )
 
     # Keep only the top-N scores. Note that we do not care whether the
     # proposals were labeled as objects (score > 0.5) and peform a simple
@@ -120,9 +131,9 @@ class RegionProposalNetwork(nn.Module):
     objectness_scores = objectness_scores[sorted_indices][0:max_proposals_pre_nms]  # corresponding scores
 
     # Clip to image boundaries
-    proposals[:,0:2] = t.maximum(proposals[:,0:2], t.tensor([ 0 ], dtype = t.float32).cuda())
-    proposals[:,2] = t.minimum(proposals[:,2], t.tensor([ image_shape[1] ], dtype = t.float32).cuda())
-    proposals[:,3] = t.minimum(proposals[:,3], t.tensor([ image_shape[2] ], dtype = t.float32).cuda())
+    proposals[:,0:2] = t.clamp(proposals[:,0:2], min = 0)
+    proposals[:,2] = t.clamp(proposals[:,2], max = image_shape[1])
+    proposals[:,3] = t.clamp(proposals[:,3], max = image_shape[2])
 
     # Remove anything less than 16 pixels on a side
     height = proposals[:,2] - proposals[:,0]
@@ -133,7 +144,7 @@ class RegionProposalNetwork(nn.Module):
 
     # Perform NMS
     idxs = nms(
-      boxes = proposals, 
+      boxes = proposals,
       scores = objectness_scores,
       iou_threshold = 0.7
     )
@@ -141,7 +152,6 @@ class RegionProposalNetwork(nn.Module):
     proposals = proposals[idxs]
 
     # Return network outputs as PyTorch tensors and extracted object proposals
-    # as NumPy arrays
     return objectness_score_map, box_deltas_map, proposals
 
   def _extract_valid(self, anchor_map, anchor_valid_map, objectness_score_map, box_deltas_map):

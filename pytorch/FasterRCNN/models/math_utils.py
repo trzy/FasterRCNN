@@ -122,7 +122,7 @@ def t_convert_deltas_to_boxes(box_deltas, anchors, box_delta_means, box_delta_st
   box_deltas = box_deltas * box_delta_stds + box_delta_means
   center = anchors[:,2:4] * box_deltas[:,0:2] + anchors[:,0:2]  # center_x = anchor_width * tx + anchor_center_x, center_y = anchor_height * ty + anchor_center_y
   size = anchors[:,2:4] * t.exp(box_deltas[:,2:4])              # width = anchor_width * exp(tw), height = anchor_height * exp(th)
-  boxes = t.empty(box_deltas.shape, dtype = t.float32).cuda()
+  boxes = t.empty(box_deltas.shape, dtype = t.float32, device = "cuda")
   boxes[:,0:2] = center - 0.5 * size                            # y1, x1
   boxes[:,2:4] = center + 0.5 * size                            # y2, x2
   return boxes
