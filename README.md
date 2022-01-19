@@ -1,3 +1,4 @@
+**TODO: default should be to *not* cache images and then mention that in docs**
 **TODO: report training time on my machine**
 
 Problems encountered and solutions
