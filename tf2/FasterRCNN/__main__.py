@@ -207,7 +207,7 @@ def train(model):
   print("Optimizer                 : %s" % options.optimizer)
   print("Learning rate             : %f" % options.learning_rate)
   print("Gradient norm clipping    : %s" % ("disabled" if options.clipnorm <= 0 else ("%f" % options.clipnorm)))
-  print("SGD Momentum              : %f" % options.momentum)
+  print("SGD momentum              : %f" % options.momentum)
   print("Adam Beta-1               : %f" % options.beta1)
   print("Adam Beta-2               : %f" % options.beta2)
   print("Weight decay              : %f" % options.weight_decay)
