@@ -225,7 +225,7 @@ model.load_state_dict(state["model_state_dict"])
 optimizer.load_state_dict(state["optimizer_state_dict"])
 ```
 
-What could possibly go wrong? This left me pulling my hair out for *weeks*. My model was acheiving very good mean average precision scores, comparable to the paper and other implementations, but the predicted boxes seemed ever-so-slightly worse when examined visually. The effect was subtle and random.
+What could possibly go wrong? This left me pulling my hair out for *weeks*. My model was achieving very good mean average precision scores, comparable to the paper and other implementations, but the predicted boxes seemed ever-so-slightly worse when examined visually. The effect was subtle and random.
 
 I went through every line of code tearing the model apart and putting it back together. At last, after glancing at these lines for what seemed like the thousandth time, it hit me: I was saving the optimizer state, as I had seen done elsewhere in PyTorch examples, but was also *loading* it again. The training process
 involves changing the learning rate after 10 epochs. In my implementation, this is done by re-running the program initialized with the previous run's weights, but I was clobbering the new learning rate with the *old* one.
