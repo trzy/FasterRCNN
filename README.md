@@ -18,7 +18,7 @@ Problems encountered and solutions
   <img src="docs/images/gary.png" height="250" /> <img src="docs/images/scud.png" height="250" />
 </p>
 
-This is a fresh implementation of the Faster R-CNN object detection model in both PyTorch and TensorFlow 2 with Keras, using Python 3.7 or higher. Although several years old now, Faster R-CNN remains a foundational work in the field and still influences modern object detectors. 
+This is a fresh implementation of the Faster R-CNN object detection model in both PyTorch and TensorFlow 2 with Keras, using Python 3.7 or higher. Although several years old now, Faster R-CNN remains a foundational work in the field and still influences modern object detectors.
 
 I set out to replicate [the original paper](docs/publications/faster_rcnn.pdf) from scratch using Keras but quickly ran into difficulties and spent considerable time overcoming them. For the benfit of those undertaking a similar self-learning exercise -- whether involving this or other machine learning models -- my struggles, learnings, and observations are [documented here](#development-learnings).
 
@@ -26,27 +26,27 @@ My final results using the VOC2007 dataset's 5011 `trainval` images match the pa
 
 | Class | Average Precision |
 |-------|-------------------|
-| car        | 85.6% |
-| horse      | 84.4% |
-| cat        | 83.7% |
-| bicycle    | 83.5% |
-| dog        | 82.0% |
+| car        | 85.2% |
+| horse      | 84.5% |
+| cat        | 84.1% |
+| bicycle    | 81.8% |
+| dog        | 81.6% |
 | person     | 81.1% |
-| bus        | 78.8% |
-| train      | 78.5% |
-| cow        | 78.0% |
-| motorbike  | 77.8% |
+| bus        | 79.3% |
+| train      | 78.2% |
+| cow        | 76.8% |
+| motorbike  | 75.8% |
 | tvmonitor  | 74.3% |
-| sheep      | 68.5% |
-| aeroplane  | 68.4% |
-| diningtable| 67.5% |
+| sheep      | 72.7% |
+| aeroplane  | 69.1% |
+| diningtable| 68.2% |
 | bird       | 66.9% |
-| sofa       | 60.6% |
-| boat       | 55.2% |
-| bottle     | 52.7% |
-| chair      | 50.5% |
-| pottedplant| 41.1% |
-|**Mean**   | **71.0%** |
+| sofa       | 64.9% |
+| boat       | 55.3% |
+| bottle     | 53.7% |
+| chair      | 52.3% |
+| pottedplant| 40.4% |
+|**Mean**   | **71.3%** |
 
 ## Background Material
 
@@ -107,7 +107,7 @@ Getting CUDA working is more involved and beyond the scope of this document. I u
 
 This implementation of Faster R-CNN accepts [PASCAL Visual Object Classes](http://host.robots.ox.ac.uk/pascal/VOC/) datasets. The datasets are organized by year and VOC2007 is the default for
 training and benchmarking. Images are split into `train`, `val`, and `test` splits, representing the training, validation, and test datasets. There is also a `trainval` split, which is the union of
-`train` and `val`. This is what Faster R-CNN is trained on and `test` is used for validation. This is configurable on the command line. 
+`train` and `val`. This is what Faster R-CNN is trained on and `test` is used for validation. This is configurable on the command line.
 
 A script is included to automatically fetch and extract VOC2007 in the default location: `download_dataset.sh`. If your dataset is in a different location, use `--dataset-dir` to point the program to it.
 
@@ -115,7 +115,7 @@ A script is included to automatically fetch and extract VOC2007 in the default l
 
 To train the model, initial weights for the shared VGG-16 layers are required. Keras provides these but PyTorch does not. Instead, the PyTorch model supports initialization from one of two sources:
 
-1. Pre-trained VGG-16 Caffe weights that can be found online as `vgg16_caffe.pth` (SHA1: `e6527a06abfac585939b8d50f235569a33190570`). 
+1. Pre-trained VGG-16 Caffe weights that can be found online as `vgg16_caffe.pth` (SHA1: `e6527a06abfac585939b8d50f235569a33190570`).
 2. Pre-trained VGG-16 weights obtained using [my own Keras model](https://github.com/trzy/VGG16).
 
 Fortunately, `vgg16_caffe.pth` and pre-trained Faster R-CNN weights for both the PyTorch and TensorFlow versions can be obtained using `download_models.sh`. My web host is not particularly reliable so if the site is down, try again later or contact me. The models were trained using the scripts included in this repository (`train_pytorch.sh` and `train_tf2.sh`).
@@ -155,7 +155,7 @@ python -m pytorch.FasterRCNN --train --learning-rate=1e-4 --epochs=4 --load-from
 This assumes that the dataset is present at `VOCdevkit/VOC2007/`. The mean average precision is computed from a subset of evaluation samples after each epoch and the best weights are saved at the end of training. The final model weights, regardless of accuracy, can also be saved using `--save-to` and checkpoints can be saved after each epoch to a directory using `--checkpoint-dir`.
 
 **NOTE:** The data loader is simple but slow. If you have the CPU memory to spare (80-100 GB), `--cache-images` retains all images in memory after they are first read from disk, improving performance.
- 
+
 The TensorFlow version has additional options. Namely, a choice of optimizer (SGD or Adam), two RoI pooling implementations, and the option for the detector stage to output logits rather than probabilities. TensorFlow lacks an exact RoI pooling operation so by default we use an approximation involving `tf.image.crop_and_resize`. A custom RoI pooling layer was implemented as a learning exercise but is too slow for practical use. When loading saved weights, make sure to set options consistently.
 
 For a complete list of options use `--help`.
