@@ -170,7 +170,7 @@ python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict-all=test
 I encountered numerous difficulties getting these models working. My initial hope was to rely only on [the paper](docs/publications/faster_rcnn.pdf) but I had to give in and take a peak at existing code bases because there are some important details that are not expounded in the paper. If you are struggling with a
 similar situation, take heart and remember you are not alone! Below are some important things I learned along the way.
 
-# Use Object *and* Background Proposals for Training
+### Use Object *and* Background Proposals for Training
 
 The region proposal network (RPN) generates a box at each anchor consisting of a score (the *objectness score*) and coordinates. The published implementation uses a binary classification scheme with two mutually exclusive one-hot encoded class outputs per anchor: object and background. Softmax is applied to each pair of
 signals for ever anchor. This is redundant and my implementation produces a single output with a sigmoid activation, which is equivalent. Each box is labeled as being an object (1.0) or background (0.0). Output scores above 0.5 can be interpreted as objects. These boxes are then passed to a labeling stage that decides whether they
@@ -186,7 +186,7 @@ In order to train the detector stage, Faster R-CNN needs to see a lot of example
 the detector stage to continue learning because labeling (see the function `FasterRCNNModel._label_proposals()` in both versions of my model) is decided independently of the RPN's predictions. **Takeaway lesson:** if your object detector is learning but seems to be struggling to achieve high precision, consider whether
 you are inadvertently limiting the amount of samples it is exposed to during training.
 
-# Anchor Labeling Quality
+### Anchor Labeling Quality
 
 Anchors are conceptually very simple but it is *very* easy to botch them. I rewrote my implementation several times and still got it wrong. I would not have discovered this if I had not compared my anchor labels to those of other implementations. One particularly nasty issue I encountered was that using double precision
 coordinates could adversely affect anchor labeling. Consider the two examples below. The green boxes are the ground truth object boxes and the yellow boxes are the anchors that overlap sufficiently with a ground truth box to be labeled as *object* anchors. Specifically, those anchors whose *intersection-over-union* (IoU) with a
@@ -203,19 +203,19 @@ exactly the same but precision issues can cause a very tiny discrepancy, causing
 
 There are plenty of other ways to screw up anchor labeling, too. **Takeaway lesson**: don't double-check your anchor code. Don't triple-check it. Check it at least 10 times. And then check it 10 more times once your further along in implementing the rest of the model.
 
-# Sampling Edge Proposals
+### Sampling Edge Proposals
 
 **TODO: write me**
 
-# Saving State in PyTorch
+### Saving State in PyTorch
 
 **TODO: write me**
 
-# Instabilities in TensorFlow Due to Gradient Propagation
+### Instabilities in TensorFlow Due to Gradient Propagation
 
 **TODO: write me**
 
-# PyTorch Memory Leaks
+### PyTorch Memory Leaks
 
 **TODO: write me**
 
