@@ -9,15 +9,6 @@
 # python -m tf2.FasterRCNN --help
 #
 
-# TODO
-# ----
-# - Argparse program name -> Faster R-CNN?
-# - Make a comment in README.md about the importance of tf.stop_gradient (particularly in the loss functions) and
-#   investigate this at some point.
-# - Verify mAP using external program
-# - Exhaustive test of all options to make sure they are still working (tf2 and pytorch versions)
-#
-
 #
 # TODO
 # ----
