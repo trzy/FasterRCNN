@@ -100,7 +100,7 @@ source tf2_venv/bin/activate
 pip install -r tf2/requirements.txt
 ```
 
-Getting CUDA working is more involved and beyond the scope of this document. I use an NVIDIA docker container and `tf-nightly-gpu` packages.
+Getting CUDA working is more involved and beyond the scope of this document. On Linux, I use an NVIDIA docker container and `tf-nightly-gpu` packages. On Windows, with CUDA installed, the ordinary `tensorflow` package should just work out of the box with CUDA support.
 
 
 ## Dataset
