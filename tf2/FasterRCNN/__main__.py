@@ -101,7 +101,7 @@ def _sample_rpn_minibatch(rpn_map, object_indices, background_indices, rpn_minib
   num_negative_samples = rpn_minibatch_size - num_positive_samples          # the rest should be negative
   positive_anchor_idxs = random.sample(range(num_positive_anchors), num_positive_samples)
   negative_anchor_idxs = random.sample(range(num_negative_anchors), num_negative_samples)
-  
+
   # Construct index expressions into RPN map
   positive_anchors = positive_anchors[positive_anchor_idxs]
   negative_anchors = negative_anchors[negative_anchor_idxs]
@@ -190,7 +190,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False, print_av
       break
   if print_average_precisions:
     precision_recall_curve.print_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
-  mean_average_precision = 100.0 * precision_recall_curve.compute_mean_average_precision() 
+  mean_average_precision = 100.0 * precision_recall_curve.compute_mean_average_precision()
   print("Mean Average Precision = %1.2f%%" % mean_average_precision)
   if plot:
     precision_recall_curve.plot_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
@@ -220,7 +220,7 @@ def train(model):
   print("Checkpoints               : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
   print("Final weights file        : %s" % ("none" if not options.save_to else options.save_to))
   print("Best weights file         : %s" % ("none" if not options.save_best_to else options.save_best_to))
-  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.cache_images)
+  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = options.cache_images)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):
     os.makedirs(options.checkpoint_dir)

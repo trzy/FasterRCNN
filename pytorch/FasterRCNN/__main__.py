@@ -59,7 +59,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False, print_av
     scored_boxes_by_class_index = model.predict(
       image_data = t.from_numpy(sample.image_data).unsqueeze(dim = 0).cuda(),
       score_threshold = 0.05  # lower threshold for evaluation
-    )  
+    )
     precision_recall_curve.add_image_results(
       scored_boxes_by_class_index = scored_boxes_by_class_index,
       gt_boxes = sample.gt_boxes
@@ -69,7 +69,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False, print_av
       break
   if print_average_precisions:
     precision_recall_curve.print_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
-  mean_average_precision = 100.0 * precision_recall_curve.compute_mean_average_precision() 
+  mean_average_precision = 100.0 * precision_recall_curve.compute_mean_average_precision()
   print("Mean Average Precision = %1.2f%%" % mean_average_precision)
   if plot:
     precision_recall_curve.plot_average_precisions(class_index_to_name = voc.Dataset.class_index_to_name)
@@ -112,7 +112,7 @@ def train(model):
   print("Checkpoints       : %s" % ("disabled" if not options.checkpoint_dir else options.checkpoint_dir))
   print("Final weights file: %s" % ("none" if not options.save_to else options.save_to))
   print("Best weights file : %s" % ("none" if not options.save_best_to else options.save_best_to))
-  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = not options.cache_images)
+  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = not options.no_augment, shuffle = True, cache = options.cache_images)
   eval_data = voc.Dataset(dir = options.dataset_dir, split = options.eval_split, augment = False, shuffle = False, cache = False)
   optimizer = create_optimizer(model = model)
   if options.checkpoint_dir and not os.path.exists(options.checkpoint_dir):
@@ -259,4 +259,4 @@ if __name__ == "__main__":
     predict_all(model = model, split = options.predict_all)
   else:
     print("Nothing to do. Did you mean to use --train or --predict?")
-  
+
