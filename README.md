@@ -1,14 +1,3 @@
-**TODO: report training time on my machine**
-
-Problems encountered and solutions
-
-  - Use all RPN predictions regardless of objectness score being positive or not
-  - Sampling edge proposals
-  - Anchor quality
-  - State saving PyTorch
-  - Instability in Keras due to gradient propagation
-  - PyTorch memory leak
-
 # Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 *Copyright 2021-2022 Bart Trzynadlowski*
 
@@ -177,6 +166,57 @@ python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict-all=test
 ```
 
 ## Development Learnings
+
+I encountered numerous difficulties getting these models working. My initial hope was to rely only on [the paper](docs/publications/faster_rcnn.pdf) but I had to give in and take a peak at existing code bases because there are some important details that are not expounded in the paper. If you are struggling with a
+similar situation, take heart and remember you are not alone! Below are some important things I learned along the way.
+
+# Use Object *and* Background Proposals for Training
+
+The region proposal network (RPN) generates a box at each anchor consisting of a score (the *objectness score*) and coordinates. The published implementation uses a binary classification scheme with two mutually exclusive one-hot encoded class outputs per anchor: object and background. Softmax is applied to each pair of
+signals for ever anchor. This is redundant and my implementation produces a single output with a sigmoid activation, which is equivalent. Each box is labeled as being an object (1.0) or background (0.0). Output scores above 0.5 can be interpreted as objects. These boxes are then passed to a labeling stage that decides whether they
+sufficiently overlap with ground truth object boxes. If so, the boxes are labeled according to the class of the overlapping ground truth box. Otherwise, they are labeled as background. That is, the RPN can suggest that a box contains an object but it can be wrong. The set of labeled boxes, called *proposals* or *regions of interest*, are then passed to the detector stage.
+
+I initially wrongly assumed that only those boxes that the RPN predicted to be *objects* should be passed along and labeled and that background results should be pruned immediately. The model learned but did so poorly. The mean average precision was well below 50% (possibly as low as 30-40%, if I remember correctly). I was stumped for an embarrassingly long time. The model
+was obviously learning *something* only *not well enough*. Why?
+
+Eventually, I relented and looked at other implementations and realized that RPN outputs should *not* be filtered. Rather, the objectness score should be used to sort them and the top *N* should be labeled and passed to the detector stage even if the RPN has classified them as background. In the original implementation, the
+RPN object class output was used as a score and the background output was ignored entirely. In my implementation, the single output itself can be interpreted as a score.
+
+In order to train the detector stage, Faster R-CNN needs to see a lot of examples. By putting too much trust into the RPN's judgment, I was excluding a huge number of proposals. And because all stages of Faster R-CNN are jointly trained, passing on boxes erroneously classified as background by the RPN still allows
+the detector stage to continue learning because labeling (see the function `FasterRCNNModel._label_proposals()` in both versions of my model) is decided independently of the RPN's predictions. **Takeaway lesson:** if your object detector is learning but seems to be struggling to achieve high precision, consider whether
+you are inadvertently limiting the amount of samples it is exposed to during training.
+
+# Anchor Labeling Quality
+
+Anchors are conceptually very simple but it is *very* easy to botch them. I rewrote my implementation several times and still got it wrong. I would not have discovered this if I had not compared my anchor labels to those of other implementations. One particularly nasty issue I encountered was that using double precision
+coordinates could adversely affect anchor labeling. Consider the two examples below. The green boxes are the ground truth object boxes and the yellow boxes are the anchors that overlap sufficiently with a ground truth box to be labeled as *object* anchors. Specifically, those anchors whose *intersection-over-union* (IoU) with a
+ground truth box is greater than or equal to 70% or, if no anchors meet this threshold, the highest scoring anchor(s).
+
+<p align="center">
+  <img src="docs/images/anchors_good.png" height="150" /> <img src="docs/images/anchors_bad.png" height="150" />
+</p>
+
+The image on the left is correct and the one on the right is wrong. Both were generated using identical code (`generate_anchor_maps()` in `anchors.py`) but the correct anchors were produced by casting the final results to `np.float32` from `np.float64`.
+
+Why is it so sensitive? The reason is that it is acceptable for *multiple* anchors to be labeled as object anchors. In some cases, all anchors will have less than 70% IoU, and the ground truth box is small enough to fit entirely inside of multiple anchors, as happens here. In such a case, the IoU score should be
+exactly the same but precision issues can cause a very tiny discrepancy, causing some anchors to appear to score "better" than others.
+
+There are plenty of other ways to screw up anchor labeling, too. **Takeaway lesson**: don't double-check your anchor code. Don't triple-check it. Check it at least 10 times. And then check it 10 more times once your further along in implementing the rest of the model.
+
+# Sampling Edge Proposals
+
+**TODO: write me**
+
+# Saving State in PyTorch
+
+**TODO: write me**
+
+# Instabilities in TensorFlow Due to Gradient Propagation
+
+**TODO: write me**
+
+# PyTorch Memory Leaks
+
 **TODO: write me**
 
 ## Suggestions for Future Improvement
