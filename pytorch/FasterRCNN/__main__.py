@@ -257,6 +257,6 @@ if __name__ == "__main__":
     predict_one(model = model, url = options.predict_to_file, show_image = False, output_path = "predictions.png")
   elif options.predict_all:
     predict_all(model = model, split = options.predict_all)
-  else:
+  elif not options.dump_anchors:
     print("Nothing to do. Did you mean to use --train or --predict?")
 
