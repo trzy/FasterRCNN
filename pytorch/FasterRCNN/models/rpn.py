@@ -94,7 +94,7 @@ class RegionProposalNetwork(nn.Module):
     objectness_score_map = objectness_score_map.permute(0, 2, 3, 1).contiguous()
     box_deltas_map = box_deltas_map.permute(0, 2, 3, 1).contiguous()
 
-    # Returning to CPU land by extracting proposals as lists (NumPy arrays)
+    # Extract box deltas and anchors as (N,4) tensors and scores as (N,) list
     anchors, objectness_scores, box_deltas = self._extract_valid(
       anchor_map = anchor_map,
       anchor_valid_map = anchor_valid_map,
