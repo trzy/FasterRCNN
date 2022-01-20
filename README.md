@@ -9,7 +9,7 @@
 
 This is a fresh implementation of the Faster R-CNN object detection model in both PyTorch and TensorFlow 2 with Keras, using Python 3.7 or higher. Although several years old now, Faster R-CNN remains a foundational work in the field and still influences modern object detectors.
 
-I set out to replicate [the original paper](docs/publications/faster_rcnn.pdf) from scratch using Keras but quickly ran into difficulties and spent considerable time overcoming them. For the benfit of those undertaking a similar self-learning exercise -- whether involving this or other machine learning models -- my struggles, learnings, and observations are [documented here](#development-learnings).
+I set out to replicate [the original paper](docs/publications/faster_rcnn.pdf) from scratch using Keras but quickly ran into difficulties and spent considerable time overcoming them. For the benefit of those undertaking a similar self-learning exercise -- whether involving this or other machine learning models -- my struggles, learnings, and observations are [documented here](#development-learnings).
 
 My final results using the VOC2007 dataset's 5011 `trainval` images match the paper's. Convergence is achieved in 14 epochs (10 epochs at a learning rate of 0.001 and 4 more at 0.0001), consistent with the learning schedule the paper used. My implementation includes only a VGG-16 backbone as the feature extractor.
 
@@ -58,7 +58,7 @@ Instructions here are given for Linux systems.
 
 ### PyTorch Setup with CUDA
 
-As far as I know, it is not possible to obtain CUDA-enabled PyTorch packages using pip. Therefore, the required packages are commented out in `pytorch/requirements.txt` and must be obtained manually using a command found on the PyTorch web site. Begin by executing the following commands in the base Faster R-CNN source directory:
+The PyTorch version *requires* CUDA. As far as I know, it is not possible to obtain CUDA-enabled PyTorch packages using pip. Therefore, the required packages are commented out in `pytorch/requirements.txt` and must be obtained manually using a command found on the PyTorch web site. Begin by executing the following commands in the base Faster R-CNN source directory:
 
 ```
 python -m venv pytorch_venv
@@ -81,7 +81,7 @@ If all goes well, this should supplant the CPU-only version of PyTorch that was 
 
 ### TensorFlow 2 Setup
 
-TensorFlow environment set up *without* CUDA is very straightforward. The included `tf2/requirements.txt` file should suffice.
+The TensorFlow version does not require CUDA, although its use is highly advised to achieve acceptable performance. TensorFlow environment set up *without* CUDA is very straightforward. The included `tf2/requirements.txt` file should suffice.
 
 ```
 python -m venv tf2_venv
@@ -98,7 +98,7 @@ This implementation of Faster R-CNN accepts [PASCAL Visual Object Classes](http:
 training and benchmarking. Images are split into `train`, `val`, and `test` splits, representing the training, validation, and test datasets. There is also a `trainval` split, which is the union of
 `train` and `val`. This is what Faster R-CNN is trained on and `test` is used for validation. This is configurable on the command line.
 
-A script is included to automatically fetch and extract VOC2007 in the default location: `download_dataset.sh`. If your dataset is in a different location, use `--dataset-dir` to point the program to it.
+The `download_dataset.sh` script will automatically fetch and extract VOC2007 to the default location: `VOCdevkit/VOC2007`. If your dataset is somewhere else, use `--dataset-dir` to point the program to it.
 
 ## Pre-Trained Models and Initial Weights
 
@@ -145,7 +145,7 @@ This assumes that the dataset is present at `VOCdevkit/VOC2007/`. The mean avera
 
 **NOTE:** The data loader is simple but slow. If you have the CPU memory to spare (80-100 GB), `--cache-images` retains all images in memory after they are first read from disk, improving performance.
 
-The TensorFlow version has additional options. Namely, a choice of optimizer (SGD or Adam), two RoI pooling implementations, and the option for the detector stage to output logits rather than probabilities. TensorFlow lacks an exact RoI pooling operation so by default we use an approximation involving `tf.image.crop_and_resize`. A custom RoI pooling layer was implemented as a learning exercise but is too slow for practical use. When loading saved weights, make sure to set options consistently.
+The TensorFlow version has additional options. Namely, a choice of optimizer (SGD or Adam), two RoI pooling implementations, and the option for the detector stage to output logits rather than probabilities. TensorFlow lacks an exact RoI pooling operation so by default, an approximation involving `tf.image.crop_and_resize` is used. A custom RoI pooling layer was implemented as a learning exercise but is too slow for practical use. When loading saved weights, make sure to set options consistently.
 
 For a complete list of options use `--help`.
 
@@ -185,12 +185,12 @@ RPN object class output was used as a score and the background output was ignore
 In order to train the detector stage, Faster R-CNN needs to see a lot of examples. By putting too much trust into the RPN's judgment, I was excluding a huge number of proposals. And because all stages of Faster R-CNN are jointly trained, passing on boxes erroneously classified as background by the RPN still allows
 the detector stage to continue learning because labeling (see the function `FasterRCNNModel._label_proposals()` in both versions of my model) is decided independently of the RPN's predictions.
 
-**Takeaway lesson:** if your object detector is learning but seems to be struggling to achieve high precision, consider whether
+**Takeaway Lesson:** If your object detector is learning but seems to be struggling to achieve high precision, consider whether
 you are inadvertently limiting the amount of samples it is exposed to during training.
 
 ### Anchor Label Quality
 
-Anchors are conceptually very simple but it is *very* easy to botch them. I rewrote my implementation several times and still got it wrong. I would not have discovered this had I not compared my anchor labels to those of other implementations. One particularly nasty issue I encountered was that using double precision
+Anchors are conceptually very simple but it is *very* easy to botch them. I rewrote my implementation several times and still got it wrong. I would never have discovered this had I not compared my anchor labels to those of other implementations. One particularly nasty issue I encountered was that using double precision
 coordinates could adversely affect anchor labeling. Consider the two examples below. The green boxes are the ground truth object boxes and the yellow boxes are the anchors that overlap sufficiently with a ground truth box to be labeled as *object* anchors. Specifically, those anchors whose *intersection-over-union* (IoU) with a
 ground truth box is greater than or equal to 70% or, if no anchors meet this threshold, the highest scoring anchor(s).
 
@@ -203,7 +203,7 @@ The image on the left is correct and the one on the right is wrong. Both were ge
 Why is it so sensitive? The reason is that it is acceptable for *multiple* anchors to be labeled as object anchors. In some cases, all anchors will have less than 70% IoU and the ground truth box will be small enough to fit entirely inside of multiple anchors, as happens here. In such cases, the IoU score should be
 exactly the same but precision issues may create a very tiny discrepancy, causing some anchors to appear to score "better" than others.
 
-**Takeaway lesson:** don't double-check your anchor code. Don't triple-check it. Check it at least 10 times. And then check it 10 more times once further along in implementing the rest of the model. There are plenty of other ways to screw up anchor labeling, too.
+**Takeaway Lesson:** Don't double-check your anchor code. Don't triple-check it. Check it at least 10 times. And then check it 10 more times once further along in implementing the rest of the model. There are plenty of other ways to screw up anchor labeling, too.
 
 ### Saving State in PyTorch
 
@@ -220,7 +220,7 @@ t.save({
 And then load it like this:
 
 ```
-state = t.load(options.load_from)
+state = t.load(filename)
 model.load_state_dict(state["model_state_dict"])
 optimizer.load_state_dict(state["optimizer_state_dict"])
 ```
@@ -228,13 +228,13 @@ optimizer.load_state_dict(state["optimizer_state_dict"])
 What could possibly go wrong? This left me pulling my hair out for *weeks*. My model was acheiving very good mean average precision scores, comparable to the paper and other implementations, but the predicted boxes seemed ever-so-slightly worse when examined visually. The effect was subtle and random.
 
 I went through every line of code tearing the model apart and putting it back together. At last, after glancing at these lines for what seemed like the thousandth time, it hit me: I was saving the optimizer state, as I had seen done elsewhere in PyTorch examples, but was also *loading* it again. The training process
-involves changing the learning rate after 10 epochs. In my implementation, this is done by running the program again initialized with the previous run's weights, but I was clobbering the new learning rate with the *old* one.
+involves changing the learning rate after 10 epochs. In my implementation, this is done by re-running the program initialized with the previous run's weights, but I was clobbering the new learning rate with the *old* one.
 
-**Takeaway lesson:** when saving and loading model state, pay careful attention to what it actually includes.
+**Takeaway Lesson:** When saving and loading model state, pay careful attention to what it actually includes.
 
 ### Instabilities in TensorFlow Due to Gradient Propagation
 
-The reason the TensorFlow version includes an alternative choice of optimizer and other options (`--clipnorm` and `--detector-logits`) is because I added them in hopes of fixing convergence issues that plagued me for weeks. The first sign of trouble was the appearance of NaNs in the loss that would then clobber all the
+The reason the TensorFlow version includes an alternative choice of optimizer and other options (`--clipnorm` and `--detector-logits`) is because I added them while debugging convergence issues that plagued me for weeks. The first sign of trouble was the appearance of NaNs in the loss that would then clobber all the
 weights and prevent further training. Having seen the use of gradient norm clipping in [Matterport's MaskRCNN implementation](https://github.com/matterport/Mask_RCNN), I added the `--clipnorm` option and the NaNs mostly disappeared when using values of 4.0 or less. They would ocassionally appear in the loss but this turned out to be an innocuous and rare issue: no valid proposals generated by the RPN. The fix was obvious; see
 the change to `detector.py` in commit `aed8143`.
 
@@ -246,21 +246,21 @@ Looking at other TensorFlow implementations of Faster R-CNN, I stumbled upon the
 I still do not understand why avoiding backprop through the `tf.less` operation is necessary in TensorFlow nor how I could have pinpointed this on my own. Despite being implemented as a piecewise function, the regression loss *is* continuous at all points and the PyTorch version does not require this "fix" at all. Anyone willing to help me understand
 is encouraged to email me!
 
-**Takeaway lesson:** learn to understand what exactly gradients in your code are doing. Don't reach for gradient clipping until you are absolutely sure it is necessary.
+**Takeaway Lesson:** Learn to understand what exactly gradients in your code are doing. Don't reach for gradient clipping until you are absolutely sure it is necessary.
 
 ### PyTorch Memory Leaks
 
 Proposal boxes fed into the detector stage are supposed to be treated as constant inputs. That is, gradients are not computed for them. I initially used the same approach as [Yun Chen's Faster R-CNN implementation](https://github.com/chenyuntc/simple-faster-rcnn-pytorch): keep proposals on the CPU as NumPy arrays. To squeeze
-out a little more performance, I decided to convert the code to PyTorch CUDA tensors. To prevent backprop, the proposal and detector grount truth tensors are detached from the graph in `FasterRCNNModel.train_step()`. To my atonishment, this introduced a CUDA memory leak!
+out a little more performance, I decided to convert the code to PyTorch CUDA tensors. To prevent backprop, the proposal and detector ground truth tensors are detached from the graph in `FasterRCNNModel.train_step()`. To my astonishment, this introduced a CUDA memory leak!
 
 I am still not sure *why* memory is being leaked. It appears some intermediate tensors are being kept alive. I managed to identify a fix using an excellent [CUDA memory profiling tool by Nader Akoury](https://gist.github.com/dojoteef/26cd46f7cc38b38e6f443c5f62411aa3), now included in this code base. I have filed [a bug
 report](https://github.com/pytorch/pytorch/issues/71495) on the PyTorch project, which explains the problem in more detail. It could be my mistake but I do not understand how.
 
-**Takeaway lesson:** frameworks like PyTorch and TensorFlow cannot be treated as black boxes forever. Sometimes you have to dig in and really understand what is going on at a low level.
+**Takeaway Lesson:** Frameworks like PyTorch and TensorFlow cannot be treated as black boxes forever. Sometimes you have to dig in and really understand what is going on at a low level.
 
 ## Suggestions for Future Improvement
 
-- Better data loaders that can prefetch samples automatically. Both PyTorch and TensorFlow provide functionality that ought to be able to do this.
+- Better data loaders that can prefetch samples automatically. Both PyTorch and TensorFlow provide functionality that can accomplish this.
 - Support for [COCO](https://cocodataset.org) and other datasets.
 - Support for batch sizes larger than one. This could be accomplished by resizing all images to the width of the largest image in the dataset, padding the additional space with black pixels, and ensuring that the ground truth RPN map ignores the padded space by marking anchors within it invalid. A substantial amount of code assumes a batch size of one and would need to be modified.
 - Replacement of the ground truth RPN map -- which stores anchor validity, object/background label, and box delta regression targets in a single tensor -- with simpler lists of anchors and labels. This would greatly simplify the loss functions, among other code, and potentially improve performance.
