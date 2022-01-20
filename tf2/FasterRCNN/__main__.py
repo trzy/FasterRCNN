@@ -180,7 +180,7 @@ def evaluate(model, eval_data = None, num_samples = None, plot = False, print_av
   print("Evaluating '%s'..." % eval_data.split)
   for sample in tqdm(iterable = iter(eval_data), total = num_samples):
     x, image_data, _ = _convert_training_sample_to_model_input(sample = sample, mode = "infer")
-    scored_boxes_by_class_index = model.predict_on_batch(x = x)
+    scored_boxes_by_class_index = model.predict_on_batch(x = x, score_threshold = 0.05) # lower threshold score for evaluation
     precision_recall_curve.add_image_results(
       scored_boxes_by_class_index = scored_boxes_by_class_index,
       gt_boxes = sample.gt_boxes
@@ -286,7 +286,7 @@ def _predict(model, image_data, image, show_image, output_path):
   image_data = np.expand_dims(image_data, axis = 0)                                                 # convert to batch size of 1: (1,height,width,3)
   image_shape_map = np.array([ [ image_data.shape[1], image_data.shape[2], image_data.shape[3] ] ]) # (1,3), with (height,width,channels)
   x = [ image_data, anchor_map, anchor_valid_map ]
-  scored_boxes_by_class_index = model.predict_on_batch(x = x)
+  scored_boxes_by_class_index = model.predict_on_batch(x = x, score_threshold = 0.7)
   visualize.show_detections(
     output_path = output_path,
     show_image = show_image,
