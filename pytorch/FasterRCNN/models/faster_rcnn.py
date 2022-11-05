@@ -2,7 +2,7 @@
 # Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/models/faster_rcnn.py
 # Copyright 2021-2022 Bart Trzynadlowski
-# 
+#
 # PyTorch implementation of Faster R-CNN training and inference models. Here,
 # all stages of Faster R-CNN are instantiated, RPN mini-batches are sampled,
 # ground truth labels from RPN proposal boxes (RoIs) for the detector stage are
@@ -33,7 +33,27 @@ class FasterRCNNModel(nn.Module):
     detector_regression:  float
     total:                float
 
-  def __init__(self, num_classes, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True, dropout_probability = 0):
+  def __init__(self, num_classes, backbone, rpn_minibatch_size = 256, proposal_batch_size = 128, allow_edge_proposals = True):
+    """
+    Parameters
+    ----------
+    num_classes : int
+      Number of output classes.
+    backbone : models.Backbone
+      Backbone network for feature extraction and pooled feature vector
+      construction (for input to detector heads).
+    rpn_minibatch_size : int
+      Size of the RPN mini-batch. The number of ground truth anchors sampled
+      for training at each step.
+    proposal_batch_size : int
+      Number of region proposals to sample at each training step.
+    allow_edge_proposals : bool
+      Whether to use proposals generated at invalid anchors (those that
+      straddle image edges). Invalid anchors are excluded from RPN training, as
+      explicitly stated in the literature, but Faster R-CNN implementations
+      tend to still pass proposals generated at invalid anchors to the
+      detector.
+    """
     super().__init__()
 
     # Constants
@@ -43,10 +63,19 @@ class FasterRCNNModel(nn.Module):
     self._detector_box_delta_means = [ 0, 0, 0, 0 ]
     self._detector_box_delta_stds = [ 0.1, 0.1, 0.2, 0.2 ]
 
+    # Backbone
+    self.backbone = backbone
+
     # Network stages
-    self._stage1_feature_extractor = vgg16.FeatureExtractor()
-    self._stage2_region_proposal_network = rpn.RegionProposalNetwork(allow_edge_proposals = allow_edge_proposals)
-    self._stage3_detector_network = detector.DetectorNetwork(num_classes = num_classes, dropout_probability = dropout_probability)
+    self._stage1_feature_extractor = backbone.feature_extractor
+    self._stage2_region_proposal_network = rpn.RegionProposalNetwork(
+      feature_map_channels = backbone.feature_map_channels,
+      allow_edge_proposals = allow_edge_proposals
+    )
+    self._stage3_detector_network = detector.DetectorNetwork(
+      num_classes = num_classes,
+      backbone = backbone
+    )
 
   def forward(self, image_data, anchor_map = None, anchor_valid_map = None):
     """
@@ -82,7 +111,8 @@ class FasterRCNNModel(nn.Module):
     # Anchor maps can be pre-computed and passed in explicitly (for performance
     # reasons) but if they are missing, we compute them on-the-fly here
     if anchor_map is None or anchor_valid_map is None:
-      anchor_map, anchor_valid_map = anchors.generate_anchor_maps(image_shape = image_shape, feature_pixels = 16) 
+      feature_map_shape = self.backbone.compute_feature_map_shape(image_shape = image_shape)
+      anchor_map, anchor_valid_map = anchors.generate_anchor_maps(image_shape = image_shape, feature_map_shape = feature_map_shape, feature_pixels = self.backbone.feature_pixels)
 
     # Run each stage
     feature_map = self._stage1_feature_extractor(image_data = image_data)
@@ -107,7 +137,7 @@ class FasterRCNNModel(nn.Module):
     Performs inference on an image and obtains the final detected boxes.
 
     Parameters
-    ---------- 
+    ----------
     image_data : torch.Tensor
       A tensor of shape (batch_size, channels, height, width) representing
       images normalized using the VGG-16 convention (BGR, ImageNet channel-wise
@@ -142,10 +172,10 @@ class FasterRCNNModel(nn.Module):
       anchor_map = anchor_map,
       anchor_valid_map = anchor_valid_map
     )
-    proposals = proposals.cpu().numpy() 
+    proposals = proposals.cpu().numpy()
     classes = classes.cpu().numpy()
     box_deltas = box_deltas.cpu().numpy()
- 
+
     # Convert proposal boxes -> center point and size
     proposal_anchors = np.empty(proposals.shape)
     proposal_anchors[:,0] = 0.5 * (proposals[:,0] + proposals[:,2]) # center_y
@@ -186,7 +216,7 @@ class FasterRCNNModel(nn.Module):
       idxs = nms(
         boxes = t.from_numpy(boxes).cuda(),
         scores = t.from_numpy(scores).cuda(),
-        iou_threshold = 0.3 #TODO: unsure about this. Paper seems to imply 0.5 but https://github.com/rbgirshick/py-faster-rcnn/blob/master/lib/fast_rcnn/config.py has 0.3 for test NMS 
+        iou_threshold = 0.3 #TODO: unsure about this. Paper seems to imply 0.5 but https://github.com/rbgirshick/py-faster-rcnn/blob/master/lib/fast_rcnn/config.py has 0.3 for test NMS
       ).cpu().numpy()
       boxes = boxes[idxs]
       scores = np.expand_dims(scores[idxs], axis = 0) # (N,) -> (N,1)
@@ -243,7 +273,7 @@ class FasterRCNNModel(nn.Module):
 
     Returns
     -------
-    Loss 
+    Loss
       Loss (a dataclass with class and regression losses for both the RPN and
       detector states).
     """
@@ -263,7 +293,7 @@ class FasterRCNNModel(nn.Module):
     # Stage 1: Extract features
     feature_map = self._stage1_feature_extractor(image_data = image_data)
 
-    # Stage 2: Generate object proposals using RPN 
+    # Stage 2: Generate object proposals using RPN
     rpn_score_map, rpn_box_deltas_map, proposals = self._stage2_region_proposal_network(
       feature_map = feature_map,
       image_shape = image_shape,  # each image in batch has identical shape: (num_channels, height, width)
@@ -305,7 +335,7 @@ class FasterRCNNModel(nn.Module):
     # Stage 3: Detector
     detector_classes, detector_box_deltas = self._stage3_detector_network(
       feature_map = feature_map,
-      proposals = proposals 
+      proposals = proposals
     )
 
     # Compute losses
@@ -330,7 +360,7 @@ class FasterRCNNModel(nn.Module):
 
     # Return losses and data useful for computing statistics
     return loss
-  
+
   def _sample_rpn_minibatch(self, rpn_map, object_indices, background_indices):
     """
     Selects anchors for training and produces a copy of the RPN ground truth
@@ -370,7 +400,7 @@ class FasterRCNNModel(nn.Module):
     num_negative_samples = self._rpn_minibatch_size - num_positive_samples          # the rest should be negative
     positive_anchor_idxs = random.sample(range(num_positive_anchors), num_positive_samples)
     negative_anchor_idxs = random.sample(range(num_negative_anchors), num_negative_samples)
-    
+
     # Construct index expressions into RPN map
     positive_anchors = positive_anchors[positive_anchor_idxs]
     negative_anchors = negative_anchors[negative_anchor_idxs]
@@ -433,7 +463,7 @@ class FasterRCNNModel(nn.Module):
     # Let's be crafty and create some fake proposals that match the ground
     # truth boxes exactly. This isn't strictly necessary and the model should
     # work without it but it will help training and will ensure that there are
-    # always some positive examples to train on. 
+    # always some positive examples to train on.
     proposals = t.vstack([ proposals, gt_box_corners ])
 
     # Compute IoU between each proposal (N,4) and each ground truth box (M,4)
@@ -446,7 +476,7 @@ class FasterRCNNModel(nn.Module):
     box_idxs = t.argmax(ious, dim = 1)              # (N,) of ground truth box index for each proposal
     gt_box_class_idxs = gt_box_class_idxs[box_idxs] # (N,) of class indices of highest-IoU box for each proposal
     gt_box_corners = gt_box_corners[box_idxs]       # (N,4) of box corners of highest-IoU box for each proposal
- 
+
     # Remove all proposals whose best IoU is less than the minimum threshold
     # for a negative (background) sample. We also check for IoUs > 0 because
     # due to earlier clipping, we may get invalid 0-area proposals.
@@ -458,7 +488,7 @@ class FasterRCNNModel(nn.Module):
 
     # IoUs less than min_object_iou_threshold will be labeled as background
     gt_box_class_idxs[best_ious < min_object_iou_threshold] = 0
-    
+
     # One-hot encode class labels
     num_proposals = proposals.shape[0]
     gt_classes = t.zeros((num_proposals, self._num_classes), dtype = t.float32, device = "cuda")  # (N,num_classes)
@@ -466,7 +496,7 @@ class FasterRCNNModel(nn.Module):
 
     # Convert proposals and ground truth boxes into "anchor" format (center
     # points and side lengths). For the detector stage, the proposals serve as
-    # the anchors relative to which the final box predictions will be 
+    # the anchors relative to which the final box predictions will be
     # regressed.
     proposal_centers = 0.5 * (proposals[:,0:2] + proposals[:,2:4])          # center_y, center_x
     proposal_sides = proposals[:,2:4] - proposals[:,0:2]                    # height, width
@@ -496,19 +526,19 @@ class FasterRCNNModel(nn.Module):
   def _sample_proposals(self, proposals, gt_classes, gt_box_deltas, max_proposals, positive_fraction):
     if max_proposals <= 0:
       return proposals, gt_classes, gt_box_deltas
-  
+
     # Get positive and negative (background) proposals
     class_indices = t.argmax(gt_classes, axis = 1)  # (N,num_classes) -> (N,), where each element is the class index (highest score from its row)
     positive_indices = t.where(class_indices > 0)[0]
     negative_indices = t.where(class_indices <= 0)[0]
     num_positive_proposals = len(positive_indices)
     num_negative_proposals = len(negative_indices)
-    
+
     # Select positive and negative samples, if there are enough. Note that the
     # number of positive samples can be either the positive fraction of the
     # *actual* number of proposals *or* the *desired* number (max_proposals).
     # In practice, these yield virtually identical results but the latter
-    # method will yield slightly more positive samples in the rare cases when 
+    # method will yield slightly more positive samples in the rare cases when
     # the number of proposals is below the desired number. Here, we use the
     # former method but others, such as Yun Chen, use the latter. To implement
     # it, replace num_samples with max_proposals in the line that computes
@@ -517,15 +547,15 @@ class FasterRCNNModel(nn.Module):
     num_samples = min(max_proposals, len(class_indices))
     num_positive_samples = min(round(num_samples * positive_fraction), num_positive_proposals)
     num_negative_samples = min(num_samples - num_positive_samples, num_negative_proposals)
-  
+
     # Do we have enough?
     if num_positive_samples <= 0 or num_negative_samples <= 0:
       return proposals[[]], gt_classes[[]], gt_box_deltas[[]] # return 0-length tensors
-  
+
     # Sample randomly
     positive_sample_indices = positive_indices[ t.randperm(len(positive_indices))[0:num_positive_samples] ]
     negative_sample_indices = negative_indices[ t.randperm(len(negative_indices))[0:num_negative_samples] ]
     indices = t.cat([ positive_sample_indices, negative_sample_indices ])
-  
+
     # Return
     return proposals[indices], gt_classes[indices], gt_box_deltas[indices]

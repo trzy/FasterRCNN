@@ -2,11 +2,11 @@
 # Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/models/anchors.py
 # Copyright 2021-2022 Bart Trzynadlowski
-# 
+#
 # Anchor generation code for the PyTorch implementation of FasterRCNN.
 #
 # Differing from other implementations of Faster R-CNN, I generate a multi-
-# dimensional ground truth tensor for the RPN stage that contains a flag 
+# dimensional ground truth tensor for the RPN stage that contains a flag
 # indicating whether the anchor should be included in training, whether it is
 # an object, and the box delta regression targets. It would be simpler and more
 # performant to simply return 2D tensors with this information (the model ends
@@ -40,7 +40,7 @@ def _compute_anchor_sizes():
   # Return as (9,2) matrix of sizes
   return np.vstack([ heights, widths ]).T
 
-def generate_anchor_maps(image_shape, feature_pixels): 
+def generate_anchor_maps(image_shape, feature_map_shape, feature_pixels):
   """
   Generates maps defining the anchors for a given input image size. There are 9
   different anchors at each feature map cell (3 scales, 3 ratios).
@@ -50,6 +50,8 @@ def generate_anchor_maps(image_shape, feature_pixels):
   image_shape : Tuple[int, int, int]
     Shape of the input image, (channels, height, width), at the scale it will
     be passed into the Faster R-CNN model.
+  feature_map_shape : Tuple[int, int, int]
+    Shape of the output feature map, (channels, height, width).
   feature_pixels : int
     Distance in pixels between anchors. This is the size, in input image space,
     of each cell of the feature map output by the feature extractor stage of
@@ -81,7 +83,7 @@ def generate_anchor_maps(image_shape, feature_pixels):
   # Has a pronounced effect on positive anchors in image 2008_000028.jpg in
   # VOC2012.
   #
-  
+
   # Base anchor template: (num_anchors,4), with each anchor being specified by
   # its corners (y1,x1,y2,x2)
   anchor_sizes = _compute_anchor_sizes()
@@ -90,8 +92,9 @@ def generate_anchor_maps(image_shape, feature_pixels):
   anchor_template[:,0:2] = -0.5 * anchor_sizes  # y1, x1 (top-left)
   anchor_template[:,2:4] = +0.5 * anchor_sizes  # y2, x2 (bottom-right)
 
-  # Shape of map, (H,W), determined by VGG-16 backbone
-  height, width = image_shape[1] // feature_pixels, image_shape[2] // feature_pixels
+  # Shape of map, (H,W), determined by feature extractor backbone
+  height = feature_map_shape[-2]  # index from back in case batch dimension is supplied
+  width = feature_map_shape[-1]
 
   # Generate (H,W,2) map of coordinates, in feature space, each being [y,x]
   y_cell_coords = np.arange(height)
@@ -106,11 +109,11 @@ def generate_anchor_maps(image_shape, feature_pixels):
 
   # (H,W,4) -> (H,W,4*num_anchors)
   center_points = np.tile(center_points, reps = num_anchors)
-  
+
   #
   # Now we can create the anchors by adding the anchor template to each cell
-  # location. Anchor template is flattened to size num_anchors * 4 to make 
-  # the addition possible (along the last dimension). 
+  # location. Anchor template is flattened to size num_anchors * 4 to make
+  # the addition possible (along the last dimension).
   #
   anchors = center_points.astype(np.float32) + anchor_template.flatten()
 
@@ -196,7 +199,7 @@ def generate_rpn_map(anchor_map, anchor_valid_map, gt_boxes, object_iou_threshol
   # track which ground truth box was assigned to each anchor.
   objectness_score = np.full(n, -1)   # RPN class: 0 = background, 1 = foreground, -1 = ignore (these will be marked as invalid in the truth map)
   gt_box_assignments = np.full(n, -1) # -1 means no box
-  
+
   # Compute IoU between each anchor and each ground truth box, (N,M).
   ious = math_utils.intersection_over_union(boxes1 = anchors, boxes2 = gt_box_corners)
 
@@ -239,7 +242,7 @@ def generate_rpn_map(anchor_map, anchor_valid_map, gt_boxes, object_iou_threshol
   # 1.
   enable_mask = (objectness_score >= 0).astype(np.float32)
   objectness_score[objectness_score < 0] = 0
-  
+
   # Compute box delta regression targets for each anchor
   box_delta_targets = np.empty((n, 4))
   box_delta_targets[:,0:2] = (gt_box_centers[gt_box_assignments] - anchor_map[:,0:2]) / anchor_map[:,2:4] # ty = (box_center_y - anchor_center_y) / anchor_height, tx = (box_center_x - anchor_center_x) / anchor_width
@@ -250,7 +253,7 @@ def generate_rpn_map(anchor_map, anchor_valid_map, gt_boxes, object_iou_threshol
   rpn_map[:,:,:,0] = anchor_valid_map * enable_mask.reshape((height,width,num_anchors))  # trainable anchors (object or background; excludes boundary-crossing invalid and neutral anchors)
   rpn_map[:,:,:,1] = objectness_score.reshape((height,width,num_anchors))
   rpn_map[:,:,:,2:6] = box_delta_targets.reshape((height,width,num_anchors,4))
-  
+
   # Return map along with positive and negative anchors
   rpn_map_coords = np.transpose(np.mgrid[0:height,0:width,0:num_anchors], (1,2,3,0))                  # shape (height,width,k,3): every index (y,x,k,:) returns its own coordinate (y,x,k)
   object_anchor_idxs = rpn_map_coords[np.where((rpn_map[:,:,:,1] > 0) & (rpn_map[:,:,:,0] > 0))]      # shape (N,3), where each row is the coordinate (y,x,k) of a positive sample

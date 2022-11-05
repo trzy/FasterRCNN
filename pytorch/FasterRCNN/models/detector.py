@@ -18,20 +18,29 @@ from torchvision.models import vgg16
 
 
 class DetectorNetwork(nn.Module):
-  def __init__(self, num_classes, dropout_probability):
+  def __init__(self, num_classes, backbone):
     super().__init__()
-  
+
+    self._input_features = 7 * 7 * backbone.feature_map_channels
+
     # Define network
+    """
     self._roi_pool = RoIPool(output_size = (7, 7), spatial_scale = 1.0 / 16.0)
-    self._fc1 = nn.Linear(in_features = 512*7*7, out_features = 4096)
+    self._fc1 = nn.Linear(in_features = self._input_features, out_features = 4096)
     self._fc2 = nn.Linear(in_features = 4096, out_features = 4096)
     self._classifier = nn.Linear(in_features = 4096, out_features = num_classes)
-    self._regressor = nn.Linear(in_features = 4096, out_features = (num_classes - 1) * 4) 
+    self._regressor = nn.Linear(in_features = 4096, out_features = (num_classes - 1) * 4)
 
     # Dropout layers
     self._dropout1 = nn.Dropout(p = dropout_probability)
     self._dropout2 = nn.Dropout(p = dropout_probability)
-   
+    """
+
+    self._roi_pool = RoIPool(output_size = (7, 7), spatial_scale = 1.0 / backbone.feature_pixels)
+    self._pool_to_feature_vector = backbone.pool_to_feature_vector
+    self._classifier = nn.Linear(in_features = backbone.feature_vector_size, out_features = num_classes)
+    self._regressor = nn.Linear(in_features = backbone.feature_vector_size, out_features = (num_classes - 1) * 4)
+
     # Initialize weights
     self._classifier.weight.data.normal_(mean = 0.0, std = 0.01)
     self._classifier.bias.data.zero_()
@@ -52,7 +61,7 @@ class DetectorNetwork(nn.Module):
       Region-of-interest box proposals that are likely to contain objects.
       Has shape (N, 4), where N is the number of proposals, with each box given
       as (y1, x1, y2, x2) in pixel coordinates.
-    
+
     Returns
     -------
     torch.Tensor, torch.Tensor
@@ -73,9 +82,10 @@ class DetectorNetwork(nn.Module):
 
     # RoI pooling: (N, 512, 7, 7)
     rois = self._roi_pool(feature_map, indexed_proposals)
-    rois = rois.reshape((rois.shape[0], 512*7*7)) # flatten each RoI: (N, 512*7*7)
+    #rois = rois.reshape((rois.shape[0], self._input_features))  # flatten each RoI: (N, input_features)
 
     # Forward propagate
+    """
     y1o = F.relu(self._fc1(rois))
     y1 = self._dropout1(y1o)
     y2o = F.relu(self._fc2(y1))
@@ -83,13 +93,18 @@ class DetectorNetwork(nn.Module):
     classes_raw = self._classifier(y2)
     classes = F.softmax(classes_raw, dim = 1)
     box_deltas = self._regressor(y2)
+    """
+    y = self._pool_to_feature_vector(rois = rois)
+    classes_raw = self._classifier(y)
+    classes = F.softmax(classes_raw, dim = 1)
+    box_deltas = self._regressor(y)
 
     return classes, box_deltas
 
 
 def class_loss(predicted_classes, y_true):
   """
-  Computes detector class loss. 
+  Computes detector class loss.
 
   Parameters
   ----------
@@ -137,7 +152,7 @@ def regression_loss(predicted_box_deltas, y_true):
   sigma_squared = sigma * sigma
 
   # We want to unpack the regression targets and the mask of valid targets into
-  # tensors each of the same shape as the predicted: 
+  # tensors each of the same shape as the predicted:
   #   (num_proposals, 4*(num_classes-1))
   # y_true has shape:
   #   (num_proposals, 2, 4*(num_classes-1))
@@ -155,8 +170,8 @@ def regression_loss(predicted_box_deltas, y_true):
 
   # Normalize to number of proposals (e.g., 128). Although this may not be
   # what the paper does, it seems to work. Other implemetnations do this.
-  # Using e.g., the number of positive proposals will cause the loss to 
-  # behave erratically because sometimes N will become very small.  
+  # Using e.g., the number of positive proposals will cause the loss to
+  # behave erratically because sometimes N will become very small.
   N = y_true.shape[0] + epsilon
   relevant_loss_terms = y_mask * losses
   return scale_factor * t.sum(relevant_loss_terms) / N

@@ -2,7 +2,7 @@
 # Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/models/rpn.py
 # Copyright 2021-2022 Bart Trzynadlowski
-# 
+#
 # PyTorch implementation of the RPN (region proposal network) stage of
 # Faster R-CNN. Given a feature map (i.e., the output of the VGG-16
 # convolutional layers), generates objectness scores for each anchor box, and
@@ -27,7 +27,7 @@ from . import math_utils
 
 
 class RegionProposalNetwork(nn.Module):
-  def __init__(self, allow_edge_proposals = False):
+  def __init__(self, feature_map_channels, allow_edge_proposals = False):
     super().__init__()
 
     # Constants
@@ -35,10 +35,11 @@ class RegionProposalNetwork(nn.Module):
 
     # Layers
     num_anchors = 9
-    self._rpn_conv1 = nn.Conv2d(in_channels = 512, out_channels = 512, kernel_size = (3, 3), stride = 1, padding = "same")
-    self._rpn_class = nn.Conv2d(in_channels = 512, out_channels = num_anchors, kernel_size = (1, 1), stride = 1, padding = "same")
-    self._rpn_boxes = nn.Conv2d(in_channels = 512, out_channels = num_anchors * 4, kernel_size = (1, 1), stride = 1, padding = "same")
-    
+    channels = feature_map_channels
+    self._rpn_conv1 = nn.Conv2d(in_channels = channels, out_channels = channels, kernel_size = (3, 3), stride = 1, padding = "same")
+    self._rpn_class = nn.Conv2d(in_channels = channels, out_channels = num_anchors, kernel_size = (1, 1), stride = 1, padding = "same")
+    self._rpn_boxes = nn.Conv2d(in_channels = channels, out_channels = num_anchors * 4, kernel_size = (1, 1), stride = 1, padding = "same")
+
     # Initialize weights
     self._rpn_conv1.weight.data.normal_(mean = 0.0, std = 0.01)
     self._rpn_conv1.bias.data.zero_()
@@ -55,7 +56,7 @@ class RegionProposalNetwork(nn.Module):
     Parameters
     ----------
     feature_map : torch.Tensor
-      Feature map of shape (batch_size, 512, height, width).
+      Feature map of shape (batch_size, feature_map_channels, height, width).
     image_shape : Tuple[int, int, int]
       Shapes of each image in pixels: (num_channels, height, width).
     anchor_map : np.ndarray
@@ -195,7 +196,7 @@ def class_loss(predicted_scores, y_true):
   # y_true_class: (batch_size, height, width, num_anchors), same as predicted_scores
   y_true_class = y_true[:,:,:,:,1].reshape(predicted_scores.shape)
   y_predicted_class = predicted_scores
-  
+
   # y_mask: y_true[:,:,:,0] is 1.0 for anchors included in the mini-batch
   y_mask = y_true[:,:,:,:,0].reshape(predicted_scores.shape)
 
@@ -205,7 +206,7 @@ def class_loss(predicted_scores, y_true):
 
   # Compute element-wise loss for all anchors
   loss_all_anchors = F.binary_cross_entropy(input = y_predicted_class, target = y_true_class, reduction = "none")
-  
+
   # Zero out the ones which should not have been included
   relevant_loss_terms = y_mask * loss_all_anchors
 
