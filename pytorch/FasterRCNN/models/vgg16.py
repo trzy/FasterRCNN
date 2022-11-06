@@ -20,6 +20,8 @@ from .feature_extractor import Backbone
 
 class CustomVGG16FeatureExtractor(nn.Module):
   def __init__(self):
+    super().__init__()
+
     # Define network
     self._block1_conv1 = nn.Conv2d(in_channels = 3,  out_channels = 64, kernel_size = (3, 3), stride = 1, padding = "same")
     self._block1_conv2 = nn.Conv2d(in_channels = 64, out_channels = 64, kernel_size = (3, 3), stride = 1, padding = "same")

@@ -298,7 +298,7 @@ if __name__ == "__main__":
   assert options.feature_extractor in valid_feature_extractors, "--feature-extractor must be one of: " + ", ".join(valid_feature_extractors)
   if options.feature_extractor == "vgg16":
     image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.BGR, scaling = 1.0, means = [ 103.939, 116.779, 123.680 ], stds = [ 1, 1, 1 ])
-    backbone = vgg16.CustomFeatureExtractor()
+    backbone = vgg16.CustomVGG16Backbone(dropout_probability = options.dropout)
   elif options.feature_extractor == "vgg16-torch":
     # These params correspond to Torchvision's VGG16_Weights.IMAGENET1K_V1 (https://pytorch.org/vision/main/models/generated/torchvision.models.vgg16.html#torchvision.models.vgg16)
     image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.RGB, scaling = 1.0 / 255.0, means = [ 0.485, 0.456, 0.406 ], stds = [ 0.229, 0.224, 0.225 ])

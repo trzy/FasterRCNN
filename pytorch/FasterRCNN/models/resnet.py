@@ -1,5 +1,7 @@
 #
 # https://github.com/jwyang/faster-rcnn.pytorch/blob/f9d984d27b48a067b29792932bcb5321a39c1f09/lib/model/faster_rcnn/resnet.py
+
+# Another good repo: https://github.com/potterhsu/easy-faster-rcnn.pytorch/blob/2c30c6d4ea57402c813294a499181b6ad710f858/model.py#L87
 #
 # Backbone needs to be split into feature extractor and classifier
 # For ResNet, feature extractor is up through layer 3, and output will be (batch, 1024, H, W).
@@ -46,7 +48,8 @@ class PoolToFeatureVector(nn.Module):
 
   def forward(self, rois):
     y = self._layer4(rois)  # (N, 1024, 7, 7) -> (N, 2048, 4, 4)
-    y = y.mean(-1).mean(-1) # use mean to remove last two dimensions -> (N, 2048)
+    #y = y.mean(-1).mean(-1) # use mean to remove last two dimensions -> (N, 2048)
+    y = F.adaptive_max_pool2d(y, output_size = 1).squeeze()
     return y
 
 
@@ -65,23 +68,23 @@ class FeatureExtractor(nn.Module):
       resnet.layer3
     )
 
-    # Freeze first two layers (conv1, bn1)
-    i = 0
-    for layer in self._feature_extractor:
-      if i < 2:
-        for name, parameter in layer.named_parameters():
-          parameter.required_grad = False
-      i += 1
-
-    # Freeze first two blocks
-    i = 4
-    while i < 6:
-      for name, parameter in self._feature_extractor[i].named_parameters():
-          parameter.required_grad = False
-      i += 1
+    # Freeze initial layers
+    self._freeze(self._feature_extractor[0])
+    self._freeze(self._feature_extractor[1])
+    self._freeze(self._feature_extractor[4])
+    #self._freeze(self._feature_extractor[5])
+    #self._freeze(resnet.conv1)
+    #self._freeze(resnet.bn1)
+    #self._freeze(resnet.layer1)
+    #self._freeze(resnet.layer2)
 
   def forward(self, image_data):
     return self._feature_extractor(image_data)
+
+  @staticmethod
+  def _freeze(layer):
+    for name, parameter in layer.named_parameters():
+      parameter.requires_grad = False
 
 
 class ResNetBackbone(Backbone):
