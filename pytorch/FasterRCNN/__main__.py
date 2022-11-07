@@ -294,7 +294,7 @@ if __name__ == "__main__":
     render_anchors()
 
   # Validate feature extractor model and determine image pre-processing parameters
-  valid_feature_extractors = [ "vgg16", "vgg16-torch", "resnet50" ]
+  valid_feature_extractors = [ "vgg16", "vgg16-torch", "resnet50", "resnet101" ]
   assert options.feature_extractor in valid_feature_extractors, "--feature-extractor must be one of: " + ", ".join(valid_feature_extractors)
   if options.feature_extractor == "vgg16":
     image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.BGR, scaling = 1.0, means = [ 103.939, 116.779, 123.680 ], stds = [ 1, 1, 1 ])
@@ -305,7 +305,10 @@ if __name__ == "__main__":
     backbone = vgg16.TorchVGG16Backbone(dropout_probability = options.dropout)
   elif options.feature_extractor == "resnet50":
     image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.RGB, scaling = 1.0 / 255.0, means = [ 0.485, 0.456, 0.406 ], stds = [ 0.229, 0.224, 0.225 ])
-    backbone = resnet.ResNetBackbone()
+    backbone = resnet.ResNetBackbone(architecture = resnet.Architecture.ResNet50)
+  elif options.feature_extractor == "resnet101":
+    image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.RGB, scaling = 1.0 / 255.0, means = [ 0.485, 0.456, 0.406 ], stds = [ 0.229, 0.224, 0.225 ])
+    backbone = resnet.ResNetBackbone(architecture = resnet.Architecture.ResNet101)
 
   # Construct model and load initial weights
   model = FasterRCNNModel(

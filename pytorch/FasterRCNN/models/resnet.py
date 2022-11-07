@@ -35,6 +35,7 @@
 # extractor in Faster R-CNN.
 #
 
+from enum import Enum
 from math import ceil
 import torch as t
 from torch import nn
@@ -42,6 +43,11 @@ from torch.nn import functional as F
 import torchvision
 
 from .feature_extractor import Backbone
+
+
+class Architecture(Enum):
+  ResNet50 = "ResNet50"
+  ResNet101 = "ResNet101"
 
 
 class PoolToFeatureVector(nn.Module):
@@ -134,7 +140,7 @@ class FeatureExtractor(nn.Module):
 
 
 class ResNetBackbone(Backbone):
-  def __init__(self):
+  def __init__(self, architecture):
     super().__init__()
 
     # Backbone properties
@@ -143,7 +149,12 @@ class ResNetBackbone(Backbone):
     self.feature_vector_size = 2048   # linear feature vector size after pooling
 
     # Construct model and pre-load with ImageNet weights
-    resnet = torchvision.models.resnet50(weights = torchvision.models.ResNet50_Weights.IMAGENET1K_V1)
+    if architecture == Architecture.ResNet50:
+      resnet = torchvision.models.resnet50(weights = torchvision.models.ResNet50_Weights.IMAGENET1K_V1)
+    elif architecture == Architecture.ResNet101:
+      resnet = torchvision.models.resnet101(weights = torchvision.models.ResNet101_Weights.IMAGENET1K_V1)
+    else:
+      raise ValueError("Invalid ResNet architecture value: %s" % str(architecture))
     print("Loaded IMAGENET1K_V1 pre-trained weights for Torchvision ResNet50 feature extractor")
 
     # Feature extractor: given image data of shape (batch_size, channels, height, width),
