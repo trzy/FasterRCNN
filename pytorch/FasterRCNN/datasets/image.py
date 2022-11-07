@@ -6,9 +6,6 @@
 # Image loading and pre-processing.
 #
 
-#TODO: remove this
-import ctypes
-
 from dataclasses import dataclass
 from enum import Enum
 import imageio
@@ -89,13 +86,6 @@ def load_image(url, preprocessing, min_dimension_pixels = None, horizontal_flip 
   """
   data = imageio.imread(url, pilmode = "RGB")
   image = Image.fromarray(data, mode = "RGB")
-
-  # Truncate to 16-pixel alignment
-  truncated_width = image.width & int(ctypes.c_uint32(~0xf).value)
-  truncated_height = image.height & int(ctypes.c_uint32(~0xf).value)
-  image = image.resize((truncated_width, truncated_height), resample = Image.BILINEAR)
-
-
   original_width, original_height = image.width, image.height
   if horizontal_flip:
     image = image.transpose(method = Image.FLIP_LEFT_RIGHT)
