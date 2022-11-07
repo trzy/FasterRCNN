@@ -1,4 +1,6 @@
 #
+# This repo demonstrates how to use a ResNet backbone. In particular, freezing of the batchnorm layers is very important.
+# TODO: does the ResNet paper, which mentions its deployment in Faster R-CNN, mention this?
 # https://github.com/jwyang/faster-rcnn.pytorch/blob/f9d984d27b48a067b29792932bcb5321a39c1f09/lib/model/faster_rcnn/resnet.py
 
 # Another good repo: https://github.com/potterhsu/easy-faster-rcnn.pytorch/blob/2c30c6d4ea57402c813294a499181b6ad710f858/model.py#L87
@@ -209,12 +211,31 @@ class PoolToFeatureVector(nn.Module):
   def __init__(self, resnet):
     super().__init__()
     self._layer4 = resnet.layer4
+    self._freeze_batchnorm(self._layer4)
+
+  def train(self, mode=True):
+    super().train(mode)
+    if mode:
+      def set_bn_eval(module):
+        if type(module) == nn.BatchNorm2d:
+          module.eval()
+      self._layer4.apply(set_bn_eval)
 
   def forward(self, rois):
     y = self._layer4(rois)  # (N, 1024, 7, 7) -> (N, 2048, 4, 4)
-    #y = y.mean(-1).mean(-1) # use mean to remove last two dimensions -> (N, 2048)
-    y = F.adaptive_max_pool2d(y, output_size = 1).squeeze()
+    y = y.mean(-1).mean(-1) # use mean to remove last two dimensions -> (N, 2048)
+    #y = F.adaptive_max_pool2d(y, output_size = 1).squeeze()
     return y
+
+  @staticmethod
+  def _freeze(layer):
+    for name, parameter in layer.named_parameters():
+      parameter.requires_grad = False
+
+  def _freeze_batchnorm(self, block):
+    for child in block.modules():
+      if type(child) == nn.BatchNorm2d:
+        self._freeze(layer = child)
 
 
 class FeatureExtractor(nn.Module):
@@ -232,15 +253,36 @@ class FeatureExtractor(nn.Module):
       resnet.layer3
     )
 
+
     # Freeze initial layers
     self._freeze(self._feature_extractor[0])
     self._freeze(self._feature_extractor[1])
     self._freeze(self._feature_extractor[4])
     #self._freeze(self._feature_extractor[5])
+
     #self._freeze(resnet.conv1)
     #self._freeze(resnet.bn1)
     #self._freeze(resnet.layer1)
     #self._freeze(resnet.layer2)
+
+    # Ensure that all batchnorm layers are frozen
+    self._freeze_batchnorm(self._feature_extractor)
+
+  def train(self, mode=True):
+    super().train(mode)
+    if mode:
+      # Set fixed blocks to be in eval mode
+      self._feature_extractor.eval()
+      self._feature_extractor[5].train()
+      self._feature_extractor[6].train()
+
+      def set_bn_eval(module):
+        if type(module) == nn.BatchNorm2d:
+          module.eval()
+
+      self._feature_extractor.apply(set_bn_eval)
+      #self.RCNN_top.apply(set_bn_eval)
+
 
   def forward(self, image_data):
     y = self._feature_extractor(image_data)
@@ -250,6 +292,11 @@ class FeatureExtractor(nn.Module):
   def _freeze(layer):
     for name, parameter in layer.named_parameters():
       parameter.requires_grad = False
+
+  def _freeze_batchnorm(self, block):
+    for child in block.modules():
+      if type(child) == nn.BatchNorm2d:
+        self._freeze(layer = child)
 
 
 class ResNetBackbone(Backbone):
@@ -267,9 +314,7 @@ class ResNetBackbone(Backbone):
     state = resnet.state_dict()
 
     resnet = ResNet(Bottleneck, [ 3, 4, 6, 3])
-    print(resnet.maxpool)
     resnet.load_state_dict(state)
-
 
     # Feature extractor: given image data of shape (batch_size, channels, height, width),
     # produces a feature map of shape (batch_size, 1024, ceil(height/16), ceil(width/16))
