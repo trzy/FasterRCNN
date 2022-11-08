@@ -24,18 +24,6 @@ class DetectorNetwork(nn.Module):
     self._input_features = 7 * 7 * backbone.feature_map_channels
 
     # Define network
-    """
-    self._roi_pool = RoIPool(output_size = (7, 7), spatial_scale = 1.0 / 16.0)
-    self._fc1 = nn.Linear(in_features = self._input_features, out_features = 4096)
-    self._fc2 = nn.Linear(in_features = 4096, out_features = 4096)
-    self._classifier = nn.Linear(in_features = 4096, out_features = num_classes)
-    self._regressor = nn.Linear(in_features = 4096, out_features = (num_classes - 1) * 4)
-
-    # Dropout layers
-    self._dropout1 = nn.Dropout(p = dropout_probability)
-    self._dropout2 = nn.Dropout(p = dropout_probability)
-    """
-
     self._roi_pool = RoIPool(output_size = (7, 7), spatial_scale = 1.0 / backbone.feature_pixels)
     self._pool_to_feature_vector = backbone.pool_to_feature_vector
     self._classifier = nn.Linear(in_features = backbone.feature_vector_size, out_features = num_classes)
@@ -56,7 +44,7 @@ class DetectorNetwork(nn.Module):
     Parameters
     ----------
     feature_map : torch.Tensor
-      Feature map of shape (batch_size, 512, height, width).
+      Feature map of shape (batch_size, feature_map_channels, height, width).
     proposals : torch.Tensor
       Region-of-interest box proposals that are likely to contain objects.
       Has shape (N, 4), where N is the number of proposals, with each box given
@@ -80,20 +68,10 @@ class DetectorNetwork(nn.Module):
     indexed_proposals = t.cat([ batch_idxs, proposals ], dim = 1)
     indexed_proposals = indexed_proposals[:, [ 0, 2, 1, 4, 3 ]] # each row, (batch_idx, y1, x1, y2, x2) -> (batch_idx, x1, y1, x2, y2)
 
-    # RoI pooling: (N, 512, 7, 7)
+    # RoI pooling: (N, feature_map_channels, 7, 7)
     rois = self._roi_pool(feature_map, indexed_proposals)
-    #rois = rois.reshape((rois.shape[0], self._input_features))  # flatten each RoI: (N, input_features)
 
     # Forward propagate
-    """
-    y1o = F.relu(self._fc1(rois))
-    y1 = self._dropout1(y1o)
-    y2o = F.relu(self._fc2(y1))
-    y2 = self._dropout2(y2o)
-    classes_raw = self._classifier(y2)
-    classes = F.softmax(classes_raw, dim = 1)
-    box_deltas = self._regressor(y2)
-    """
     y = self._pool_to_feature_vector(rois = rois)
     classes_raw = self._classifier(y)
     classes = F.softmax(classes_raw, dim = 1)

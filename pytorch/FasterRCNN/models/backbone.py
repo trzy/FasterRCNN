@@ -7,11 +7,24 @@
 # extraction and pooled feature reduction layers from the classifier
 # stages.
 #
+# The backbone in Faster R-CNN is used in two places:
+#
+#   1. In Stage 1 as the feature extractor. Given an input image, a feature map
+#      is produced that is then passed into both the RPN and detector stages.
+#   2. In Stage 3, the detector, proposal regions are pooled and cropped from
+#      the feature map (to produce RoIs) and fed into the detector layers,
+#      which perform classification and bounding box regression. Each RoI must
+#      first be converted into a linear feature vector. With VGG-16, for
+#      example, the fully-connected layers following the convolutional layers
+#      and preceding the classifier layer, are used to do this.
+#
 
 import torch as t
 from torch import nn
 from torch.nn import functional as F
 import torchvision
+
+from ..datasets import image
 
 
 class Backbone:
@@ -24,6 +37,7 @@ class Backbone:
     self.feature_map_channels = 0     # feature map channels
     self.feature_pixels = 0           # feature size in pixels, N: each feature map cell corresponds to an NxN area on original image
     self.feature_vector_size = 0      # length of linear feature vector after pooling and just before being passed to detector heads
+    self.image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.BGR, scaling = 1.0, means = [ 103.939, 116.779, 123.680 ], stds = [ 1, 1, 1 ])
 
     # Required members
     self.feature_extractor = None       # nn.Module converting input image (batch_size, channels, width, height) -> (batch_size, feature_map_channels, W, H)

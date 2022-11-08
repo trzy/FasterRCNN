@@ -1,34 +1,16 @@
-#TODO:
-# - Cleanup, particularly of the train() methods and add an explanation for what is going on, tying it to paper if possible
-
-#
-# This repo demonstrates how to use a ResNet backbone. In particular, freezing of the batchnorm layers is very important.
-# TODO: does the ResNet paper, which mentions its deployment in Faster R-CNN, mention this?
-# https://github.com/jwyang/faster-rcnn.pytorch/blob/f9d984d27b48a067b29792932bcb5321a39c1f09/lib/model/faster_rcnn/resnet.py
-
-# Another good repo: https://github.com/potterhsu/easy-faster-rcnn.pytorch/blob/2c30c6d4ea57402c813294a499181b6ad710f858/model.py#L87
-#
-# Backbone needs to be split into feature extractor and classifier
-# For ResNet, feature extractor is up through layer 3, and output will be (batch, 1024, H, W).
-# This can be fed to RoI pool and will end up producing (N, 1024, 7, 7)
-# This in turn can be fed to the classifier layer, which for ResNet is just layer 4 and will output (N, 2048, 4, 4).
-# The last two dimensions must be eliminated by averaging: .mean(3).mean(2)
-# This produces (N, 2048) which can be fed into detector classifier and regressor layers (inputs to this must be adjusted from 4096->2048)
-
-
-#TODO: make note about feature map -> pixel conversion in anchors.py
-
-#TODO: explanation in vgg16.py of what is going on here
-
-
-
 #
 # Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/models/resnet.py
 # Copyright 2021-2022 Bart Trzynadlowski
 #
-# PyTorch implementation of the ResNet backbone for use as a feature
-# extractor in Faster R-CNN.
+# PyTorch implementation of the ResNet backbone for use as a feature extractor
+# in Faster R-CNN. See the Backbone base class for a description of how the
+# classes here are structured.
+#
+# References
+# ----------
+# [1] "Deep Residual Learning for Image Recognition"
+#     Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
 #
 
 from enum import Enum
@@ -68,21 +50,30 @@ class FeatureExtractor(nn.Module):
     self._freeze(resnet.bn1)
     self._freeze(resnet.layer1)
 
-    # Ensure that all batchnorm layers are frozen
+    # Ensure that all batchnorm layers are frozen, as described in Appendix A
+    # of [1]
     self._freeze_batchnorm(self._feature_extractor)
 
-  def train(self, mode=True):
+  # Override nn.Module.train()
+  def train(self, mode = True):
     super().train(mode)
+
+    #
+    # During training, set all frozen blocks to evaluation mode and ensure that
+    # all the batchnorm layers are also in evaluation mode. This is extremely
+    # important and neglecting to do this will result in severely degraded
+    # training performance.
+    #
     if mode:
       # Set fixed blocks to be in eval mode
       self._feature_extractor.eval()
       self._feature_extractor[5].train()
       self._feature_extractor[6].train()
 
+      # *All* batchnorm layers in eval mode
       def set_bn_eval(module):
         if type(module) == nn.BatchNorm2d:
           module.eval()
-
       self._feature_extractor.apply(set_bn_eval)
 
   def forward(self, image_data):
@@ -106,7 +97,8 @@ class PoolToFeatureVector(nn.Module):
     self._layer4 = resnet.layer4
     self._freeze_batchnorm(self._layer4)
 
-  def train(self, mode=True):
+  def train(self, mode = True):
+    # See comments in FeatureVector.train()
     super().train(mode)
     if mode:
       def set_bn_eval(module):

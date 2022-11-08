@@ -1,11 +1,3 @@
-#TODO:
-# - ensure render_anchors() still works
-# - feature_extractor parameter on FasterRCNNModel.__init__() should be a FeatureExtractor and FeatureExtractor should contain the image
-#   preprocessing parameters
-# - update install instructions and verify new environment: conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
-# - comments in detector.py still reference 512 as channel size
-
-
 #
 # Faster R-CNN in PyTorch and TensorFlow 2 w/ Keras
 # pytorch/FasterRCNN/__main__.py
@@ -25,6 +17,7 @@
 # - Support for loading Keras checkpoints (particularly if using custom RoI
 #   pooling, which should be almost the same as PyTorch's RoI pool layer)
 #
+
 import argparse
 import os
 import torch as t
@@ -336,4 +329,3 @@ if __name__ == "__main__":
     predict_all(model = model, split = options.predict_all)
   elif not options.dump_anchors:
     print("Nothing to do. Did you mean to use --train or --predict?")
-

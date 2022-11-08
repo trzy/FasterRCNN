@@ -65,7 +65,6 @@ class VGG16Backbone(Backbone):
 
     # Construct model with given dropout probability and pre-loaded with ImageNet weights
     vgg16 = torchvision.models.vgg16(weights = torchvision.models.VGG16_Weights.IMAGENET1K_V1, dropout = dropout_probability)
-    #vgg16 = torchvision.models.vgg16(weights = "IMAGENET1K_V1", dropout = dropout_probability)
     print("Loaded IMAGENET1K_V1 pre-trained weights for Torchvision VGG-16 feature extractor")
 
     # Feature extractor: convert input image (batch_size, channels, height, width)

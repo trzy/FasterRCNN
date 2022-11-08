@@ -195,7 +195,9 @@ class Dataset:
       basenames = [ line.strip() for line in fp.readlines() ] # strip newlines
     image_paths = [ os.path.join(self._dir, "JPEGImages", basename) + ".jpg" for basename in basenames ]
     return image_paths
-    # Debug: 60 car training images
+
+    """
+    # Debug: 60 car training images. Handy for quick iteration and testing.
     image_paths = [
       "2008_000028",
       "2008_000074",
@@ -259,6 +261,7 @@ class Dataset:
       "2011_003247"
     ]
     return [ os.path.join(self._dir, "JPEGImages", path) + ".jpg" for path in image_paths ]
+    """
 
   def _get_ground_truth_boxes(self, filepaths, allow_difficult):
     gt_boxes_by_filepath = {}
