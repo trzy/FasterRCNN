@@ -237,8 +237,8 @@ def predict(model, image_data, image, show_image, output_path):
   )
 
 def predict_one(model, url, image_preprocessing_params, show_image, output_path):
-  image_data, image, _, _ = image.load_image(url = url, preprocessing = image_preprocessing_params, min_dimension_pixels = 600)
-  predict(model = model, image_data = image_data, image = image, show_image = show_image, output_path = output_path)
+  image_data, image_obj, _, _ = image.load_image(url = url, preprocessing = image_preprocessing_params, min_dimension_pixels = 600)
+  predict(model = model, image_data = image_data, image = image_obj, show_image = show_image, output_path = output_path)
 
 def predict_all(model, image_preprocessing_params, split):
   dirname = "predictions_" + split
