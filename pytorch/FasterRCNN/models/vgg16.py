@@ -4,7 +4,10 @@
 # Copyright 2021-2022 Bart Trzynadlowski
 #
 # PyTorch implementation of the VGG-16 backbone for use as a feature extractor
-# in Faster R-CNN. Only the convolutional layers are used.
+# in Faster R-CNN. Only the convolutional layers are used. This implementation
+# is fully custom, in contrast to using Torchvision's pre-trained layers. Its
+# weights are incompatible with Torchvision's but *are* compatible with the
+# Caffe implementation of VGG-16.
 #
 
 import torch as t
@@ -12,13 +15,11 @@ from torch import nn
 from torch.nn import functional as F
 import torchvision
 
-from .feature_extractor import Backbone
+from ..datasets import image
+from .backbone import Backbone
 
-#
-# Custom VGG-16 Backbone
-#
 
-class CustomVGG16FeatureExtractor(nn.Module):
+class FeatureExtractor(nn.Module):
   def __init__(self):
     super().__init__()
 
@@ -97,7 +98,7 @@ class CustomVGG16FeatureExtractor(nn.Module):
     return y
 
 
-class CustomVGG16PoolToFeatureVector(nn.Module):
+class PoolToFeatureVector(nn.Module):
   def __init__(self, dropout_probability):
     super().__init__()
 
@@ -134,8 +135,7 @@ class CustomVGG16PoolToFeatureVector(nn.Module):
     return y2
 
 
-# Custom VGG-16 implementation, following the original paper
-class CustomVGG16Backbone(Backbone):
+class VGG16Backbone(Backbone):
   def __init__(self, dropout_probability):
     super().__init__()
 
@@ -143,77 +143,14 @@ class CustomVGG16Backbone(Backbone):
     self.feature_map_channels = 512
     self.feature_pixels = 16
     self.feature_vector_size = 4096
+    self.image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.BGR, scaling = 1.0, means = [ 103.939, 116.779, 123.680 ], stds = [ 1, 1, 1 ])
 
     # Feature extractor: convert input image (batch_size, channels, height, width)
     # to a feature map of shape (batch_size, 512, height // 16, width // 16)
-    self.feature_extractor = CustomVGG16FeatureExtractor()
+    self.feature_extractor = FeatureExtractor()
 
     # Conversion of pooled features to head input
-    self.pool_to_feature_vector = CustomVGG16PoolToFeatureVector(dropout_probability = dropout_probability)
-
-  def compute_feature_map_shape(self, image_shape):
-    image_width = image_shape[-1]
-    image_height = image_shape[-2]
-    return (self.out_channels, image_height // self.feature_pixels, image_width // self.feature_pixels)
-
-
-#
-# Torchvision VGG-16-based Backbone
-#
-
-class TorchVGG16FeatureExtractor(nn.Module):
-  def __init__(self, vgg16):
-    super().__init__()
-
-    # Get feature extractor layers
-    assert len(vgg16.features) == 31 and type(vgg16.features[-1]) == nn.modules.pooling.MaxPool2d, "Torchvision VGG-16 model does not have expected architecture"
-    self._layers = vgg16.features[0:-1] # get all feature extractor layers except for final one (which is a MaxPool2d)
-
-    # Freeze first two convolutional blocks (first 4 Conv2d layers)
-    i = 0
-    for layer in self._layers:
-      if type(layer) == nn.Conv2d and i < 4:
-        layer.weight.requires_grad = False
-        layer.bias.requires_grad = False
-        i += 1
-
-  def forward(self, image_data):
-    return self._layers(image_data)
-
-
-class TorchVGG16PoolToFeatureVector(nn.Module):
-  def __init__(self, vgg16):
-    super().__init__()
-
-    # Get classifier layers
-    assert len(vgg16.classifier) == 7 and type(vgg16.classifier[-1]) == nn.modules.linear.Linear, "Torchvision VGG-16 model does not have expected architecture"
-    self._layers = vgg16.classifier[0:-1] # get all classifier layers except for the final one (4096 -> 1000 ImageNet class output)
-
-  def forward(self, rois):
-    rois = rois.reshape((rois.shape[0], 512 * 7 * 7)) # flatten each RoI: (N, 512*7*7)
-    return self._layers(rois)
-
-
-# Torchvision VGG-16 model with built-in pre-trained weights
-class TorchVGG16Backbone(Backbone):
-  def __init__(self, dropout_probability):
-    super().__init__()
-
-    # Backbone properties
-    self.feature_map_channels = 512
-    self.feature_pixels = 16
-    self.feature_vector_size = 4096
-
-    # Construct model with given dropout probability and pre-loaded with ImageNet weights
-    vgg16 = torchvision.models.vgg16(weights = "IMAGENET1K_V1", dropout = dropout_probability)
-    print("Loaded IMAGENET1K_V1 pre-trained weights for Torchvision VGG-16 feature extractor")
-
-    # Feature extractor: convert input image (batch_size, channels, height, width)
-    # to a feature map of shape (batch_size, 512, height // 16, width // 16)
-    self.feature_extractor = TorchVGG16FeatureExtractor(vgg16 = vgg16)
-
-    # Conversion of pooled features to head input
-    self.pool_to_feature_vector = TorchVGG16PoolToFeatureVector(vgg16 = vgg16)
+    self.pool_to_feature_vector = PoolToFeatureVector(dropout_probability = dropout_probability)
 
   def compute_feature_map_shape(self, image_shape):
     image_width = image_shape[-1]

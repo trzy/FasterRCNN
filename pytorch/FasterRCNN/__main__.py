@@ -4,7 +4,6 @@
 #   preprocessing parameters
 # - update install instructions and verify new environment: conda install pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 # - comments in detector.py still reference 512 as channel size
-# - --feature-extractor -> --backbone
 
 
 #
@@ -32,9 +31,9 @@ import torch as t
 from tqdm import tqdm
 
 from .datasets import voc
-from .datasets import image
 from .models.faster_rcnn import FasterRCNNModel
 from .models import vgg16
+from .models import vgg16_torch
 from .models import resnet
 from .statistics import TrainingStatistics
 from .statistics import PrecisionRecallCurveCalculator
@@ -43,8 +42,16 @@ from . import utils
 from . import visualize
 
 
-def render_anchors():
-  training_data = voc.Dataset(dir = options.dataset_dir, split = options.train_split, augment = False, shuffle = False)
+def render_anchors(backbone):
+  training_data = voc.Dataset(
+    image_preprocessing_params = backbone.image_preprocessing_params,
+    compute_feature_map_shape_fn = backbone.compute_feature_map_shape,
+    feature_pixels = backbone.feature_pixels,
+    dir = options.dataset_dir,
+    split = options.train_split,
+    augment = False,
+    shuffle = False
+  )
   if not os.path.exists(options.dump_anchors):
     os.makedirs(options.dump_anchors)
   print("Rendering anchors from '%s' to set '%s'..." % (options.train_split, options.dump_anchors))
@@ -59,10 +66,10 @@ def render_anchors():
       gt_boxes = sample.gt_boxes
     )
 
-def evaluate(model, image_preprocessing_params, eval_data = None, num_samples = None, plot = False, print_average_precisions = False):
+def evaluate(model, eval_data = None, num_samples = None, plot = False, print_average_precisions = False):
   if eval_data is None:
     eval_data = voc.Dataset(
-      image_preprocessing_params = image_preprocessing_params,
+      image_preprocessing_params = model.backbone.image_preprocessing_params,
       compute_feature_map_shape_fn = model.backbone.compute_feature_map_shape,
       feature_pixels = model.backbone.feature_pixels,
       dir = options.dataset_dir,
@@ -112,13 +119,13 @@ def enable_cuda_memory_profiler(model):
   sys.settrace(memory_profiler)
   threading.settrace(memory_profiler)
 
-def train(model, image_preprocessing_params):
+def train(model):
   if options.profile_cuda_memory:
     enable_cuda_memory_profiler(model = model)
   if options.load_from:
     initial_weights = options.load_from
   else:
-    if options.feature_extractor == "vgg16":  # "vgg16" is our hand-implemented feature extractor and the only one without built-in default weights
+    if options.backbone == "vgg16":  # "vgg16" is our hand-implemented backbone and the only one without built-in default weights
       initial_weights = "none"
     else:
       initial_weights = "IMAGENET1K_V1"
@@ -128,7 +135,7 @@ def train(model, image_preprocessing_params):
   print("Dataset           : %s" % options.dataset_dir)
   print("Training split    : %s" % options.train_split)
   print("Evaluation split  : %s" % options.eval_split)
-  print("Feature extractor : %s" % options.feature_extractor)
+  print("Backbone          : %s" % options.backbone)
   print("Epochs            : %d" % options.epochs)
   print("Learning rate     : %f" % options.learning_rate)
   print("Momentum          : %f" % options.momentum)
@@ -143,7 +150,7 @@ def train(model, image_preprocessing_params):
   training_data = voc.Dataset(
     dir = options.dataset_dir,
     split = options.train_split,
-    image_preprocessing_params = image_preprocessing_params,
+    image_preprocessing_params = model.backbone.image_preprocessing_params,
     compute_feature_map_shape_fn = model.backbone.compute_feature_map_shape,
     feature_pixels = model.backbone.feature_pixels,
     augment = not options.no_augment,
@@ -153,7 +160,7 @@ def train(model, image_preprocessing_params):
   eval_data = voc.Dataset(
     dir = options.dataset_dir,
     split = options.eval_split,
-    image_preprocessing_params = image_preprocessing_params,
+    image_preprocessing_params = model.backbone.image_preprocessing_params,
     compute_feature_map_shape_fn = model.backbone.compute_feature_map_shape,
     feature_pixels = model.backbone.feature_pixels,
     augment = False,
@@ -187,7 +194,6 @@ def train(model, image_preprocessing_params):
     last_epoch = epoch == options.epochs
     mean_average_precision = evaluate(
       model = model,
-      image_preprocessing_params = image_preprocessing_params,
       eval_data = eval_data,
       num_samples = options.periodic_eval_samples,
       plot = False,
@@ -218,7 +224,6 @@ def train(model, image_preprocessing_params):
   print("Evaluating %s model on all samples in '%s'..." % (("best" if options.save_best_to else "final"), options.eval_split))  # evaluate final or best model on full dataset
   evaluate(
     model = model,
-    image_preprocessing_params = image_preprocessing_params,
     eval_data = eval_data,
     num_samples = eval_data.num_samples,  # use all samples
     plot = options.plot,
@@ -236,11 +241,11 @@ def predict(model, image_data, image, show_image, output_path):
     class_index_to_name = voc.Dataset.class_index_to_name
   )
 
-def predict_one(model, url, image_preprocessing_params, show_image, output_path):
-  image_data, image_obj, _, _ = image.load_image(url = url, preprocessing = image_preprocessing_params, min_dimension_pixels = 600)
+def predict_one(model, url, show_image, output_path):
+  image_data, image_obj, _, _ = image.load_image(url = url, preprocessing = model.backbone.image_preprocessing_params, min_dimension_pixels = 600)
   predict(model = model, image_data = image_data, image = image_obj, show_image = show_image, output_path = output_path)
 
-def predict_all(model, image_preprocessing_params, split):
+def predict_all(model, split):
   dirname = "predictions_" + split
   if not os.path.exists(dirname):
     os.makedirs(dirname)
@@ -248,7 +253,7 @@ def predict_all(model, image_preprocessing_params, split):
   dataset = voc.Dataset(
     dir = options.dataset_dir,
     split = split,
-    image_preprocessing_params = image_preprocessing_params,
+    image_preprocessing_params = model.backbone.image_preprocessing_params,
     compute_feature_map_shape_fn = model.backbone.compute_feature_map_shape,
     feature_pixels = model.backbone.feature_pixels,
     augment = False,
@@ -267,7 +272,7 @@ if __name__ == "__main__":
   group.add_argument("--predict-to-file", metavar = "url", action = "store", type = str, help = "Run inference on image and render detected boxes to 'predictions.png'")
   group.add_argument("--predict-all", metavar = "name", action = "store", type = str, help = "Run inference on all images in the specified dataset split and write to directory 'predictions_${split}'")
   parser.add_argument("--load-from", metavar = "file", action = "store", help = "Load initial model weights from file")
-  parser.add_argument("--feature-extractor", metavar = "model", action = "store", default = "vgg16", help = "Feature extractor model")
+  parser.add_argument("--backbone", metavar = "model", action = "store", default = "vgg16", help = "Backbone model for feature extraction and classification")
   parser.add_argument("--save-to", metavar = "file", action = "store", help = "Save final trained weights to file")
   parser.add_argument("--save-best-to", metavar = "file", action = "store", help = "Save best weights (highest mean average precision) to file")
   parser.add_argument("--dataset-dir", metavar = "dir", action = "store", default = "VOCdevkit/VOC2007", help = "VOC dataset directory")
@@ -289,26 +294,25 @@ if __name__ == "__main__":
   parser.add_argument("--profile-cuda-memory", action = "store_true", help = "Profile CUDA memory usage and write output to 'cuda_memory.txt'")
   options = parser.parse_args()
 
+  # Validate backbone model
+  valid_backbones = [ "vgg16", "vgg16-torch", "resnet50", "resnet101", "resnet152" ]
+  assert options.backbone in valid_backbones, "--backbone must be one of: " + ", ".join(valid_backbones)
+  if options.dropout != 0:
+    assert options.backbone == "vgg16" or options.backbone == "vgg16-torch", "--dropout can only be used with VGG-16 backbones"
+  if options.backbone == "vgg16":
+    backbone = vgg16.VGG16Backbone(dropout_probability = options.dropout)
+  elif options.backbone == "vgg16-torch":
+    backbone = vgg16_torch.VGG16Backbone(dropout_probability = options.dropout)
+  elif options.backbone == "resnet50":
+    backbone = resnet.ResNetBackbone(architecture = resnet.Architecture.ResNet50)
+  elif options.backbone == "resnet101":
+    backbone = resnet.ResNetBackbone(architecture = resnet.Architecture.ResNet101)
+  elif options.backbone == "resnet152":
+    backbone = resnet.ResNetBackbone(architecture = resnet.Architecture.ResNet152)
+
   # Perform optional procedures
   if options.dump_anchors:
-    render_anchors()
-
-  # Validate feature extractor model and determine image pre-processing parameters
-  valid_feature_extractors = [ "vgg16", "vgg16-torch", "resnet50", "resnet101" ]
-  assert options.feature_extractor in valid_feature_extractors, "--feature-extractor must be one of: " + ", ".join(valid_feature_extractors)
-  if options.feature_extractor == "vgg16":
-    image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.BGR, scaling = 1.0, means = [ 103.939, 116.779, 123.680 ], stds = [ 1, 1, 1 ])
-    backbone = vgg16.CustomVGG16Backbone(dropout_probability = options.dropout)
-  elif options.feature_extractor == "vgg16-torch":
-    # These params correspond to Torchvision's VGG16_Weights.IMAGENET1K_V1 (https://pytorch.org/vision/main/models/generated/torchvision.models.vgg16.html#torchvision.models.vgg16)
-    image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.RGB, scaling = 1.0 / 255.0, means = [ 0.485, 0.456, 0.406 ], stds = [ 0.229, 0.224, 0.225 ])
-    backbone = vgg16.TorchVGG16Backbone(dropout_probability = options.dropout)
-  elif options.feature_extractor == "resnet50":
-    image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.RGB, scaling = 1.0 / 255.0, means = [ 0.485, 0.456, 0.406 ], stds = [ 0.229, 0.224, 0.225 ])
-    backbone = resnet.ResNetBackbone(architecture = resnet.Architecture.ResNet50)
-  elif options.feature_extractor == "resnet101":
-    image_preprocessing_params = image.PreprocessingParams(channel_order = image.ChannelOrder.RGB, scaling = 1.0 / 255.0, means = [ 0.485, 0.456, 0.406 ], stds = [ 0.229, 0.224, 0.225 ])
-    backbone = resnet.ResNetBackbone(architecture = resnet.Architecture.ResNet101)
+    render_anchors(backbone = backbone)
 
   # Construct model and load initial weights
   model = FasterRCNNModel(
@@ -321,15 +325,15 @@ if __name__ == "__main__":
 
   # Perform mutually exclusive procedures
   if options.train:
-    train(model = model, image_preprocessing_params = image_preprocessing_params)
+    train(model = model)
   elif options.eval:
-    evaluate(model = model, image_preprocessing_params = image_preprocessing_params, plot = options.plot, print_average_precisions = True)
+    evaluate(model = model, plot = options.plot, print_average_precisions = True)
   elif options.predict:
-    predict_one(model = model, url = options.predict, image_preprocessing_params = image_preprocessing_params, show_image = True, output_path = None)
+    predict_one(model = model, url = options.predict, show_image = True, output_path = None)
   elif options.predict_to_file:
-    predict_one(model = model, url = options.predict_to_file, image_preprocessing_params = image_preprocessing_params, show_image = False, output_path = "predictions.png")
+    predict_one(model = model, url = options.predict_to_file, show_image = False, output_path = "predictions.png")
   elif options.predict_all:
-    predict_all(model = model, image_preprocessing_params = image_preprocessing_params, split = options.predict_all)
+    predict_all(model = model, split = options.predict_all)
   elif not options.dump_anchors:
     print("Nothing to do. Did you mean to use --train or --predict?")
 
