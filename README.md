@@ -168,7 +168,7 @@ The PyTorch version supports different backbones. In addition to VGG-16, a few v
 | `vgg16-torch` | VGG-16 backbone implemented using Torchvision's pre-trained VGG-16 layers. |
 | `resnet50` | ResNet50 backbone implemented using Torchvision's pre-trained ResNet50 layers. |
 | `resnet101` | ResNet101 backbone implemented using Torchvision's pre-trained ResNet101 layers. |
-| `resnet50` | ResNet152 backbone implemented using Torchvision's pre-trained ResNet152 layers. |
+| `resnet152` | ResNet152 backbone implemented using Torchvision's pre-trained ResNet152 layers. |
 
 All but `vgg16` load Torchvision pre-trained weights and therefore do not need to be initialized with an explicit weights file. When loading weights to resume training, the backbone must be set to be same as the one used to produce the weights. The `vgg16-torch` implementation does not accept the same weights files as `vgg16`, including `vgg16_caffe.pth`. It automatically
 initializes itself using the built-in Torchvision weights (also trained on ImageNet but expecting a slightly different image pre-processing scheme) and therefore can be run without any input file. It also serves as an example of how to create a new backbone class.
