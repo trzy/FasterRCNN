@@ -11,31 +11,31 @@ This is a fresh implementation of the Faster R-CNN object detection model in bot
 
 I set out to replicate [the original paper](docs/publications/faster_rcnn.pdf) from scratch using Keras but quickly ran into difficulties and spent considerable time overcoming them. For the benefit of those undertaking a similar self-learning exercise -- whether involving this or other machine learning models -- my struggles, learnings, and observations are [documented here](#development-learnings).
 
-My final results using the VOC2007 dataset's 5011 `trainval` images match the paper's. Convergence is achieved in 14 epochs (10 epochs at a learning rate of 0.001 and 4 more at 0.0001), consistent with the learning schedule the paper used. My implementation includes only a VGG-16 backbone as the feature extractor.
+My final results using the VOC2007 dataset's 5011 `trainval` images match the paper's. Convergence is achieved in 14 epochs (10 epochs at a learning rate of 0.001 and 4 more at 0.0001), consistent with the learning schedule the paper used. Both the PyTorch and Keras implementations include a VGG-16 backbone for feature extractor and for the stage just prior to box classification and regression. The PyTorch implementation also includes the option to use ResNet.
 
-| Class | Average Precision |
-|-------|-------------------|
-| cat        | 85.2% |
-| car        | 84.5% |
-| horse      | 84.1% |
-| bus        | 81.8% |
-| bicycle    | 81.6% |
-| dog        | 81.1% |
-| person     | 79.3% |
-| train      | 78.2% |
-| motorbike  | 76.8% |
-| cow        | 75.8% |
-| aeroplane  | 74.3% |
-| tvmonitor  | 72.7% |
-| sheep      | 69.1% |
-| bird       | 68.2% |
-| diningtable| 66.9% |
-| sofa       | 64.9% |
-| boat       | 55.3% |
-| bottle     | 53.7% |
-| chair      | 52.3% |
-| pottedplant| 40.4% |
-|**Mean**    | **71.3%** |
+| Class | Average Precision (VGG-16) | Average Precision (ResNet50) | Average Precision (ResNet101) | Average Precision (ResNet152) |
+|-------|----------------------------|------------------------------|-------------------------------|-------------------------------|
+| cat        | 84.6% | 87.3% | 90.1% | 89.0% |
+| car        | 84.0% | 85.5% | 88.5% | 88.4% |
+| horse      | 82.3% | 84.8% | 87.4% | 87.3% |
+| bus        | 81.8% | 84.1% | 85.9% | 86.6% |
+| bicycle    | 80.9% | 81.2% | 84.8% | 85.8% |
+| dog        | 80.2% | 81.0% | 83.8% | 84.5% |
+| person     | 78.5% | 79.8% | 83.3% | 83.5% |
+| train      | 77.2% | 79.8% | 82.3% | 82.8% |
+| motorbike  | 76.6% | 79.5% | 81.3% | 82.3% |
+| cow        | 75.8% | 79.0% | 79.6% | 81.2% |
+| aeroplane  | 74.9% | 74.9% | 78.7% | 78.5% |
+| tvmonitor  | 73.1% | 73.8% | 78.1% | 78.5% |
+| sheep      | 67.6% | 71.7% | 77.2% | 76.0% |
+| bird       | 66.0% | 70.6% | 76.1% | 72.8% |
+| diningtable| 65.9% | 69.9% | 71.9% | 72.1% |
+| sofa       | 65.1% | 67.2% | 65.3% | 67.4% |
+| boat       | 57.4% | 59.9% | 64.2% | 62.9% |
+| bottle     | 55.6% | 57.4% | 60.0% | 56.7% |
+| chair      | 49.5% | 50.3% | 56.0% | 55.7% |
+| pottedplant| 40.6% | 46.9% | 49.1% | 47.8% |
+|**Mean**    | **71.0%** | **73.2%** | **76.2%** | **76.0%** |
 
 ## Background Material
 
@@ -50,15 +50,19 @@ Some informative web resources and existing code:
 - [*Understanding Region of Interest -- (RoI Pooling)*](https://towardsdatascience.com/understanding-region-of-interest-part-1-roi-pooling-e4f5dd65bb44) by Kemal Erdem. A great explanation of RoI pooling.
 - [*A Simple and Fast Implementation of Faster R-CNN*](https://github.com/chenyuntc/simple-faster-rcnn-pytorch) by Yun Chen. An excellent PyTorch implementation of Faster R-CNN.
 
+ResNet, which popularized "skip connections" that allowed for training of much deeper models, can be used in place of VGG-16 as a backbone and provides improved accuracy:
+
+- [*Deep Residual Learning for Image Recognition*](docs/publications/resnet.pdf) by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Describes ResNet and includes results of using the architecture in Faster R-CNN.
+
 ## Environment Setup
 
-Python 3.7 (for `dataclass` support) or higher is required and I personally use 3.8.5. Dependencies for the PyTorch and TensorFlow versions of the model are located in `pytorch/requirements.txt` and `tf2/requirements.txt`, respectively. Separate virtual environments for both are required.
+Python 3.7 (for `dataclass` support) or higher is required and I personally use 3.9.7. Dependencies for the PyTorch and TensorFlow versions of the model are located in `pytorch/requirements.txt` and `tf2/requirements.txt`, respectively. Separate virtual environments for both are required.
 
 Instructions here are given for Linux systems.
 
 ### PyTorch Setup with CUDA
 
-The PyTorch version *requires* CUDA. As far as I know, it is not possible to obtain CUDA-enabled PyTorch packages using pip. Therefore, the required packages are commented out in `pytorch/requirements.txt` and must be obtained manually using a command found on the PyTorch web site. Begin by executing the following commands in the base Faster R-CNN source directory:
+The PyTorch version *requires* CUDA. I strongly recommend installing the latest CUDA version. Then, executing the following commands in the base Faster R-CNN source directory should create an environment and install the required dependencies:
 
 ```
 python -m venv pytorch_venv
@@ -66,18 +70,7 @@ source pytorch_venv/bin/activate
 pip install -r pytorch/requirements.txt
 ```
 
-Next, go to the [PyTorch web site](https://pytorch.org/) and use their installation picker to select a pip package compatible with your version of CUDA. In my case, CUDA 11.3, as shown.
-
-
-![PyTorch package configuration](docs/images/pytorch_config.png)
-
-Run the command shown, e.g.:
-
-```
-pip3 install torch==1.10.1+cu113 torchvision==0.11.2+cu113 torchaudio==0.10.1+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
-```
-
-If all goes well, this should supplant the CPU-only version of PyTorch that was pulled in from `requirements.txt`.
+If this fails, go to the [PyTorch web site](https://pytorch.org/) and use their installation picker to select a pip package compatible with your version of CUDA. Run the command displayed there.
 
 ### TensorFlow 2 Setup
 
@@ -107,7 +100,7 @@ To train the model, initial weights for the shared VGG-16 layers are required. K
 1. Pre-trained VGG-16 Caffe weights that can be found online as `vgg16_caffe.pth` (SHA1: `e6527a06abfac585939b8d50f235569a33190570`).
 2. Pre-trained VGG-16 weights obtained using [my own Keras model](https://github.com/trzy/VGG16).
 
-Fortunately, `vgg16_caffe.pth` and pre-trained Faster R-CNN weights for both the PyTorch and TensorFlow versions can be obtained using `download_models.sh`. My web host is not particularly reliable so if the site is down, try again later or contact me. The models were trained using the scripts included in this repository (`train_pytorch.sh` and `train_tf2.sh`).
+Fortunately, `vgg16_caffe.pth` and pre-trained Faster R-CNN weights for both the PyTorch and TensorFlow versions can be obtained using `download_models.sh`. My web host is not particularly reliable so if the site is down, try again later or contact me. The models were trained using the scripts included in this repository (`train_pytorch_vgg16.sh`, `train_pytorch_resnet50.sh`, and `train_tf2.sh`).
 
 When training the TensorFlow version of the model from scratch and no initial weights are loaded explicitly, the Keras pre-trained VGG-16 weights will automatically be used. When training the PyTorch version, remember to load initial VGG-16 weights explicitly, e.g.:
 
@@ -164,6 +157,30 @@ python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict=http://trzy.org/
 python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict-to-file=image.png
 python -m tf2.FasterRCNN --load-from=saved_weights.h5 --predict-all=test
 ```
+
+### ResNet Backbone
+
+The PyTorch version supports different backbones. In addition to VGG-16, a few variants of ResNet (ResNet50, ResNet101, and ResNet152) are available. The `--backbone` option is used to specify one of the following backbones:
+
+| Argument | Backbone Description |
+|----------|----------------------|
+| `vgg16` | Custom VGG-16 backbone. The default. |
+| `vgg16-torch` | VGG-16 backbone implemented using Torchvision's pre-trained VGG-16 layers. |
+| `resnet50` | ResNet50 backbone implemented using Torchvision's pre-trained ResNet50 layers. |
+| `resnet101` | ResNet101 backbone implemented using Torchvision's pre-trained ResNet101 layers. |
+| `resnet50` | ResNet152 backbone implemented using Torchvision's pre-trained ResNet152 layers. |
+
+All but `vgg16` load Torchvision pre-trained weights and therefore do not need to be initialized with an explicit weights file. When loading weights to resume training, the backbone must be set to be same as the one used to produce the weights. The `vgg16-torch` implementation does not accept the same weights files as `vgg16`, including `vgg16_caffe.pth`. It automatically
+initializes itself using the built-in Torchvision weights (also trained on ImageNet but expecting a slightly different image pre-processing scheme) and therefore can be run without any input file. It also serves as an example of how to create a new backbone class.
+
+Here is an example of how to train a model using a ResNet101 backbone:
+
+```
+python -m pytorch.FasterRCNN --train --backbone=resnet101 --learning-rate=1e-3 --epochs=10 --save-best-to=results_1.pth
+python -m pytorch.FasterRCNN --train --backbone=resnet101 --learning-rate=1e-4 --epochs=4 --load-from=results_1.pth --save-best-to=results_final.pth
+```
+
+The TensorFlow version does not support alternative backbones yet.
 
 ## Development Learnings
 
