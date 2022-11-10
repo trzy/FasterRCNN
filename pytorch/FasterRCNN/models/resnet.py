@@ -142,8 +142,8 @@ class ResNetBackbone(Backbone):
     elif architecture == Architecture.ResNet152:
       resnet = torchvision.models.resnet152(weights = torchvision.models.ResNet152_Weights.IMAGENET1K_V1)
     else:
-      raise ValueError("Invalid ResNet architecture value: %s" % str(architecture))
-    print("Loaded IMAGENET1K_V1 pre-trained weights for Torchvision %s backbone" % str(architecture))
+      raise ValueError("Invalid ResNet architecture value: %s" % architecture.value)
+    print("Loaded IMAGENET1K_V1 pre-trained weights for Torchvision %s backbone" % architecture.value)
 
     # Feature extractor: given image data of shape (batch_size, channels, height, width),
     # produces a feature map of shape (batch_size, 1024, ceil(height/16), ceil(width/16))
