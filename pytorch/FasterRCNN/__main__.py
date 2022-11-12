@@ -235,6 +235,7 @@ def predict(model, image_data, image, show_image, output_path):
   )
 
 def predict_one(model, url, show_image, output_path):
+  from .datasets import image
   image_data, image_obj, _, _ = image.load_image(url = url, preprocessing = model.backbone.image_preprocessing_params, min_dimension_pixels = 600)
   predict(model = model, image_data = image_data, image = image_obj, show_image = show_image, output_path = output_path)
 
