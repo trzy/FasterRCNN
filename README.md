@@ -180,6 +180,12 @@ python -m pytorch.FasterRCNN --train --backbone=resnet101 --learning-rate=1e-3 -
 python -m pytorch.FasterRCNN --train --backbone=resnet101 --learning-rate=1e-4 --epochs=4 --load-from=results_1.pth --save-best-to=results_final.pth
 ```
 
+**Important**: When running inference with a ResNet checkpoint, the matching backbone architecture must explicitly be specified with `--backbone`, otherwise the default backbone (VGG-16) will be assumed and the checkpoint will fail to load. For example, to use the above trained ResNet101 model:
+
+```
+python -m pytorch.FasterRCNN --backbone=resnet101 --load-from=results_final.pth --predict=http://trzy.org/files/fasterrcnn/gary.jpg
+```
+
 The TensorFlow version does not support alternative backbones yet.
 
 ## Development Learnings
