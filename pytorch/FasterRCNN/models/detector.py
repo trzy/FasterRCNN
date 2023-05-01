@@ -141,7 +141,7 @@ def regression_loss(predicted_box_deltas, y_true):
   # targets
   x = y_true_targets - predicted_box_deltas
   x_abs = t.abs(x)
-  is_negative_branch = (x < (1.0 / sigma_squared)).float()
+  is_negative_branch = (x_abs < (1.0 / sigma_squared)).float()
   R_negative_branch = 0.5 * x * x * sigma_squared
   R_positive_branch = x_abs - 0.5 / sigma_squared
   losses = is_negative_branch * R_negative_branch + (1.0 - is_negative_branch) * R_positive_branch
